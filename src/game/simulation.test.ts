@@ -21,6 +21,19 @@ describe('campaign simulation', () => {
     expect(resolveTurn(a, orders)).toEqual(resolveTurn(b, orders)); expect(() => resolveTurn(a, [{ squadId: 'squad-1', type: 'move', target: 'sector-7' } as Order])).toThrow(); expect(a.turn).toBe(1); expect(a.resources).toEqual({ metal: 20, energy: 20, intelligence: 5 })
   })
   it('never spends below zero on recovery', () => { const game = createNewCampaign(2); const result = resolveTurn({ ...game, resources: { ...game.resources, metal: 1 } }, [{ squadId: 'squad-1', type: 'recover' }]); expect(result.nextState.resources.metal).toBe(0) })
+  it('blocks enemy squads, claims uncontested neutral movement, and requires owned supplied recovery', () => {
+    const game = createNewCampaign(5)
+    expect(() => validateOrders({ ...game, squads: [{ ...game.squads[0], sector: 'sector-5' }] }, [{ squadId: 'squad-1', type: 'move', target: 'sector-6' }])).toThrow(/enemy sector/)
+    expect(() => validateOrders({ ...game, enemySquads: [{ ...game.enemySquads[0], sector: 'sector-1' }] }, [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }])).toThrow(/enemy squad/)
+    expect(() => validateOrders(game, [{ squadId: 'squad-1', type: 'recover' }])).not.toThrow()
+    expect(() => validateOrders({ ...game, squads: [{ ...game.squads[0], sector: 'sector-1' }] }, [{ squadId: 'squad-1', type: 'recover' }])).toThrow(/supplied/)
+    const moved = resolveTurn(game, [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }]).nextState
+    expect(moved.sectors.find(sector => sector.id === 'sector-1')?.owner).toBe('player')
+  })
+  it('only controls relays through sector ownership', () => {
+    const game = createNewCampaign(6)
+    expect(resolveTurn(game, [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }]).nextState.objectives.every(objective => !objective.controlled)).toBe(true)
+  })
   it('rejects multiple attacks when their total energy cost is unaffordable', () => {
     const game = createNewCampaign(3)
     const lowEnergy = { ...game, resources: { ...game.resources, energy: 2 } }
