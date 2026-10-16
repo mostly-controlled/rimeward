@@ -15,6 +15,13 @@ export type GameState = {
 }
 export type Order = { squadId: string; type: OrderType; target?: SectorId }
 export type GameEvent = { type: 'hold' | 'recover' | 'move' | 'attack'; squadId: string; from: SectorId; to: SectorId; target?: SectorId; message: string }
+export type BattleReport = {
+  target: SectorId; terrain: Terrain; attackers: { squadId: string; class: UnitClass; strength: number; units: number }[]
+  defenders: { squadId: string; class: UnitClass; strength: number; units: number }[]
+  classAdvantages: string[]; fatiguePenalty: number; variance: number; attackerPower: number; defenderPower: number
+  winner: 'player' | 'enemy' | 'draw'; casualties: { squadId: string; side: 'player' | 'enemy'; strength: number }[]
+  retreat: { squadId: string; to: SectorId }[]; captured: boolean; relayControlled: boolean
+}
 
 const names = ['Frostgate', 'Whiteplain', 'Cairnwatch', 'Northstar', 'Rimefield', 'Glassway', 'Ashenfall', 'Dawnscar', 'Ironhollow', 'Vesper', 'Bluevault', 'Lastlight']
 const terrains: Terrain[] = ['ice', 'tundra', 'ridge', 'crater']
@@ -96,6 +103,53 @@ export const resolveTurn = (state: GameState, playerOrders: Order[]): { nextStat
   nextState.turn += 1
   nextState.orderHistory = [...nextState.orderHistory, clone(playerOrders)]
   return { nextState, events }
+}
+
+const counters: Record<UnitClass, UnitClass> = { Sentinel: 'Raider', Raider: 'Recon', Recon: 'Artillery', Artillery: 'Sentinel' }
+const battleRandom = (seed: number, target: SectorId, turn: number): number => {
+  let value = (seed ^ turn ^ Number(target.slice(7))) >>> 0
+  value = (value * 1664525 + 1013904223) >>> 0
+  return (value % 11) - 5
+}
+
+/** Resolve only attack intents already recorded in GameEvent/orderHistory. */
+export const resolveCombat = (state: GameState, events: GameEvent[]): { nextState: GameState; reports: BattleReport[] } => {
+  const nextState = clone(state)
+  const attacks = events.filter(event => event.type === 'attack' && event.target)
+  const targets = [...new Set(attacks.map(event => event.target!))].sort()
+  const reports: BattleReport[] = []
+  for (const target of targets) {
+    const sector = nextState.sectors.find(item => item.id === target)!
+    const attackers = attacks.filter(event => event.target === target).map(event => nextState.squads.find(squad => squad.id === event.squadId)!).filter(Boolean)
+    const defenders = nextState.enemySquads.filter(squad => squad.sector === target)
+    const classAdvantages = attackers.flatMap(attacker => defenders.filter(defender => counters[attacker.class] === defender.class).map(defender => `${attacker.class} counters ${defender.class}`))
+    const fatiguePenalty = attackers.reduce((sum, squad) => sum + squad.fatigue, 0)
+    const variance = battleRandom(nextState.seed, target, nextState.turn)
+    const attackerPower = attackers.reduce((sum, squad) => sum + squad.strength * (counters[squad.class] === defenders[0]?.class ? 1.2 : 1), 0) - fatiguePenalty + variance
+    const defenderPower = defenders.reduce((sum, squad) => sum + squad.strength, 0)
+    const winner = attackerPower > defenderPower ? 'player' : attackerPower < defenderPower ? 'enemy' : 'draw'
+    const casualties: BattleReport['casualties'] = []
+    if (winner === 'player' || winner === 'draw') for (const squad of defenders) casualties.push({ squadId: squad.id, side: 'enemy', strength: Math.min(squad.strength, Math.max(1, Math.ceil(attackerPower / Math.max(1, attackers.length * 4))) ) })
+    if (winner === 'enemy' || winner === 'draw') for (const squad of attackers) casualties.push({ squadId: squad.id, side: 'player', strength: Math.min(squad.strength, Math.max(1, Math.ceil(defenderPower / Math.max(1, attackers.length * 5))) ) })
+    for (const casualty of casualties) {
+      const squad = casualty.side === 'player' ? nextState.squads.find(item => item.id === casualty.squadId) : nextState.enemySquads.find(item => item.id === casualty.squadId)
+      if (squad) squad.strength -= casualty.strength
+    }
+    nextState.squads = nextState.squads.filter(squad => squad.strength > 0)
+    nextState.enemySquads = nextState.enemySquads.filter(squad => squad.strength > 0)
+    const retreat: BattleReport['retreat'] = []
+    if (winner === 'player') {
+      sector.owner = 'player'
+      for (const squad of attackers) { const live = nextState.squads.find(item => item.id === squad.id); if (live) { live.sector = target; live.experience += 1; live.fatigue = Math.min(10, live.fatigue + 2) } }
+    } else if (winner === 'enemy') {
+      for (const squad of attackers) { const live = nextState.squads.find(item => item.id === squad.id); if (live) { live.experience += 1; live.fatigue = Math.min(10, live.fatigue + 2); live.sector = state.hq.player; retreat.push({ squadId: live.id, to: live.sector }) } }
+    }
+    const relayControlled = nextState.objectives.some(objective => objective.sector === target && sector.owner === 'player')
+    reports.push({ target, terrain: sector.terrain, attackers: attackers.map(squad => ({ squadId: squad.id, class: squad.class, strength: squad.strength, units: squad.strength })), defenders: defenders.map(squad => ({ squadId: squad.id, class: squad.class, strength: squad.strength, units: squad.strength })), classAdvantages, fatiguePenalty, variance, attackerPower, defenderPower, winner, casualties, retreat, captured: winner === 'player', relayControlled })
+  }
+  nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
+  nextState.recentBattles = reports.map(report => `${report.target}:${report.winner}`)
+  return { nextState, reports }
 }
 
 // Kept for the original shell's small API.
