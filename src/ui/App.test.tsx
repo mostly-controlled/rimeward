@@ -22,6 +22,6 @@ describe('App interactions', () => {
     expect(document.body.textContent).toContain('Day2')
     expect(document.body.textContent).toContain('Supplies2')
 
-    root.unmount()
+    await act(async () => root.unmount())
   })
 })
