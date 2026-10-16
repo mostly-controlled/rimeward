@@ -14,7 +14,7 @@ export type GameState = {
   recentBattles: string[]; orderHistory: Order[][]
 }
 export type Order = { squadId: string; type: OrderType; target?: SectorId }
-export type GameEvent = { type: 'hold' | 'recover' | 'move' | 'attack'; squadId: string; from: SectorId; to: SectorId; message: string }
+export type GameEvent = { type: 'hold' | 'recover' | 'move' | 'attack'; squadId: string; from: SectorId; to: SectorId; target?: SectorId; message: string }
 
 const names = ['Frostgate', 'Whiteplain', 'Cairnwatch', 'Northstar', 'Rimefield', 'Glassway', 'Ashenfall', 'Dawnscar', 'Ironhollow', 'Vesper', 'Bluevault', 'Lastlight']
 const terrains: Terrain[] = ['ice', 'tundra', 'ridge', 'crater']
@@ -87,9 +87,9 @@ export const resolveTurn = (state: GameState, playerOrders: Order[]): { nextStat
     const from = squad.sector
     if (order.type === 'move') { squad.sector = order.target!; const destination = nextState.sectors.find(sector => sector.id === squad.sector); if (destination?.owner === 'neutral') destination.owner = 'player' }
     if (order.type === 'recover') { squad.strength = Math.min(10, squad.strength + 1); squad.fatigue = Math.max(0, squad.fatigue - 2); nextState.resources.metal -= 1 }
-    if (order.type === 'attack') { nextState.resources.energy -= 2; squad.sector = order.target!; squad.experience += 1; nextState.recentBattles = [...nextState.recentBattles, `${squad.id} attacked ${order.target}`].slice(-10) }
+    if (order.type === 'attack') nextState.resources.energy -= 2
     if (order.type === 'hold') squad.fatigue = Math.max(0, squad.fatigue - 1)
-    events.push({ type: order.type, squadId: squad.id, from, to: squad.sector, message: `${squad.id} ${order.type}${order.target ? ` ${order.target}` : ''}` })
+    events.push({ type: order.type, squadId: squad.id, from, to: squad.sector, target: order.target, message: `${squad.id} ${order.type}${order.target ? ` ${order.target}` : ''}` })
   }
   nextState.squads.forEach((squad: Squad) => { if (!playerOrders.some(order => order.squadId === squad.id)) squad.fatigue = Math.min(10, squad.fatigue + 1) })
   nextState.objectives = nextState.objectives.map((objective: Objective) => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
