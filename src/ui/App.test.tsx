@@ -8,7 +8,7 @@ describe('App interactions', () => {
     document.body.innerHTML = ''
   })
 
-  it('switches to field notes and advances the campaign day', async () => {
+  it('selects a tactical target and executes the turn', async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
 
@@ -18,9 +18,12 @@ describe('App interactions', () => {
     expect(document.body.textContent).toContain('FIELD NOTES')
 
     await act(async () => (buttons[0] as HTMLButtonElement).click())
-    await act(async () => (document.querySelector('.primary') as HTMLButtonElement).click())
-    expect(document.body.textContent).toContain('Day2')
-    expect(document.body.textContent).toContain('Supplies2')
+    const target = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement
+    await act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(document.body.textContent).toContain('MOVE')
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
+    expect(document.body.textContent).toContain('squad-1 move sector-1')
+    expect(document.querySelector('.turn-readout')?.textContent).toContain('02')
 
     await act(async () => root.unmount())
   })
