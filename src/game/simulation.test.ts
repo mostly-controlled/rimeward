@@ -42,6 +42,32 @@ describe('campaign simulation', () => {
     expect(lowEnergy.resources.energy).toBe(2)
     expect(lowEnergy.squads.map(squad => squad.sector)).toEqual(['sector-0', 'sector-0', 'sector-0', 'sector-0', 'sector-0'])
   })
+  it('records an attack on an enemy-owned sector without resolving combat', () => {
+    const game = createNewCampaign(7)
+    const attacking = { ...game.squads[0], sector: 'sector-5' as const, experience: 3 }
+    const prepared = { ...game, squads: [attacking, ...game.squads.slice(1)] }
+    const result = resolveTurn(prepared, [{ squadId: attacking.id, type: 'attack', target: 'sector-6' }])
+    const squad = result.nextState.squads.find(item => item.id === attacking.id)!
+    expect(squad.sector).toBe('sector-5')
+    expect(squad.experience).toBe(3)
+    expect(result.nextState.sectors.find(sector => sector.id === 'sector-6')?.owner).toBe('enemy')
+    expect(result.nextState.objectives.find(objective => objective.sector === 'sector-6')?.controlled).toBe(false)
+    expect(result.nextState.resources.energy).toBe(18)
+    expect(result.nextState.orderHistory.at(-1)).toEqual([{ squadId: attacking.id, type: 'attack', target: 'sector-6' }])
+    expect(result.events[0]).toMatchObject({ type: 'attack', from: 'sector-5', to: 'sector-5', target: 'sector-6' })
+  })
+  it('records an attack on a neutral sector containing an enemy squad without resolving combat', () => {
+    const game = createNewCampaign(8)
+    const attacking = { ...game.squads[0], sector: 'sector-5' as const }
+    const prepared = { ...game, squads: [attacking, ...game.squads.slice(1)], enemySquads: [{ ...game.enemySquads[0], sector: 'sector-1' as const }] }
+    const result = resolveTurn(prepared, [{ squadId: attacking.id, type: 'attack', target: 'sector-1' }])
+    expect(result.nextState.squads.find(item => item.id === attacking.id)?.sector).toBe('sector-5')
+    expect(result.nextState.sectors.find(sector => sector.id === 'sector-1')?.owner).toBe('neutral')
+    expect(result.nextState.objectives.map(objective => objective.controlled)).toEqual(game.objectives.map(objective => objective.controlled))
+    expect(result.nextState.resources.energy).toBe(18)
+    expect(result.nextState.orderHistory.at(-1)).toEqual([{ squadId: attacking.id, type: 'attack', target: 'sector-1' }])
+    expect(result.events[0]).toMatchObject({ type: 'attack', from: 'sector-5', to: 'sector-5', target: 'sector-1' })
+  })
   it('rejects multiple recoveries when their total metal cost is unaffordable', () => {
     const game = createNewCampaign(4)
     const lowMetal = { ...game, resources: { ...game.resources, metal: 1 } }
