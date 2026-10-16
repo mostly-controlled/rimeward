@@ -39,6 +39,15 @@ export const createNewCampaign = (seed: number): GameState => {
 
 const error = (message: string): never => { throw new Error(message) }
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+const supplied = (state: GameState, sectorId: SectorId): boolean => {
+  const owned = new Set(state.sectors.filter(sector => sector.owner === 'player').map(sector => sector.id))
+  const reached = new Set<SectorId>([state.hq.player])
+  const visit = (current: SectorId) => state.sectors.find(sector => sector.id === current)?.links.forEach(link => {
+    if (owned.has(link) && !reached.has(link)) { reached.add(link); visit(link) }
+  })
+  visit(state.hq.player)
+  return reached.has(sectorId)
+}
 export const validateOrders = (state: GameState, orders: Order[]): void => {
   const seen = new Set<string>()
   let attackEnergy = 0
@@ -57,7 +66,11 @@ export const validateOrders = (state: GameState, orders: Order[]): void => {
       if (!currentSector?.links.includes(target)) error(`Squad ${order.squadId} cannot reach ${target} from ${currentSquad.sector}`)
       if (order.type === 'attack' && sector.owner === 'player') error(`Squad ${order.squadId} cannot attack an owned sector`)
       if (order.type === 'move' && sector.owner === 'enemy') error(`Squad ${order.squadId} cannot move into an enemy sector; attack it`)
+      if (state.enemySquads.some(enemy => enemy.sector === target)) {
+        if (order.type === 'move') error(`Squad ${order.squadId} cannot move through an enemy squad`)
+      }
     }
+    if (order.type === 'recover' && (state.sectors.find(sector => sector.id === currentSquad.sector)?.owner !== 'player' || !supplied(state, currentSquad.sector))) error(`Squad ${order.squadId} cannot recover outside supplied territory`)
     if (order.type === 'attack') attackEnergy += 2
     if (order.type === 'recover') recoverMetal += 1
   }
@@ -72,14 +85,14 @@ export const resolveTurn = (state: GameState, playerOrders: Order[]): { nextStat
   for (const order of playerOrders) {
     const squad = nextState.squads.find(item => item.id === order.squadId)!
     const from = squad.sector
-    if (order.type === 'move') squad.sector = order.target!
+    if (order.type === 'move') { squad.sector = order.target!; const destination = nextState.sectors.find(sector => sector.id === squad.sector); if (destination?.owner === 'neutral') destination.owner = 'player' }
     if (order.type === 'recover') { squad.strength = Math.min(10, squad.strength + 1); squad.fatigue = Math.max(0, squad.fatigue - 2); nextState.resources.metal -= 1 }
     if (order.type === 'attack') { nextState.resources.energy -= 2; squad.sector = order.target!; squad.experience += 1; nextState.recentBattles = [...nextState.recentBattles, `${squad.id} attacked ${order.target}`].slice(-10) }
     if (order.type === 'hold') squad.fatigue = Math.max(0, squad.fatigue - 1)
     events.push({ type: order.type, squadId: squad.id, from, to: squad.sector, message: `${squad.id} ${order.type}${order.target ? ` ${order.target}` : ''}` })
   }
   nextState.squads.forEach((squad: Squad) => { if (!playerOrders.some(order => order.squadId === squad.id)) squad.fatigue = Math.min(10, squad.fatigue + 1) })
-  nextState.objectives = nextState.objectives.map((objective: Objective) => ({ ...objective, controlled: nextState.squads.some((squad: Squad) => squad.sector === objective.sector) }))
+  nextState.objectives = nextState.objectives.map((objective: Objective) => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
   nextState.turn += 1
   nextState.orderHistory = [...nextState.orderHistory, clone(playerOrders)]
   return { nextState, events }
