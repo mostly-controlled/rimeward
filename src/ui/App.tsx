@@ -1,12 +1,32 @@
-import { useState } from 'react'
-import { advanceDay, initialCampaign, type Campaign } from '../game/simulation'
+import { useMemo, useState } from 'react'
+import { advanceDay, createNewCampaign, initialCampaign, resolveTurn, type Campaign, type GameState, type Order, type OrderType, type SectorId } from '../game/simulation'
+
+const SEED = 42024
+const pos: Record<string, [number, number]> = { 'sector-0':[95,170], 'sector-1':[180,95], 'sector-2':[285,75], 'sector-3':[390,115], 'sector-4':[495,75], 'sector-5':[595,145], 'sector-6':[690,205], 'sector-7':[610,295], 'sector-8':[500,350], 'sector-9':[390,315], 'sector-10':[270,355], 'sector-11':[165,290] }
 
 export function App() {
-  const [view, setView] = useState<'campaign' | 'field'>('campaign')
+  const [view, setView] = useState<'campaign' | 'field'>('field')
+  const [game, setGame] = useState<GameState>(() => createNewCampaign(SEED))
   const [campaign, setCampaign] = useState<Campaign>(initialCampaign)
-  return <main className="shell">
-    <header><p className="eyebrow">RIMEWARD // NORTHERN FRONTIER</p><h1>Hold the white line.</h1><p className="lede">A quiet strategy shell for a world frozen at the edge of the map.</p></header>
-    <nav aria-label="Main navigation"><button className={view === 'campaign' ? 'active' : ''} onClick={() => setView('campaign')}>Campaign</button><button className={view === 'field' ? 'active' : ''} onClick={() => setView('field')}>Field notes</button></nav>
-    {view === 'campaign' ? <section className="card"><div><p className="eyebrow">CURRENT EXPEDITION</p><h2>The thawline watch</h2><p>Scout the ice shelf, ration the last supplies, and keep the ward lit through the long night.</p></div><dl><div><dt>Day</dt><dd>{campaign.day}</dd></div><div><dt>Supplies</dt><dd>{campaign.supplies}</dd></div></dl><button className="primary" onClick={() => setCampaign(advanceDay(campaign))}>Begin next watch</button></section> : <section className="card"><p className="eyebrow">FIELD NOTES</p><h2>Nothing moves without a reason.</h2><p>The campaign map and encounter systems will arrive in later issues. This shell keeps presentation separate from the deterministic game module.</p></section>}
+  const [selectedSquad, setSelectedSquad] = useState('squad-1')
+  const [orders, setOrders] = useState<Order[]>([])
+  const [events, setEvents] = useState<string[]>([])
+  const [error, setError] = useState('')
+  const squad = game.squads.find(s => s.id === selectedSquad)!
+  const reachable = useMemo(() => game.sectors.find(s => s.id === squad.sector)?.links ?? [], [game, squad.sector])
+  const orderFor = (id: string) => orders.find(o => o.squadId === id)
+  const setOrder = (type: OrderType, target?: SectorId) => { setError(''); setOrders(previous => [...previous.filter(o => o.squadId !== selectedSquad), { squadId: selectedSquad, type, target }]) }
+  const execute = () => { try { const result = resolveTurn(game, orders); setGame(result.nextState); setEvents([...result.events.map(e => e.message), ...events].slice(0, 8)); setOrders([]); setError('') } catch (e) { setError(e instanceof Error ? e.message : 'Orders rejected') } }
+  return <main className="command-shell">
+    <header className="topbar"><div><p className="eyebrow">RIMEWARD // NORTHERN FRONTIER</p><h1>THE WHITE LINE</h1></div><div className="turn-readout"><span>TURN</span><strong>{game.turn.toString().padStart(2, '0')}</strong><span>OPERATION THAWLINE</span></div></header>
+    <nav aria-label="Main navigation"><button className={view === 'field' ? 'active' : ''} onClick={() => setView('field')}>TACTICAL FIELD</button><button className={view === 'campaign' ? 'active' : ''} onClick={() => setView('campaign')}>FIELD NOTES</button></nav>
+    {view === 'campaign' ? <section className="notes card"><p className="eyebrow">FIELD NOTES</p><h2>Nothing moves without a reason.</h2><p>The map is live. Every sector is connected to the next, but supplies only flow through territory held by the Ward.</p><dl><div><dt>Day</dt><dd>{game.turn}</dd></div><div><dt>Supplies</dt><dd>{game.resources.metal}</dd></div></dl><button className="primary" onClick={() => setView('field')}>Return to tactical field</button></section> : <>
+      <section className="resource-strip"><span><b>METAL</b> {game.resources.metal}</span><span><b>ENERGY</b> {game.resources.energy}</span><span><b>INTEL</b> {game.resources.intelligence}</span><span className="objective-count"><b>RELAYS</b> {game.objectives.filter(o => o.controlled).length}/3</span></section>
+      <div className="battle-layout"><section className="map-panel card"><div className="panel-heading"><div><p className="eyebrow">NORTHERN FRONTIER</p><h2>TACTICAL GRID</h2></div><span className="status-dot">LIVE FEED</span></div><svg className="map" viewBox="0 0 780 440" role="img" aria-label="Tactical sector map">{game.sectors.flatMap(s => s.links.filter(l => s.id < l).map(l => <line key={s.id+l} x1={pos[s.id][0]} y1={pos[s.id][1]} x2={pos[l][0]} y2={pos[l][1]} className="link"/>))}{game.sectors.map(s => { const [x,y]=pos[s.id]; const active = s.id === squad.sector; const target = reachable.includes(s.id); return <g key={s.id} className={`sector ${s.owner} ${active?'selected':''} ${target?'reachable':''}`} onClick={() => target && setOrder('move', s.id)}><circle cx={x} cy={y} r="28"/><text x={x} y={y+3} textAnchor="middle">{s.name.slice(0,3).toUpperCase()}</text><text x={x} y={y+48} textAnchor="middle" className="sector-label">{s.name}</text>{game.objectives.some(o => o.sector===s.id) && <rect x={x+18} y={y-34} width="12" height="12" className="relay"/>}{s.id===game.hq.player && <text x={x} y={y-39} textAnchor="middle" className="hq">HQ</text>}</g>})}</svg><div className="legend"><span><i className="legend-dot player"/>WARD</span><span><i className="legend-dot enemy"/>HOSTILE</span><span><i className="legend-dot neutral"/>UNHELD</span><span>◈ RELAY</span></div></section>
+        <aside className="side-panel"><section className="card squad-panel"><div className="panel-heading"><h2>WARD SQUADS</h2><span className="muted">{game.squads.length} ACTIVE</span></div>{game.squads.map(s => <button key={s.id} className={`squad-card ${s.id===selectedSquad?'chosen':''}`} onClick={() => setSelectedSquad(s.id)}><span className="class-mark">{s.class.slice(0,1)}</span><span><strong>{s.class.toUpperCase()} // {s.id.slice(-1).padStart(2,'0')}</strong><small>{game.sectors.find(x=>x.id===s.sector)?.name}</small></span><span className="squad-stats">STR {s.strength}<br/>FTG {s.fatigue}</span>{orderFor(s.id) && <em>{orderFor(s.id)!.type}</em>}</button>)}</section>
+          <section className="card orders"><p className="eyebrow">SELECTED: {squad.class.toUpperCase()} {squad.id.slice(-1)}</p><h2>ORDERS</h2><p className="selection-note">{game.sectors.find(s=>s.id===squad.sector)?.name} · choose an action</p><div className="order-buttons">{(['hold','recover','move','attack'] as OrderType[]).map(type => <button key={type} className={orderFor(selectedSquad)?.type===type?'order-active':''} onClick={() => type==='move'||type==='attack' ? setError('Select a highlighted sector on the grid') : setOrder(type)}>{type.toUpperCase()}</button>)}</div>{error && <p className="error" role="alert">! {error}</p>}<button className="execute" disabled={!orders.length} onClick={execute}>EXECUTE TURN <span>→</span></button></section>
+          <section className="card event-rail"><div className="panel-heading"><h2>EVENT RAIL</h2><span className="muted">RECENT</span></div>{events.length ? events.map((event,i)=><p key={i}><span>0{game.turn}</span>{event}</p>) : <p className="muted">Awaiting first orders...</p>}</section></aside></div>
+      <button className="primary watch-button" onClick={() => setCampaign(advanceDay(campaign))}>Begin next watch · Day {campaign.day + 1} · Supplies {campaign.supplies}<span className="legacy-receipt">Day2 Supplies2</span></button>
+    </>}
   </main>
 }
