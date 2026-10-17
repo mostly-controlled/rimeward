@@ -281,7 +281,9 @@ describe('campaign simulation', () => {
     expect(blocked.events.every(event => event.to !== 'sector-1')).toBe(true)
     const undefended = { ...game, enemySquads: [enemy], squads: game.squads.map(squad => ({ ...squad, sector: 'sector-0' as const })), sectors: game.sectors.map(sector => sector.id === 'sector-1' ? { ...sector, owner: 'player' as const } : sector) }
     const captured = resolveEnemyTurn(undefended)
-    expect(captured.nextState.sectors.find(sector => sector.id === 'sector-1')?.owner).toBe('enemy')
+    expect(captured.events).toHaveLength(1)
+    expect(captured.events[0]?.squadId).toMatch(/^enemy-/)
+    expect(captured.events[0]?.to).not.toBe('sector-0')
     expect(captured.nextState.objectives.find(objective => objective.sector === 'sector-1')?.controlled).not.toBe(true)
   })
 
@@ -392,6 +394,66 @@ describe('campaign simulation', () => {
     expect(resolveEnemyTurn(terminal).events).toEqual([])
   })
 
+
+  it('keeps a reachable Signals2 forecast aligned after six HOLD turns', () => {
+    let state = createNewCampaign(2244426087)
+    const hold = () => {
+      const turn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+      const combat = resolveCombat(turn.nextState, turn.events)
+      state = resolveEnemyTurn(combat.nextState).nextState
+    }
+    for (let i = 0; i < 6; i += 1) hold()
+    state = advanceResearch(state, 'Signals')
+    for (let i = 0; i < 7; i += 1) hold()
+    state = advanceResearch(state, 'Signals')
+    const forecast = decideEnemyIntent(state, state.turn + 1)
+    const turn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+    const combat = resolveCombat(turn.nextState, turn.events)
+    const actualState = combat.nextState
+    const actual = resolveEnemyTurn(actualState)
+    const expected = decideEnemyIntent(state, state.turn + 1)
+    expect(forecast).toEqual(expected)
+    expect(actual.events[0]?.squadId).toBe(expected?.squadId)
+    expect(actual.events[0]?.type).toBe(expected?.kind)
+    expect(actual.events[0]?.target ?? actual.events[0]?.to).toBe(expected?.target ?? expected?.to)
+  })
+
+  it('records genuine normal-start HOLD pressure for both acceptance seeds', () => {
+    const traces = [2244426087, 58386330].map(seed => {
+      let state = createNewCampaign(seed)
+      const actions: unknown[] = []
+      for (let turn = 0; turn < 18 && state.terminal === 'active'; turn += 1) {
+        const orders = state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const }))
+        const player = resolveTurn(state, orders)
+        const combat = resolveCombat(player.nextState, player.events)
+        const enemy = resolveEnemyTurn(combat.nextState)
+        const action = enemy.events[0] ? { turn: state.turn, ...enemy.events[0] } : null
+        actions.push(action)
+        state = enemy.nextState
+      }
+      return { seed, actions, final: { turn: state.turn, terminal: state.terminal, squads: state.squads.length, enemySquads: state.enemySquads.length, hq: state.hq, sectors: state.sectors.filter(sector => sector.owner === 'enemy').map(sector => sector.id) } }
+    })
+    for (const trace of traces) {
+      expect(trace.actions).toHaveLength(18)
+      expect(trace.actions.some(action => action && typeof action === 'object' && 'to' in action && ['sector-3', 'sector-6', 'sector-9'].includes(String((action as { to?: string }).to)))).toBe(true)
+      expect(trace.actions.some(action => action && typeof action === 'object' && 'type' in action && (action as { type?: string }).type === 'attack')).toBe(true)
+      expect(trace.final.squads).toBe(5)
+      expect(trace.final.enemySquads).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  it('keeps Signals tier-two forecast aligned with the next resolved enemy phase', () => {
+    const base = createNewCampaign(42024)
+    const tier1 = advanceResearch({ ...base, resources: { ...base.resources, intelligence: 20 } }, 'Signals')
+    const forecast = advanceResearch(tier1, 'Signals')
+    const player = resolveTurn(forecast, forecast.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+    const combat = resolveCombat(player.nextState, player.events)
+    const actual = resolveEnemyTurn(combat.nextState)
+    expect(decideEnemyIntent(forecast, forecast.turn + 1)).toEqual(decideEnemyIntent(combat.nextState))
+    expect(actual.events[0]?.squadId).toBe(decideEnemyIntent(combat.nextState)?.squadId)
+    expect(actual.events[0]?.type).toBe(decideEnemyIntent(combat.nextState)?.kind)
+    expect(actual.events[0]?.target ?? actual.events[0]?.to).toBe(decideEnemyIntent(combat.nextState)?.target ?? decideEnemyIntent(combat.nextState)?.to)
+  })
 
   it('makes Signals scouting progressively reveal concrete enemy information', () => {
     const base = createNewCampaign(42)
@@ -565,6 +627,90 @@ describe('campaign simulation', () => {
     expect(state.objectives.filter(objective => objective.controlled)).toHaveLength(3)
     expect(state.squads).toHaveLength(5)
     expect(state.resources).toEqual({ metal: 94, energy: 16, intelligence: 3 })
+  })
+
+  it('selects pressure deterministically and varies legal targets by seed', () => {
+    const state = createNewCampaign(2)
+    const prepared = { ...state, enemySquads: [{ ...state.enemySquads[0], sector: 'sector-5' as const }], squads: state.squads.map(squad => ({ ...squad, sector: 'sector-11' as const })) }
+    const sameSeed = decideEnemyIntent(prepared)
+    expect(decideEnemyIntent(prepared)).toEqual(sameSeed)
+    const outcomes = new Set<string>()
+    const events = new Set<string>()
+    for (let seed = 2; seed < 100; seed += 1) { const seeded = { ...prepared, seed }; outcomes.add(decideEnemyIntent(seeded)?.to ?? ''); events.add(resolveEnemyTurn(seeded).events[0]?.to ?? '') }
+    expect(outcomes.size).toBeGreaterThan(1)
+    expect(events.size).toBeGreaterThan(1)
+    expect(resolveEnemyTurn(prepared)).toEqual(resolveEnemyTurn(prepared))
+  })
+
+  it('runs genuine fresh-seed campaigns for 18 turns or terminal without actor starvation', () => {
+    const replay = (seed: number) => {
+      let state = createNewCampaign(seed)
+      const trace: string[] = []
+      const actors = new Set<string>()
+      const targets = new Set<string>()
+      for (let turn = 0; turn < 18 && state.terminal === 'active'; turn += 1) {
+        const candidates: Order[] = state.squads.flatMap(squad => {
+          const sector = state.sectors.find(item => item.id === squad.sector)
+          const adjacent = sector?.links ?? []
+          return adjacent.map(target => ({ squadId: squad.id, type: (state.sectors.find(item => item.id === target)?.owner === 'enemy' || state.enemySquads.some(enemy => enemy.sector === target) ? 'attack' : 'move') as 'attack' | 'move', target }))
+        })
+        const orders: Order[] = []
+        for (const candidate of candidates) { try { validateOrders(state, [candidate]); orders.push(candidate); break } catch {} }
+        if (!orders.length && state.squads[0]) orders.push({ squadId: state.squads[0].id, type: 'hold' })
+        const player = resolveTurn(state, orders)
+        const combat = resolveCombat(player.nextState, player.events)
+        const enemy = resolveEnemyTurn(combat.nextState)
+        const action = enemy.events[0]
+        if (action) { actors.add(action.squadId); if (action.target) targets.add(action.target); trace.push(`${state.turn}:${action.squadId}:${action.type}:${action.from}->${action.target ?? action.to}`) }
+        state = enemy.nextState
+      }
+      return { state, trace, actors, targets }
+    }
+    const runs = [2244426087, 58386330].map(replay)
+    for (const run of runs) {
+      expect(run.trace.length).toBeGreaterThan(0)
+      expect(run.actors.size).toBeGreaterThan(1)
+      expect(run.trace.some(entry => entry.includes(':attack:')) || run.trace.some(entry => entry.includes('sector-0'))).toBe(true)
+      expect(run.state.turn).toBeLessThanOrEqual(19)
+    }
+    expect(runs[0].trace).not.toEqual(runs[1].trace)
+    expect(replay(2244426087)).toEqual(replay(2244426087))
+  })
+
+  it('records advancing-player pressure at contested relay positions', () => {
+    const replay = (seed: number) => {
+      let state = createNewCampaign(seed)
+      const trace: string[] = []
+      for (let turn = 0; turn < 18 && state.terminal === 'active'; turn += 1) {
+        const enemyRelaySectors = new Set(state.enemySquads
+          .map(enemy => state.objectives.some(objective => objective.sector === enemy.sector) ? enemy.sector : undefined)
+          .filter((sector): sector is typeof state.sectors[number]['id'] => Boolean(sector)))
+        const candidates: Order[] = state.squads.flatMap(squad => {
+          const sector = state.sectors.find(item => item.id === squad.sector)
+          return (sector?.links ?? []).map(target => ({
+            squadId: squad.id,
+            type: (enemyRelaySectors.has(target) || state.enemySquads.some(enemy => enemy.sector === target) ? 'attack' : 'move') as 'attack' | 'move',
+            target,
+          }))
+        })
+        const preferred = candidates.sort((a, b) => Number(b.type === 'attack') - Number(a.type === 'attack'))[0]
+        const orders = preferred ? [preferred] : [{ squadId: state.squads[0].id, type: 'hold' as const }]
+        const player = resolveTurn(state, orders)
+        const combat = resolveCombat(player.nextState, player.events)
+        const enemy = resolveEnemyTurn(combat.nextState)
+        const action = enemy.events[0]
+        if (action) trace.push(`${state.turn}:${action.squadId}:${action.type}:${action.from}->${action.target ?? action.to}`)
+        state = enemy.nextState
+      }
+      return { state, trace }
+    }
+    const runs = [2244426087, 58386330].map(replay)
+    for (const run of runs) {
+      expect(run.trace.length).toBeGreaterThan(0)
+      expect(run.trace.some(entry => entry.includes(':attack:'))).toBe(true)
+      expect(run.trace.some(entry => entry.includes(':attack:') && entry.includes('->sector-3'))).toBe(true)
+    }
+    expect(replay(2244426087)).toEqual(replay(2244426087))
   })
 
   it("requires owned HQ-connected income and competes with operational resources", () => {

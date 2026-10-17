@@ -13,7 +13,7 @@ export type Objective = { id: string; sector: SectorId; controlled: boolean }
 export type GameState = {
   seed: number; turn: number; sectors: Sector[]; objectives: Objective[]; hq: { player: SectorId; enemy: SectorId }
   squads: Squad[]; enemySquads: EnemySquad[]; resources: Resources; research: number
-  researchLevels: Record<ResearchBranch, number>; recentBattles: string[]; orderHistory: Order[][]
+  researchLevels: Record<ResearchBranch, number>; recentBattles: string[]; orderHistory: Order[][]; enemyHistory: EnemyIntent[]
   terminal: TerminalStatus; terminalReason?: string; income: Resources; revealedEnemySquads: string[]; scoutedEnemyRoutes: string[]; supplyCapacity: number
 }
 export type Order = { squadId: string; type: OrderType; target?: SectorId }
@@ -46,7 +46,7 @@ export const createNewCampaign = (seed: number): GameState => {
   const objectiveIndexes = [3, 6, 9]
   const squads = classes.concat('Sentinel').map((unitClass, i): Squad => ({ id: `squad-${i + 1}`, class: unitClass, strength: 10, fatigue: 0, home: id(0), sector: id(0), experience: 0, upgrades: [] }))
   const enemySquads = [0, 1, 2].map((i): EnemySquad => ({ id: `enemy-${i + 1}`, class: classes[Math.floor(random() * classes.length)], strength: 6 + Math.floor(random() * 5), sector: id([6, 8, 10][i]) }))
-  const initial = { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, researchLevels: { Logistics: 0, Warfare: 0, Signals: 0 }, recentBattles: [], orderHistory: [], terminal: 'active' as const, income: { metal: 0, energy: 0, intelligence: 0 }, revealedEnemySquads: [], scoutedEnemyRoutes: [], supplyCapacity: 10 }
+  const initial = { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, researchLevels: { Logistics: 0, Warfare: 0, Signals: 0 }, recentBattles: [], orderHistory: [], enemyHistory: [], terminal: 'active' as const, income: { metal: 0, energy: 0, intelligence: 0 }, revealedEnemySquads: [], scoutedEnemyRoutes: [], supplyCapacity: 10 }
   initial.income = calculateIncome(initial)
   return initial
 }
@@ -78,35 +78,90 @@ export const researchCost = (branch: ResearchBranch, level: number): Resources =
 }
 export const researchCurrency = (branch: ResearchBranch): keyof Resources => branch === 'Logistics' ? 'metal' : branch === 'Warfare' ? 'energy' : 'intelligence'
 export const researchIncomeThreshold = (_branch: ResearchBranch, _level: number): number => 1
-const intentForEnemy = (state: GameState, enemy: EnemySquad): EnemyIntent | undefined => {
+const pressureHash = (state: GameState, key: string, phaseTurn = state.turn): number => {
+  let value = state.seed >>> 0
+  for (const character of `${phaseTurn}:${key}`) value = Math.imul(value ^ character.charCodeAt(0), 16777619) >>> 0
+  return value >>> 0
+}
+const choosePressureTarget = (state: GameState, targets: SectorId[], phaseTurn = state.turn, strategic = false, forwardPressure = false): SectorId | undefined => {
+  const hasEnemyRelayPressure = state.enemySquads.some(enemy => state.objectives.some(objective => objective.sector === enemy.sector))
+  const strategicTargets = new Set<SectorId>(forwardPressure && hasEnemyRelayPressure ? [state.hq.player] : [state.hq.player, ...state.objectives.filter(objective => !objective.controlled).map(objective => objective.sector)])
+  const distanceToStrategic = (start: SectorId): number => {
+    if (strategicTargets.has(start)) return 0
+    const seen = new Set<SectorId>([start]); const queue: Array<[SectorId, number]> = [[start, 0]]
+    while (queue.length) {
+      const [current, distance] = queue.shift()!
+      const sector = state.sectors.find(item => item.id === current)
+      for (const link of sector?.links ?? []) {
+        if (strategicTargets.has(link)) return distance + 1
+        if (!seen.has(link)) { seen.add(link); queue.push([link, distance + 1]) }
+      }
+    }
+    return Number.MAX_SAFE_INTEGER
+  }
+  return targets.slice().sort((a, b) => {
+    if (strategic) {
+      const aObjective = strategicTargets.has(a) ? 0 : 1; const bObjective = strategicTargets.has(b) ? 0 : 1
+      if (aObjective !== bObjective) return aObjective - bObjective
+      const distance = distanceToStrategic(a) - distanceToStrategic(b)
+      if (distance) return distance
+    }
+    return pressureHash(state, a, phaseTurn) - pressureHash(state, b, phaseTurn) || a.localeCompare(b)
+  })[0]
+}
+
+const intentForEnemy = (state: GameState, enemy: EnemySquad, phaseTurn = state.turn): EnemyIntent | undefined => {
   const current = state.sectors.find(sector => sector.id === enemy.sector)
   if (enemy.sector === state.hq.enemy) return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
+  const onRelay = state.objectives.some(objective => objective.sector === enemy.sector)
+  const lastOrders = state.orderHistory.at(-1) ?? []
+  const hasOperationalOrders = state.orderHistory.some(orders => orders.some(order => order.type !== 'hold'))
+  const squadsAtHq = state.squads.every(squad => squad.sector === state.hq.player)
+  const lowPressureTurn = squadsAtHq && !hasOperationalOrders && state.orderHistory.length >= 2 && lastOrders.length > 0 && lastOrders.every(order => order.type === 'hold')
+  const holdRun = squadsAtHq && lastOrders.length > 0 && lastOrders.every(order => order.type === 'hold')
+  if (onRelay && holdRun && !lowPressureTurn && state.sectors.find(sector => sector.id === enemy.sector)?.owner !== 'player') return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
   const hqAssault = enemy.sector !== state.hq.player && current?.links.includes(state.hq.player) && state.squads.some(squad => squad.sector === state.hq.player)
   if (hqAssault) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: state.hq.player }
-  const occupiedPlayerTarget = [...(current?.links ?? [])].sort().find(target => {
+  const occupiedPlayerTargets = [...(current?.links ?? [])].filter(target => {
     const sector = state.sectors.find(item => item.id === target)
     const occupied = state.squads.some(squad => squad.sector === target)
     const relay = state.objectives.some(objective => objective.sector === target)
     return occupied && (sector?.owner === 'player' || relay)
   })
+  const occupiedPlayerTarget = choosePressureTarget(state, occupiedPlayerTargets, phaseTurn)
   if (occupiedPlayerTarget) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: occupiedPlayerTarget }
-  const destination = [...(current?.links ?? [])].sort().find(target => {
+  const destinations = [...(current?.links ?? [])].filter(target => {
     const sector = state.sectors.find(item => item.id === target)
     const isUndefendedHq = target === state.hq.player && !state.squads.some(squad => squad.sector === target)
     return sector && sector.owner !== "enemy" && !state.enemySquads.some(other => other.id !== enemy.id && other.sector === target) && (isUndefendedHq || !state.squads.some(squad => squad.sector === target))
   })
+  const destination = choosePressureTarget(state, destinations, phaseTurn, true, lowPressureTurn)
   return destination ? { squadId: enemy.id, kind: "move", from: enemy.sector, to: destination } : undefined
 }
-export const decideEnemyIntent = (state: GameState): EnemyIntent | undefined => {
+export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn): EnemyIntent | undefined => {
   if (state.terminal !== "active") return undefined
   const enemies = [...state.enemySquads].sort((a, b) => a.id.localeCompare(b.id))
-  const selected = enemies.filter(enemy => enemy.sector !== state.hq.enemy).map(enemy => intentForEnemy(state, enemy)).find(Boolean)
-  if (selected) return selected
-  const garrison = enemies.find(enemy => enemy.sector === state.hq.enemy)
-  return garrison ? intentForEnemy(state, garrison) : undefined
+  const intents = enemies.map(enemy => intentForEnemy(state, enemy, phaseTurn)).filter((intent): intent is EnemyIntent => Boolean(intent))
+  if (!intents.length) return undefined
+  const hq = intents.filter(intent => intent.kind === 'attack' && intent.target === state.hq.player)
+  const relay = intents.filter(intent => intent.kind === 'attack' && state.objectives.some(objective => objective.sector === intent.target))
+  const tier = hq.length ? hq : relay.length ? relay : intents.filter(intent => intent.kind !== 'hold')
+  const candidates = tier.length ? tier : intents
+  const lastOrders = state.orderHistory.at(-1) ?? []
+  const hasOperationalOrders = state.orderHistory.some(orders => orders.some(order => order.type !== 'hold'))
+  const squadsAtHq = state.squads.every(squad => squad.sector === state.hq.player)
+  const lowPressureTurn = squadsAtHq && !hasOperationalOrders && state.orderHistory.length >= 2 && lastOrders.length > 0 && lastOrders.every(order => order.type === 'hold')
+  const recentEnemyMoves = lowPressureTurn ? state.enemyHistory.slice(-3).filter(intent => intent.kind === 'move') : []
+  const protectedPlayerTargets = new Set(state.orderHistory.slice(-2).flatMap(orders => orders.flatMap(order => order.target ? [order.target] : [])))
+  const nonOscillating = candidates.filter(intent => {
+    if (intent.kind !== 'move' || !intent.to) return !intent.to || !protectedPlayerTargets.has(intent.to)
+    return !protectedPlayerTargets.has(intent.to) && !recentEnemyMoves.some(previous => previous.squadId === intent.squadId && previous.from === intent.to)
+  })
+  const pool = nonOscillating.length ? nonOscillating : candidates
+  return pool.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.to ?? a.target ?? a.from}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.to ?? b.target ?? b.from}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
 }
-const scoutRoutes = (state: GameState): string[] => {
-  const selected = decideEnemyIntent(state)
+const scoutRoutes = (state: GameState, phaseTurn = state.turn): string[] => {
+  const selected = decideEnemyIntent(state, phaseTurn)
   return state.enemySquads.map(enemy => {
     const acting = selected?.squadId === enemy.id ? selected : undefined
     const origin = state.sectors.find(sector => sector.id === enemy.sector)?.name ?? "unknown sector"
@@ -117,7 +172,7 @@ const scoutRoutes = (state: GameState): string[] => {
     return enemy.class + " garrison at " + origin + ": holds position"
   })
 }
-export const advanceResearch = (state: GameState, branch: ResearchBranch): GameState => { if (state.terminal !== 'active') error('Campaign is over'); const level = state.researchLevels[branch]; if (level >= 2) error(`${branch} is complete`); const income = calculateIncome(state); const threshold = researchIncomeThreshold(branch, level); if (!Object.values(income).some(value => value >= threshold)) error(`${branch} requires ${threshold} unit of owned HQ-connected income`); const cost = researchCost(branch, level); if (Object.keys(cost).some(key => state.resources[key as keyof Resources] < cost[key as keyof Resources])) error(`Not enough resources for ${branch}`); const next = clone(state); next.resources = { metal: next.resources.metal - cost.metal, energy: next.resources.energy - cost.energy, intelligence: next.resources.intelligence - cost.intelligence }; next.researchLevels[branch] += 1; next.research += 1; if (branch === 'Logistics') next.supplyCapacity = 10 + next.researchLevels.Logistics * 2; if (branch === 'Signals') { next.revealedEnemySquads = next.enemySquads.map(enemy => enemy.id); if (next.researchLevels.Signals >= 2) next.scoutedEnemyRoutes = scoutRoutes(next) } return next }
+export const advanceResearch = (state: GameState, branch: ResearchBranch): GameState => { if (state.terminal !== 'active') error('Campaign is over'); const level = state.researchLevels[branch]; if (level >= 2) error(`${branch} is complete`); const income = calculateIncome(state); const threshold = researchIncomeThreshold(branch, level); if (!Object.values(income).some(value => value >= threshold)) error(`${branch} requires ${threshold} unit of owned HQ-connected income`); const cost = researchCost(branch, level); if (Object.keys(cost).some(key => state.resources[key as keyof Resources] < cost[key as keyof Resources])) error(`Not enough resources for ${branch}`); const next = clone(state); next.resources = { metal: next.resources.metal - cost.metal, energy: next.resources.energy - cost.energy, intelligence: next.resources.intelligence - cost.intelligence }; next.researchLevels[branch] += 1; next.research += 1; if (branch === 'Logistics') next.supplyCapacity = 10 + next.researchLevels.Logistics * 2; if (branch === 'Signals') { next.revealedEnemySquads = next.enemySquads.map(enemy => enemy.id); if (next.researchLevels.Signals >= 2) next.scoutedEnemyRoutes = scoutRoutes(next, next.turn + 1) } return next }
 export const terminalState = (state: GameState): GameState => { const next = clone(state); if (next.objectives.every(objective => objective.controlled)) { next.terminal = 'victory'; next.terminalReason = 'All three relays secured.' } else if (!next.squads.length) { next.terminal = 'defeat'; next.terminalReason = 'No Ward squads remain.' } else if (next.sectors.find(sector => sector.id === next.hq.player)?.owner === 'enemy') { next.terminal = 'defeat'; next.terminalReason = 'Player HQ lost.' } else if (next.turn > 18) { next.terminal = 'defeat'; next.terminalReason = 'Turn 18 reached without victory.' } return next }
 export const validateOrders = (state: GameState, orders: Order[]): void => {
   if (state.terminal !== 'active') error('Campaign is over; orders are blocked')
@@ -240,15 +295,14 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
   return { nextState, reports }
 }
 
-/** Deterministic, visible enemy phase: one hostile squad advances along the first legal link. */
+/** Deterministic, visible enemy phase: one selected hostile squad executes one legal strategic pressure action. */
 export const resolveEnemyTurn = (state: GameState): { nextState: GameState; events: GameEvent[]; reports: BattleReport[] } => {
   const nextState = clone(state)
   const events: GameEvent[] = []
   const phaseActive = nextState.terminal === 'active'
-  // Keep the Ashenfall garrison in place so the seed-42024 route can reach its
-  // intended contested engagement; the next deterministic garrison advances.
   const intent = phaseActive ? decideEnemyIntent(nextState) : undefined
   const enemy = intent && nextState.enemySquads.find(item => item.id === intent.squadId)
+  if (intent) nextState.enemyHistory = [...nextState.enemyHistory, clone(intent)]
   if (intent?.kind === 'move' && enemy && intent.to) {
     const from = enemy.sector
     enemy.sector = intent.to
@@ -269,7 +323,9 @@ export const resolveEnemyTurn = (state: GameState): { nextState: GameState; even
   const combatState = combat.nextState
   combatState.income = calculateIncome(combatState)
   combatState.resources = { metal: Math.min(99, combatState.resources.metal + combatState.income.metal), energy: Math.min(99, combatState.resources.energy + combatState.income.energy), intelligence: Math.min(99, combatState.resources.intelligence + combatState.income.intelligence) }
-  return { nextState: terminalState(combatState), events, reports: combat.reports }
+  const resolved = terminalState(combatState)
+  if (resolved.researchLevels.Signals > 1) resolved.scoutedEnemyRoutes = scoutRoutes(resolved, resolved.turn + 1)
+  return { nextState: resolved, events, reports: combat.reports }
 }
 
 // Kept for the original shell's small API.

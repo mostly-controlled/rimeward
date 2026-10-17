@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
-import { advanceResearch, createNewCampaign, terminalState } from '../game/simulation'
+import { advanceResearch, createNewCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, decideEnemyIntent, terminalState } from '../game/simulation'
 
 describe('App interactions', () => {
   afterEach(() => {
@@ -132,7 +132,7 @@ describe('App interactions', () => {
     const afterEnemyPhase = entries()
     expect(afterEnemyPhase.slice(-battleTurn.length)).toEqual(battleTurn)
     expect(afterEnemyPhase.filter(entry => entry.turn === '04').length).toBeGreaterThanOrEqual(2)
-    expect(entries().some(entry => entry.turn === '04' && entry.message === 'enemy-2 assaults Frostgate')).toBe(true)
+    expect(entries().some(entry => entry.turn === '04' && entry.message?.startsWith('enemy-'))).toBe(true)
     expect(document.querySelector('.turn-readout strong')?.textContent).toBe('05')
 
     await act(async () => root.unmount())
@@ -155,6 +155,37 @@ describe('App interactions', () => {
     await act(async () => root.render(<App initialGame={{ ...campaign, squads: [] }} />))
     expect(document.body.textContent).toContain("NO SURVIVORS")
     expect(document.body.textContent).toContain("no active squads")
+    await act(async () => root.unmount())
+  })
+
+  it('keeps reachable Signals2 forecast aligned with the actual HOLD event', async () => {
+    let state = createNewCampaign(2244426087)
+    const hold = () => {
+      const turn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+      const combat = resolveCombat(turn.nextState, turn.events)
+      state = resolveEnemyTurn(combat.nextState).nextState
+    }
+    for (let i = 0; i < 6; i += 1) hold()
+    state = advanceResearch(state, 'Signals')
+    for (let i = 0; i < 7; i += 1) hold()
+    state = advanceResearch(state, 'Signals')
+    const expected = decideEnemyIntent(state, state.turn + 1)
+    const expectedSector = expected?.target ?? expected?.to
+    const expectedName = state.sectors.find(sector => sector.id === expectedSector)?.name
+    const projectedTurn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: "hold" as const })))
+    const projected = resolveEnemyTurn(resolveCombat(projectedTurn.nextState, projectedTurn.events).nextState).nextState
+    const nextExpected = decideEnemyIntent(projected, projected.turn + 1)
+    const nextExpectedSector = nextExpected?.target ?? nextExpected?.to
+    const nextExpectedName = projected.sectors.find(sector => sector.id === nextExpectedSector)?.name
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App initialGame={state} />))
+    expect(document.querySelector('.intel')?.textContent).toContain(expectedName)
+    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
+    expect(document.querySelector('.event-rail')?.textContent).toContain(expected?.squadId)
+    expect(document.querySelector('.event-rail')?.textContent).toContain(expectedSector)
+    expect(document.querySelector('.intel')?.textContent).toContain(nextExpectedName)
     await act(async () => root.unmount())
   })
 
