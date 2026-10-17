@@ -204,4 +204,19 @@ describe('campaign simulation', () => {
     expect(captured.nextState.objectives.find(objective => objective.sector === 'sector-1')?.controlled).not.toBe(true)
   })
 
+  it('lets an adjacent enemy contest the occupied HQ and ends the campaign in defeat when it wins', () => {
+    const game = createNewCampaign(42)
+    const prepared = {
+      ...game,
+      squads: [{ ...game.squads[0], sector: 'sector-0' as const, strength: 1 }, ...game.squads.slice(1).map(squad => ({ ...squad, sector: 'sector-5' as const }))],
+      enemySquads: [{ ...game.enemySquads[0], sector: 'sector-1' as const, strength: 40 }],
+    }
+    const result = resolveEnemyTurn(prepared)
+    expect(result.events[0]).toMatchObject({ type: 'attack', target: 'sector-0', squadId: 'enemy-1' })
+    expect(result.nextState.sectors.find(sector => sector.id === 'sector-0')?.owner).toBe('enemy')
+    expect(result.nextState.terminal).toBe('defeat')
+    expect(result.nextState.terminalReason).toBe('Player HQ lost.')
+    expect(result.nextState.enemySquads.find(squad => squad.id === 'enemy-1')?.sector).toBe('sector-0')
+  })
+
 })
