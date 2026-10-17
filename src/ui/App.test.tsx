@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
-import { createNewCampaign, terminalState } from '../game/simulation'
+import { advanceResearch, createNewCampaign, terminalState } from '../game/simulation'
 
 describe('App interactions', () => {
   afterEach(() => {
@@ -129,7 +129,10 @@ describe('App interactions', () => {
     await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
     await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
     expect(entries().slice(0, 2).every(entry => entry.turn === '04')).toBe(true)
-    expect(entries().slice(-battleTurn.length)).toEqual(battleTurn)
+    const afterEnemyPhase = entries()
+    expect(afterEnemyPhase.slice(-battleTurn.length)).toEqual(battleTurn)
+    expect(afterEnemyPhase.filter(entry => entry.turn === '04').length).toBeGreaterThanOrEqual(2)
+    expect(entries().some(entry => entry.message?.includes('assaults player HQ'))).toBe(true)
     expect(document.querySelector('.turn-readout strong')?.textContent).toBe('05')
 
     await act(async () => root.unmount())
@@ -190,6 +193,28 @@ describe('App interactions', () => {
     expect(logistics.textContent).toContain('1/2')
     expect(logistics.textContent).toContain('LVL 2')
     await act(async () => root.unmount())
+  })
+
+  it('renders Signals identities, classes, sector names, and tier2 route candidates', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    const seedGame = createNewCampaign(42024)
+    const tier1 = advanceResearch({ ...seedGame, resources: { ...seedGame.resources, intelligence: 10 } }, 'Signals')
+    await act(async () => root.render(<App initialGame={tier1} />))
+    const intel = document.querySelector('.intel')!
+    const enemy = tier1.enemySquads[0]
+    expect(intel.textContent).toContain(enemy.id)
+    expect(intel.textContent).toContain(enemy.class.toUpperCase())
+    expect(intel.textContent).toContain(tier1.sectors.find(sector => sector.id === enemy.sector)!.name)
+    const tier2 = advanceResearch(tier1, 'Signals')
+    expect(tier2.researchLevels.Signals).toBe(2)
+    expect(tier2.scoutedEnemyRoutes.length).toBeGreaterThan(0)
+    await act(async () => root.unmount())
+    const tier2Root = createRoot(document.getElementById('root')!)
+    await act(async () => tier2Root.render(<App initialGame={tier2} />))
+    expect(document.querySelector('.intel')?.textContent).toContain('POTENTIAL ROUTES')
+    expect(document.querySelector('.research-effects')?.textContent).toContain('potential routes')
+    await act(async () => tier2Root.unmount())
   })
 
   it('blocks terminal orders and offers a restart', async () => {

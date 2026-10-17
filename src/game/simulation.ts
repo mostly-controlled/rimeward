@@ -14,7 +14,7 @@ export type GameState = {
   seed: number; turn: number; sectors: Sector[]; objectives: Objective[]; hq: { player: SectorId; enemy: SectorId }
   squads: Squad[]; enemySquads: EnemySquad[]; resources: Resources; research: number
   researchLevels: Record<ResearchBranch, number>; recentBattles: string[]; orderHistory: Order[][]
-  terminal: TerminalStatus; terminalReason?: string; income: Resources; revealedEnemySquads: string[]; revealedEnemyRoutes: string[]; supplyCapacity: number
+  terminal: TerminalStatus; terminalReason?: string; income: Resources; revealedEnemySquads: string[]; scoutedEnemyRoutes: string[]; supplyCapacity: number
 }
 export type Order = { squadId: string; type: OrderType; target?: SectorId }
 export type GameEvent = { type: 'hold' | 'recover' | 'move' | 'attack'; squadId: string; from: SectorId; to: SectorId; target?: SectorId; message: string; faction?: 'player' | 'enemy' }
@@ -45,7 +45,7 @@ export const createNewCampaign = (seed: number): GameState => {
   const objectiveIndexes = [3, 6, 9]
   const squads = classes.concat('Sentinel').map((unitClass, i): Squad => ({ id: `squad-${i + 1}`, class: unitClass, strength: 10, fatigue: 0, home: id(0), sector: id(0), experience: 0, upgrades: [] }))
   const enemySquads = [0, 1, 2].map((i): EnemySquad => ({ id: `enemy-${i + 1}`, class: classes[Math.floor(random() * classes.length)], strength: 6 + Math.floor(random() * 5), sector: id([6, 8, 10][i]) }))
-  const initial = { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, researchLevels: { Logistics: 0, Warfare: 0, Signals: 0 }, recentBattles: [], orderHistory: [], terminal: 'active' as const, income: { metal: 0, energy: 0, intelligence: 0 }, revealedEnemySquads: [], revealedEnemyRoutes: [], supplyCapacity: 10 }
+  const initial = { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, researchLevels: { Logistics: 0, Warfare: 0, Signals: 0 }, recentBattles: [], orderHistory: [], terminal: 'active' as const, income: { metal: 0, energy: 0, intelligence: 0 }, revealedEnemySquads: [], scoutedEnemyRoutes: [], supplyCapacity: 10 }
   initial.income = calculateIncome(initial)
   return initial
 }
@@ -55,19 +55,21 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const supplied = (state: GameState, sectorId: SectorId): boolean => {
   const owned = new Set(state.sectors.filter(sector => sector.owner === 'player').map(sector => sector.id))
   const reached = new Set<SectorId>([state.hq.player])
-  const visit = (current: SectorId) => {
-    if (reached.size >= state.supplyCapacity) return
-    state.sectors.find(sector => sector.id === current)?.links.forEach(link => {
-      if (reached.size < state.supplyCapacity && owned.has(link) && !reached.has(link)) { reached.add(link); visit(link) }
+  const queue: Array<{ id: SectorId; distance: number }> = [{ id: state.hq.player, distance: 0 }]
+  while (queue.length) {
+    const current = queue.shift()!
+    if (reached.size >= state.supplyCapacity) continue
+    state.sectors.find(sector => sector.id === current.id)?.links.forEach(link => {
+      if (reached.size < state.supplyCapacity && owned.has(link) && !reached.has(link)) { reached.add(link); queue.push({ id: link, distance: current.distance + 1 }) }
     })
   }
-  visit(state.hq.player)
   return reached.has(sectorId)
 }
 export const connectedOwnedSectors = (state: GameState): Sector[] => state.sectors.filter(sector => sector.owner === 'player' && supplied(state, sector.id))
 export const calculateIncome = (state: GameState): Resources => connectedOwnedSectors(state).reduce((sum, sector) => ({ metal: sum.metal + sector.yields.metal, energy: sum.energy + sector.yields.energy, intelligence: sum.intelligence + sector.yields.intelligence }), { metal: 0, energy: 0, intelligence: 0 })
 export const researchCost = (branch: ResearchBranch, level: number): Resources => ({ metal: branch === 'Logistics' ? 2 + level : 0, energy: branch === 'Warfare' ? 2 + level : 0, intelligence: branch === 'Signals' ? 2 + level : 0 })
-export const advanceResearch = (state: GameState, branch: ResearchBranch): GameState => { if (state.terminal !== 'active') error('Campaign is over'); const level = state.researchLevels[branch]; if (level >= 2) error(`${branch} is complete`); const cost = researchCost(branch, level); if (Object.keys(cost).some(key => state.resources[key as keyof Resources] < cost[key as keyof Resources])) error(`Not enough resources for ${branch}`); const next = clone(state); next.resources = { metal: next.resources.metal - cost.metal, energy: next.resources.energy - cost.energy, intelligence: next.resources.intelligence - cost.intelligence }; next.researchLevels[branch] += 1; next.research += 1; if (branch === 'Logistics') next.supplyCapacity = 10 + next.researchLevels.Logistics * 2; if (branch === 'Signals') { next.revealedEnemySquads = next.enemySquads.map(enemy => enemy.id); if (next.researchLevels.Signals >= 2) next.revealedEnemyRoutes = next.enemySquads.flatMap(enemy => next.sectors.find(sector => sector.id === enemy.sector)?.links ?? []).filter((sector, index, all) => all.indexOf(sector) === index).sort() } return next }
+const scoutRoutes = (state: GameState): string[] => state.enemySquads.map(enemy => { const current = state.sectors.find(sector => sector.id === enemy.sector); const potential = (current?.links ?? []).filter(link => state.sectors.find(sector => sector.id === link)?.owner !== 'enemy').sort(); return `${enemy.id}:${enemy.sector}->${potential.length ? potential.join('|') : enemy.sector}` })
+export const advanceResearch = (state: GameState, branch: ResearchBranch): GameState => { if (state.terminal !== 'active') error('Campaign is over'); const level = state.researchLevels[branch]; if (level >= 2) error(`${branch} is complete`); const cost = researchCost(branch, level); if (Object.keys(cost).some(key => state.resources[key as keyof Resources] < cost[key as keyof Resources])) error(`Not enough resources for ${branch}`); const next = clone(state); next.resources = { metal: next.resources.metal - cost.metal, energy: next.resources.energy - cost.energy, intelligence: next.resources.intelligence - cost.intelligence }; next.researchLevels[branch] += 1; next.research += 1; if (branch === 'Logistics') next.supplyCapacity = 10 + next.researchLevels.Logistics * 2; if (branch === 'Signals') { next.revealedEnemySquads = next.enemySquads.map(enemy => enemy.id); if (next.researchLevels.Signals >= 2) next.scoutedEnemyRoutes = scoutRoutes(next) } return next }
 export const terminalState = (state: GameState): GameState => { const next = clone(state); if (next.objectives.every(objective => objective.controlled)) { next.terminal = 'victory'; next.terminalReason = 'All three relays secured.' } else if (!next.squads.length) { next.terminal = 'defeat'; next.terminalReason = 'No Ward squads remain.' } else if (next.sectors.find(sector => sector.id === next.hq.player)?.owner === 'enemy') { next.terminal = 'defeat'; next.terminalReason = 'Player HQ lost.' } else if (next.turn > 18) { next.terminal = 'defeat'; next.terminalReason = 'Turn 18 reached without victory.' } return next }
 export const validateOrders = (state: GameState, orders: Order[]): void => {
   if (state.terminal !== 'active') error('Campaign is over; orders are blocked')
@@ -88,7 +90,6 @@ export const validateOrders = (state: GameState, orders: Order[]): void => {
       if (!currentSector?.links.includes(target)) error(`Squad ${order.squadId} cannot reach ${target} from ${currentSquad.sector}`)
       if (order.type === 'attack' && sector.owner === 'player') error(`Squad ${order.squadId} cannot attack an owned sector`)
       if (order.type === 'move' && sector.owner === 'enemy') error(`Squad ${order.squadId} cannot move into an enemy sector; attack it`)
-      if (order.type === 'move' && sector.owner === 'player' && !supplied(state, target)) error(`Squad ${order.squadId} cannot reach ${target}; supply capacity exhausted`)
       if (state.enemySquads.some(enemy => enemy.sector === target)) {
         if (order.type === 'move') error(`Squad ${order.squadId} cannot move through an enemy squad`)
       }
@@ -151,19 +152,19 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     const variance = battleRandom(nextState.seed, target, nextState.turn)
     const terrainMultiplier = terrainPower[sector.terrain]
     const isEnemyHq = target === nextState.hq.enemy
+    const attackerFaction = enemyAttack ? 'enemy' : 'player'
+    const defenderFaction = enemyAttack ? 'player' : 'enemy'
     const attackerPower = attackers.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + defenders.filter(defender => counters[squad.class] === defender.class).length * (0.2 + (isEnemyHq || enemyAttack ? 0 : nextState.researchLevels.Warfare * 0.05))), 0) - fatiguePenalty + variance
-    const defenderFortification = enemyAttack ? nextState.researchLevels.Warfare : 0
-    const defenderPower = defenders.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + attackers.filter(attacker => counters[squad.class] === attacker.class).length * 0.2) + defenderFortification, 0)
+    const defenderFortification = defenderFaction === 'player' ? nextState.researchLevels.Warfare * 0.05 : 0
+    const defenderPower = defenders.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + defenderFortification + attackers.filter(attacker => counters[squad.class] === attacker.class).length * 0.2), 0)
     const attackerStrengthBefore = new Map(attackers.map(squad => [squad.id, squad.strength]))
     const defenderStrengthBefore = new Map(defenders.map(squad => [squad.id, squad.strength]))
-    const winner = attackerPower > defenderPower ? (enemyAttack ? 'enemy' : 'player') : attackerPower < defenderPower ? (enemyAttack ? 'player' : 'enemy') : 'draw'
+    const winner = attackerPower > defenderPower ? attackerFaction : attackerPower < defenderPower ? defenderFaction : 'draw'
     const casualties: BattleReport['casualties'] = []
-    const attackerSide = enemyAttack ? 'enemy' : 'player'
-    const defenderSide = enemyAttack ? 'player' : 'enemy'
-    const attackerWon = (enemyAttack && winner === 'enemy') || (!enemyAttack && winner === 'player')
-    const defenderWon = (enemyAttack && winner === 'player') || (!enemyAttack && winner === 'enemy')
-    if (attackerWon || winner === 'draw') for (const squad of defenders) casualties.push({ squadId: squad.id, side: defenderSide, strength: Math.min(squad.strength, Math.max(1, Math.ceil(attackerPower / Math.max(1, attackers.length * 4))) ) })
-    if (defenderWon || winner === 'draw') for (const squad of attackers) casualties.push({ squadId: squad.id, side: attackerSide, strength: Math.min(squad.strength, Math.max(1, Math.ceil(defenderPower / Math.max(1, attackers.length * 5))) ) })
+    const attackerWon = winner === attackerFaction
+    const defenderWon = winner === defenderFaction
+    if (attackerWon || winner === 'draw') for (const squad of defenders) casualties.push({ squadId: squad.id, side: defenderFaction, strength: Math.min(squad.strength, Math.max(1, Math.ceil(attackerPower / Math.max(1, attackers.length * 4))) ) })
+    if (defenderWon || winner === 'draw') for (const squad of attackers) casualties.push({ squadId: squad.id, side: attackerFaction, strength: Math.min(squad.strength, Math.max(1, Math.ceil(defenderPower / Math.max(1, attackers.length * 5))) ) })
     for (const casualty of casualties) {
       const squad = casualty.side === 'player' ? nextState.squads.find(item => item.id === casualty.squadId) : nextState.enemySquads.find(item => item.id === casualty.squadId)
       if (squad) squad.strength -= casualty.strength
@@ -171,23 +172,23 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     nextState.squads = nextState.squads.filter(squad => squad.strength > 0)
     nextState.enemySquads = nextState.enemySquads.filter(squad => squad.strength > 0)
     const retreat: BattleReport['retreat'] = []
-    if (winner === 'player' && !enemyAttack && nextState.enemySquads.some(squad => squad.sector === target && squad.strength > 0) === false) {
+    if (attackerWon && !enemyAttack && nextState.enemySquads.some(squad => squad.sector === target && squad.strength > 0) === false) {
       sector.owner = 'player'
       for (const squad of attackers) { const live = nextState.squads.find(item => item.id === squad.id); if (live) { live.sector = target; live.experience += 1; live.fatigue = Math.min(10, live.fatigue + 2) } }
-    } else if (winner === 'enemy' && enemyAttack && !nextState.squads.some(squad => squad.sector === target && squad.strength > 0)) {
+    } else if (attackerWon && enemyAttack && !nextState.squads.some(squad => squad.sector === target && squad.strength > 0)) {
       sector.owner = 'enemy'
       for (const squad of attackers) { const live = nextState.enemySquads.find(item => item.id === squad.id); if (live) live.sector = target }
-    } else if (winner === 'enemy') {
+    } else if (defenderWon && !enemyAttack) {
       for (const squad of attackers) { const live = nextState.squads.find(item => item.id === squad.id); if (live) { live.experience += 1; live.fatigue = Math.min(10, live.fatigue + 2); live.sector = retreatDestination(nextState, live); retreat.push({ squadId: live.id, to: live.sector }) } }
     }
     const relayControlled = nextState.objectives.some(objective => objective.sector === target && sector.owner === 'player')
-    const captured = enemyAttack ? winner === 'enemy' && !nextState.squads.some(squad => squad.sector === target && squad.strength > 0) : winner === 'player' && !nextState.enemySquads.some(squad => squad.sector === target && squad.strength > 0)
+    const captured = attackerWon && (enemyAttack ? !nextState.squads.some(squad => squad.sector === target && squad.strength > 0) : !nextState.enemySquads.some(squad => squad.sector === target && squad.strength > 0))
     reports.push({ target, terrain: sector.terrain, terrainMultiplier, attackers: attackers.map(squad => ({ squadId: squad.id, class: squad.class, strength: attackerStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), defenders: defenders.map(squad => ({ squadId: squad.id, class: squad.class, strength: defenderStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), classAdvantages, defenderCounters, fatiguePenalty, variance, attackerPower, defenderPower, winner, casualties, retreat, captured, relayControlled })
   }
   nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
   if (reports.length) nextState.recentBattles = reports.map(report => `${report.target}:${report.winner}`)
   if (nextState.researchLevels.Signals > 0) nextState.revealedEnemySquads = nextState.enemySquads.map(enemy => enemy.id)
-  if (nextState.researchLevels.Signals >= 2) nextState.revealedEnemyRoutes = nextState.enemySquads.flatMap(enemy => nextState.sectors.find(sector => sector.id === enemy.sector)?.links ?? []).filter((sector, index, all) => all.indexOf(sector) === index).sort()
+  if (nextState.researchLevels.Signals > 1) nextState.scoutedEnemyRoutes = scoutRoutes(nextState)
   return { nextState, reports }
 }
 
@@ -213,17 +214,17 @@ export const resolveEnemyTurn = (state: GameState): { nextState: GameState; even
     if (sector.owner === 'player') sector.owner = 'enemy'
     nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
     events.push({ type: 'move', squadId: enemy.id, from, to: destination, message: `${enemy.id} advances to ${destination}` })
-  } else if (phaseActive && enemy) {
+  } else if (phaseActive && enemy && !hqAssault) {
     events.push({ type: 'hold', squadId: enemy.id, from: enemy.sector, to: enemy.sector, message: `${enemy.id} holds at ${enemy.sector}` })
   }
   nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
   if (hqAssault && enemy) events.push({ type: 'attack', faction: 'enemy', squadId: enemy.id, from: enemy.sector, to: enemy.sector, target: nextState.hq.player, message: `${enemy.id} assaults player HQ` })
   if (!phaseActive) return { nextState, events: [], reports: [] }
-  const combat = resolveCombat(nextState, events.filter(event => event.type === 'attack'))
-  const resolved = combat.nextState
-  resolved.income = calculateIncome(resolved)
-  resolved.resources = { metal: Math.min(99, resolved.resources.metal + resolved.income.metal), energy: Math.min(99, resolved.resources.energy + resolved.income.energy), intelligence: Math.min(99, resolved.resources.intelligence + resolved.income.intelligence) }
-  return { nextState: terminalState(resolved), events, reports: combat.reports }
+  const combat = resolveCombat(nextState, events)
+  const combatState = combat.nextState
+  combatState.income = calculateIncome(combatState)
+  combatState.resources = { metal: Math.min(99, combatState.resources.metal + combatState.income.metal), energy: Math.min(99, combatState.resources.energy + combatState.income.energy), intelligence: Math.min(99, combatState.resources.intelligence + combatState.income.intelligence) }
+  return { nextState: terminalState(combatState), events, reports: combat.reports }
 }
 
 // Kept for the original shell's small API.

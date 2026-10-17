@@ -25,6 +25,10 @@ describe('campaign simulation', () => {
     const disconnected = { ...supplied, sectors: supplied.sectors.map(sector => sector.id === 'sector-3' ? { ...sector, owner: 'player' as const, links: [] } : sector) }
     expect(connectedOwnedSectors(disconnected).map(sector => sector.id)).toEqual(['sector-0', 'sector-1'])
     expect(calculateIncome(disconnected)).toEqual({ metal: 3, energy: 1, intelligence: 1 })
+    const shortSupply = { ...disconnected, supplyCapacity: 1 }
+    expect(connectedOwnedSectors(shortSupply).map(sector => sector.id)).toEqual(['sector-0'])
+    const beyondCapacity = { ...shortSupply, sectors: shortSupply.sectors.map(sector => sector.id === 'sector-2' ? { ...sector, owner: 'player' as const } : sector) }
+    expect(connectedOwnedSectors(beyondCapacity).map(sector => sector.id)).not.toContain('sector-2')
   })
 
   it('ends in defeat when no Ward squads remain', () => {
@@ -52,7 +56,7 @@ describe('campaign simulation', () => {
     const capped = { ...allOwned, supplyCapacity: 1 }
     expect(connectedOwnedSectors(capped).map(sector => sector.id)).toEqual(['sector-0'])
     expect(calculateIncome(capped)).toEqual(allOwned.sectors.find(sector => sector.id === 'sector-0')!.yields)
-    expect(() => validateOrders(capped, [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }])).toThrow(/supply capacity/)
+    expect(() => validateOrders({ ...capped, squads: [{ ...capped.squads[0], sector: 'sector-1' as const }] }, [{ squadId: 'squad-1', type: 'recover' }])).toThrow(/supplied/)
     const tierTwo = advanceResearch(advanceResearch(game, 'Logistics'), 'Logistics')
     expect(tierTwo.supplyCapacity).toBe(14)
     expect(connectedOwnedSectors({ ...allOwned, supplyCapacity: tierTwo.supplyCapacity })).toHaveLength(12)
@@ -72,8 +76,8 @@ describe('campaign simulation', () => {
     const tierOne = advanceResearch(game, 'Signals')
     const tierTwo = advanceResearch(tierOne, 'Signals')
     expect(tierOne.revealedEnemySquads).toHaveLength(game.enemySquads.length)
-    expect(tierOne.revealedEnemyRoutes).toEqual([])
-    expect(tierTwo.revealedEnemyRoutes.length).toBeGreaterThan(0)
+    expect(tierOne.scoutedEnemyRoutes).toEqual([])
+    expect(tierTwo.scoutedEnemyRoutes.length).toBeGreaterThan(0)
   })
 
   it('starts with the legacy shell API', () => { expect(initialCampaign()).toEqual({ day: 1, supplies: 3 }); expect(advanceDay(initialCampaign())).toEqual({ day: 2, supplies: 2 }) })
@@ -363,6 +367,29 @@ describe('campaign simulation', () => {
     expect(resolveEnemyTurn(terminal).events).toEqual([])
   })
 
+
+  it('makes Signals scouting progressively reveal concrete enemy information', () => {
+    const base = createNewCampaign(42)
+    expect(base.revealedEnemySquads).toEqual([])
+    expect(base.scoutedEnemyRoutes).toEqual([])
+    const tier1 = advanceResearch(base, 'Signals')
+    expect(tier1.revealedEnemySquads).toEqual(base.enemySquads.map(enemy => enemy.id))
+    expect(tier1.scoutedEnemyRoutes).toEqual([])
+    const tier2 = advanceResearch(tier1, 'Signals')
+    expect(tier2.revealedEnemySquads).toEqual(tier1.revealedEnemySquads)
+    expect(tier2.scoutedEnemyRoutes).toHaveLength(base.enemySquads.length)
+    expect(tier2.scoutedEnemyRoutes.every(route => route.includes('->'))).toBe(true)
+    expect(tier2.scoutedEnemyRoutes).not.toEqual(tier1.revealedEnemySquads)
+  })
+
+  it('keeps tier-0 scouting output obscured while action legality remains deterministic', () => {
+    const base = createNewCampaign(42)
+    const tier1 = advanceResearch(base, 'Signals')
+    expect(base.enemySquads.map(enemy => enemy.id)).not.toEqual([])
+    expect(base.revealedEnemySquads).toHaveLength(0)
+    expect(tier1.revealedEnemySquads).toHaveLength(base.enemySquads.length)
+    expect(resolveTurn(base, [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }]).nextState.squads[0].sector).toBe('sector-1')
+  })
 
   it('proves simultaneous terminal precedence from explicit conditions', () => {
     const base = createNewCampaign(42024)
