@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
+import { createNewCampaign } from '../game/simulation'
 
 describe('App interactions', () => {
   afterEach(() => {
@@ -46,7 +47,7 @@ describe('App interactions', () => {
     await act(async () => root.unmount())
   })
 
-  it('plays the seed 42024 route through rendered map controls to a battle report', async () => {
+  it('renders the latest typed battle report between orders and events, retains it, and resets it', async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
     const clickSector = async (name: string) => {
@@ -57,6 +58,8 @@ describe('App interactions', () => {
     }
 
     await act(async () => root.render(<App />))
+    const initialSidebar = [...document.querySelector('.side-panel')!.children].map(node => node.className)
+    expect(initialSidebar).toEqual(['card squad-panel', 'card orders', 'card event-rail'])
     expect(document.querySelector('.seed-readout')?.textContent).toBe('SEED 42024')
     expect(document.querySelector('.turn-readout')?.textContent).toContain('NEW CAMPAIGN')
 
@@ -71,9 +74,67 @@ describe('App interactions', () => {
     expect(report?.textContent).toContain('Ashenfall')
     expect(report?.textContent).toMatch(/ATTACKER/)
     expect(report?.textContent).toMatch(/DEFENDER/)
+    expect(report?.textContent).toMatch(/Terrain .* ×.* · fatigue −.* · variance/)
+    expect(report?.textContent).toContain('casualty entries')
+    expect(report?.textContent).toMatch(/retreat|Retreat/)
+    expect(report?.textContent).toMatch(/Captured|Not captured/)
+    expect(report?.parentElement?.className).toBe('side-panel')
+    expect(report?.nextElementSibling?.classList.contains('squad-panel')).toBe(true)
+    expect(report?.nextElementSibling?.nextElementSibling?.classList.contains('orders')).toBe(true)
+    expect(report?.nextElementSibling?.nextElementSibling?.nextElementSibling?.classList.contains('event-rail')).toBe(true)
+    expect([...report!.parentElement!.children].map(node => node.className)).toEqual(['reports card', 'card squad-panel', 'card orders', 'card event-rail'])
+
+    const latestReport = report?.textContent
+    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
+    expect(document.querySelector('.reports')?.textContent).toBe(latestReport)
+
+    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'NEW CAMPAIGN') as HTMLButtonElement).click())
+    expect(document.querySelector('.reports')).toBeNull()
+    expect(document.querySelector('.event-rail')?.textContent).toContain('Awaiting first orders...')
 
     await act(async () => root.unmount())
   })
+  it('preserves the original turn of player, enemy, and battle events across turns', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    const entries = () => [...document.querySelectorAll('.event-rail p')].map(entry => ({
+      turn: entry.querySelector('span')?.textContent,
+      message: entry.lastChild?.textContent,
+    }))
+    const executeTarget = async (name: string) => {
+      const target = document.querySelector(`[role="button"][aria-label*="${name}"]`) as SVGGElement
+      await act(async () => target.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
+    }
+
+    await act(async () => root.render(<App />))
+    await executeTarget('Whiteplain')
+    const firstTurn = entries()
+    expect(firstTurn).toHaveLength(2)
+    expect(firstTurn.every(entry => entry.turn === '01')).toBe(true)
+    expect(firstTurn.some(entry => entry.message?.startsWith('enemy-'))).toBe(true)
+    expect(firstTurn).toContainEqual({ turn: '01', message: 'squad-1 move sector-1' })
+
+    await executeTarget('Glassway')
+    expect(entries().slice(0, 2).every(entry => entry.turn === '02')).toBe(true)
+    expect(entries().slice(2)).toEqual(firstTurn)
+    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'ATTACK') as HTMLButtonElement).click())
+    await executeTarget('Ashenfall')
+    const battleTurn = entries()
+    expect(battleTurn[0].message).toMatch(/^sector-6 .* casualty entries$/)
+    expect(battleTurn.slice(0, 3).every(entry => entry.turn === '03')).toBe(true)
+    expect(battleTurn.slice(-2)).toEqual(firstTurn)
+
+    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
+    expect(entries().slice(0, 2).every(entry => entry.turn === '04')).toBe(true)
+    expect(entries().slice(2)).toEqual(battleTurn)
+    expect(document.querySelector('.turn-readout strong')?.textContent).toBe('05')
+
+    await act(async () => root.unmount())
+  })
+
   it('keeps commands bound to a displayed live squad selection', async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
@@ -84,4 +145,13 @@ describe('App interactions', () => {
     await act(async () => root.unmount())
   })
 
+  it("renders the no-survivors state for a zero-player-squad campaign", async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById("root")!)
+    const campaign = createNewCampaign(42024)
+    await act(async () => root.render(<App initialGame={{ ...campaign, squads: [] }} />))
+    expect(document.body.textContent).toContain("NO SURVIVORS")
+    expect(document.body.textContent).toContain("no active squads")
+    await act(async () => root.unmount())
+  })
 })
