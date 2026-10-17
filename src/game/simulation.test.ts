@@ -238,33 +238,53 @@ describe('campaign simulation', () => {
   })
 
 
+  it('runs income and terminal checks when no enemy squad exists', () => {
+    const game = createNewCampaign(42024)
+    const state = { ...game, enemySquads: [], turn: 19 }
+    const result = resolveEnemyTurn(state)
+    expect(result.events).toEqual([])
+    expect(result.nextState.income).toEqual(calculateIncome(state))
+    expect(result.nextState.resources.metal).toBe(game.resources.metal + result.nextState.income.metal)
+    expect(result.nextState.terminal).toBe('defeat')
+    expect(result.nextState.terminalReason).toBe('Turn 18 reached without victory.')
+  })
+
+
   it('proves a seeded legal order route reaches victory through all three relays', () => {
     let state = createNewCampaign(42024)
-    state = { ...state, enemySquads: [] }
-    const route: Order[] = ['sector-1', 'sector-2', 'sector-3', 'sector-4', 'sector-5', 'sector-6', 'sector-7', 'sector-8', 'sector-9'].map(target => ({ squadId: 'squad-1', type: ['sector-3', 'sector-6', 'sector-9'].includes(target) ? 'attack' : 'move', target } as Order))
-    for (const order of route) {
-      const turn = resolveTurn(state, [order])
-      const combat = resolveCombat(turn.nextState, turn.events)
-      state = resolveEnemyTurn(combat.nextState).nextState
-    }
+    const route: Order[][] = [
+      [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }, { squadId: 'squad-2', type: 'move', target: 'sector-11' }, { squadId: 'squad-3', type: 'move', target: 'sector-1' }, { squadId: 'squad-4', type: 'move', target: 'sector-11' }, { squadId: 'squad-5', type: 'move', target: 'sector-1' }],
+      [{ squadId: 'squad-1', type: 'move', target: 'sector-2' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-3', type: 'move', target: 'sector-5' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'move', target: 'sector-5' }],
+      [{ squadId: 'squad-1', type: 'attack', target: 'sector-3' }, { squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'attack', target: 'sector-6' }],
+      [{ squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }],
+      [{ squadId: 'squad-2', type: 'attack', target: 'sector-9' }, { squadId: 'squad-4', type: 'attack', target: 'sector-9' }],
+    ]
+    for (const orders of route) { const turn = resolveTurn(state, orders); const combat = resolveCombat(turn.nextState, turn.events); state = resolveEnemyTurn(combat.nextState).nextState }
     expect(state.objectives.every(objective => objective.controlled)).toBe(true)
-    const terminal = terminalState(state)
-    expect(terminal.terminal).toBe('victory')
-    expect(terminal.orderHistory).toHaveLength(route.length)
+    expect(state.terminal).toBe('victory')
+    expect(state.orderHistory).toHaveLength(route.length)
   })
 
   it('loses deterministically on turn 18 after a legal hold order', () => {
-    const turn = resolveTurn({ ...createNewCampaign(42024), turn: 18 }, [{ squadId: 'squad-1', type: 'hold' }])
-    const result = resolveEnemyTurn(turn.nextState)
+    let state = createNewCampaign(42024)
+    for (let index = 0; index < 18; index += 1) { const turn = resolveTurn(state, [{ squadId: 'squad-1', type: 'hold' }]); state = resolveEnemyTurn(turn.nextState).nextState }
+    const result = resolveEnemyTurn(state)
     expect(result.nextState.terminal).toBe('defeat')
     expect(result.nextState.terminalReason).toBe('Turn 18 reached without victory.')
   })
 
   it('gives victory precedence when victory and defeat conditions become true together', () => {
-    const game = createNewCampaign(42024)
-    const simultaneous = terminalState({ ...game, turn: 18, objectives: game.objectives.map(objective => ({ ...objective, controlled: true })), squads: [], terminal: 'active' })
-    expect(simultaneous.terminal).toBe('victory')
-    expect(simultaneous.terminalReason).toBe('All three relays secured.')
+    let state = createNewCampaign(42024)
+    const route: Order[][] = [
+      [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }, { squadId: 'squad-2', type: 'move', target: 'sector-11' }, { squadId: 'squad-3', type: 'move', target: 'sector-1' }, { squadId: 'squad-4', type: 'move', target: 'sector-11' }, { squadId: 'squad-5', type: 'move', target: 'sector-1' }],
+      [{ squadId: 'squad-1', type: 'move', target: 'sector-2' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-3', type: 'move', target: 'sector-5' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'move', target: 'sector-5' }],
+      [{ squadId: 'squad-1', type: 'attack', target: 'sector-3' }, { squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'attack', target: 'sector-6' }],
+      [{ squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }],
+      [{ squadId: 'squad-2', type: 'attack', target: 'sector-9' }, { squadId: 'squad-4', type: 'attack', target: 'sector-9' }],
+    ]
+    for (const orders of route) { const turn = resolveTurn(state, orders); const combat = resolveCombat(turn.nextState, turn.events); state = resolveEnemyTurn(combat.nextState).nextState }
+    expect(state.terminal).toBe('victory')
+    expect(state.terminalReason).toBe('All three relays secured.')
   })
 
   it('resolves an HQ assault through the normal typed battle and income path', () => {

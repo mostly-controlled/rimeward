@@ -186,20 +186,20 @@ export const resolveEnemyTurn = (state: GameState): { nextState: GameState; even
   // Keep the Ashenfall garrison in place so the seed-42024 route can reach its
   // intended contested engagement; the next deterministic garrison advances.
   const enemy = [...nextState.enemySquads].sort((a, b) => a.id.localeCompare(b.id)).find(item => item.sector !== nextState.hq.enemy)
-  if (!enemy) return { nextState, events }
-  const current = nextState.sectors.find(sector => sector.id === enemy.sector)
-  const destination = [...(current?.links ?? [])].sort().find(target => {
+  const current = enemy && nextState.sectors.find(sector => sector.id === enemy.sector)
+  const destination = enemy && [...(current?.links ?? [])].sort().find(target => {
     const sector = nextState.sectors.find(item => item.id === target)
-    return sector && target !== nextState.hq.enemy && sector.owner !== 'enemy' && !nextState.enemySquads.some(other => other.id !== enemy.id && other.sector === target) && !nextState.squads.some(squad => squad.sector === target)
+    const isUndefendedHq = target === nextState.hq.player && !nextState.squads.some(squad => squad.sector === target)
+    return sector && sector.owner !== 'enemy' && !nextState.enemySquads.some(other => other.id !== enemy.id && other.sector === target) && (isUndefendedHq || !nextState.squads.some(squad => squad.sector === target))
   })
-  if (destination) {
+  if (enemy && destination) {
     const from = enemy.sector
     enemy.sector = destination
     const sector = nextState.sectors.find(item => item.id === destination)!
     if (sector.owner === 'player') sector.owner = 'enemy'
     nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
     events.push({ type: 'move', squadId: enemy.id, from, to: destination, message: `${enemy.id} advances to ${destination}` })
-  } else {
+  } else if (enemy) {
     events.push({ type: 'hold', squadId: enemy.id, from: enemy.sector, to: enemy.sector, message: `${enemy.id} holds at ${enemy.sector}` })
   }
   nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
