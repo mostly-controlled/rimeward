@@ -200,6 +200,11 @@ describe('App interactions', () => {
       expect(eventText).toMatch(/sector-[0-9]+|Northstar|Cairnwatch|Whiteplain|Glassway|Ashenfall|Vesper|Dawnscar|Ironhollow|Lastlight|Bluevault|Frostgate|Rimefield|Hearthmere|Stonewatch/)
       expect(before).toContain(actor!)
       expect(before).toContain(action === "advances" ? "advances to" : action === "assaults" ? "assaults" : "holds position")
+      const routeSuffix = action === "advances" ? before.match(new RegExp(`${actor}[^\n]*advances to ([A-Za-z]+)`, "i"))?.[1] : action === "assaults" ? before.match(new RegExp(`${actor}[^\n]*assaults ([A-Za-z]+)`, "i"))?.[1] : undefined
+      if (action === "advances" || action === "assaults") {
+        expect(routeSuffix).toBeDefined()
+        expect(eventText).toContain(routeSuffix!)
+      }
     }
     expect(document.querySelector('.intel')?.textContent).toContain(nextExpectedName)
     await act(async () => root.unmount())
@@ -258,6 +263,17 @@ describe('App interactions', () => {
     const rendered = document.querySelector('.intel')?.textContent ?? ''
     expect(rendered).toContain('ROUTE INTENTS:')
     expect(rendered).toMatch(/advances to|assaults|holds position|waits/)
+    const tierTwo = advanceResearch(advanceResearch(earned, 'Signals'), 'Signals')
+    const forecast = decideEnemyIntent(tierTwo)
+    const turn = resolveTurn(tierTwo, tierTwo.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+    const combat = resolveCombat(turn.nextState, turn.events)
+    const actual = resolveEnemyTurn(combat.nextState).events[0]
+    expect(actual?.squadId).toBe(forecast?.squadId)
+    expect(actual?.type).toBe(forecast?.kind === 'wait' ? 'hold' : forecast?.kind)
+    const actualDestination = actual?.target ?? actual?.to
+    const actualName = tierTwo.sectors.find(sector => sector.id === actualDestination)?.name
+    expect(actualName).toBeTruthy()
+    expect(rendered).toContain(actualName!)
     await act(async () => root.unmount())
   })
 

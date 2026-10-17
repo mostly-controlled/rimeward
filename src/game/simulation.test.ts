@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { advanceDay, advanceResearch, calculateIncome, connectedOwnedSectors, createNewCampaign, initialCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, decideEnemyIntent, researchCost, researchIncomeThreshold, terminalState, validateOrders, type GameState, type Order } from './simulation'
 
 describe('campaign simulation', () => {
+  const distanceBetweenForTest = (state: GameState, start: string, destination: string): number => {
+    if (start === destination) return 0
+    const seen = new Set([start]); const queue: Array<[string, number]> = [[start, 0]]
+    while (queue.length) {
+      const [current, distance] = queue.shift()!
+      const sector = state.sectors.find(item => item.id === current)
+      for (const link of sector?.links ?? []) {
+        if (link === destination) return distance + 1
+        if (!seen.has(link)) { seen.add(link); queue.push([link, distance + 1]) }
+      }
+    }
+    return Number.MAX_SAFE_INTEGER
+  }
   const legalizeRecordedOrders = (state: GameState, orders: Order[]): Order[] => orders.map(order => {
     const squad = state.squads.find(item => item.id === order.squadId)
     if (!squad || !order.target) return order
@@ -856,14 +869,77 @@ describe('campaign simulation', () => {
     expect(result.events).toHaveLength(1)
     const firstEvent = result.events[0]
     expect(firstEvent.type).toMatch(/move|attack|hold/)
-    if (firstEvent.type === 'move') expect(firstEvent.to).not.toBe('sector-3')
+    if (firstEvent.type === 'move') {
+      expect(firstEvent.to).not.toBe('sector-3')
+      expect(distanceBetweenForTest(state, firstEvent.from, firstEvent.to)).toBeLessThanOrEqual(distanceBetweenForTest(state, firstEvent.from, 'sector-0'))
+    }
     const second = resolveEnemyTurn(result.nextState)
     expect(second.events).toHaveLength(1)
-    if (firstEvent.type === 'move' && second.events[0].type === 'move') expect(second.events[0].to).not.toBe(firstEvent.to)
+    if (firstEvent.type === 'move' && second.events[0].type === 'move') {
+      expect(second.events[0].to).not.toBe(firstEvent.to)
+      expect(distanceBetweenForTest(result.nextState, second.events[0].from, second.events[0].to)).toBeLessThanOrEqual(distanceBetweenForTest(result.nextState, second.events[0].from, 'sector-0'))
+    }
     if (result.nextState.strategicTarget) {
       expect(result.nextState.strategicTarget.squadId).toBeDefined()
       expect(result.nextState.strategicTarget.destination).not.toBe('sector-3')
     }
+  })
+
+  it('retargets a blocked HQ goal after repeated full phase cycles without oscillating', () => {
+    const base = createNewCampaign(42024)
+    let state: GameState = {
+      ...base,
+      enemySquads: [{ ...base.enemySquads[1], id: 'enemy-2', sector: 'sector-8' as const }],
+      sectors: base.sectors.map(sector => sector.id === 'sector-1' || sector.id === 'sector-11' ? { ...sector, owner: 'enemy' as const } : sector),
+      strategicTarget: { squadId: 'enemy-2', destination: 'sector-0' as const },
+    }
+    const destinations: string[] = []
+    for (let cycle = 0; cycle < 10; cycle += 1) {
+      const turn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+      const combat = resolveCombat(turn.nextState, turn.events)
+      const phase = resolveEnemyTurn(combat.nextState)
+      expect(phase.events).toHaveLength(1)
+      destinations.push(phase.events[0].to)
+      state = phase.nextState
+    }
+    expect(new Set(destinations).size).toBeGreaterThan(1)
+    expect(destinations.some((destination, index) => index >= 2 && destinations[index - 2] === 'sector-7' && destinations[index - 1] === 'sector-10' && destination === 'sector-7')).toBe(false)
+    expect(state.enemyHistory.filter(intent => intent.squadId === 'enemy-2').length).toBe(10)
+    expect(state.strategicTarget?.squadId ?? 'held').toBeOneOf(['enemy-2', 'held'])
+    if (state.strategicTarget) expect(state.strategicTarget.destination).not.toBe('sector-3')
+  })
+
+  it('resumes a newly reopened route after frozen history has exhausted pursuit', () => {
+    const base = createNewCampaign(42024)
+    let state: GameState = {
+      ...base,
+      enemySquads: [{ ...base.enemySquads[1], id: 'enemy-2', sector: 'sector-8' as const }],
+      sectors: base.sectors.map(sector => sector.id === 'sector-1' || sector.id === 'sector-11' ? { ...sector, owner: 'enemy' as const } : sector),
+      strategicTarget: { squadId: 'enemy-2', destination: 'sector-0' as const },
+    }
+    for (let cycle = 0; cycle < 12; cycle += 1) {
+      const turn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+      state = resolveEnemyTurn(resolveCombat(turn.nextState, turn.events).nextState).nextState
+    }
+    const frozenSector = state.enemySquads.find(enemy => enemy.id === 'enemy-2')?.sector
+    state = { ...state, sectors: state.sectors.map(sector => sector.id === 'sector-11' ? { ...sector, owner: 'neutral' as const } : sector) }
+    const resumed: ReturnType<typeof resolveEnemyTurn>['events'] = []
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const turn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+      const phase = resolveEnemyTurn(resolveCombat(turn.nextState, turn.events).nextState)
+      resumed.push(...phase.events)
+      state = phase.nextState
+    }
+    expect(frozenSector).toBeDefined()
+    expect(resumed.some(event => event.type === 'move' && event.from === frozenSector)).toBe(true)
+  })
+
+  it('keeps a valid detour moving toward Frostgate instead of retargeting early', () => {
+    const base = createNewCampaign(42024)
+    const state = { ...base, enemySquads: [{ ...base.enemySquads[0], sector: 'sector-8' as const }, { ...base.enemySquads[1], sector: 'sector-6' as const }, { ...base.enemySquads[2], sector: 'sector-6' as const }], strategicTarget: { squadId: 'enemy-1', destination: 'sector-0' as const } }
+    const result = resolveEnemyTurn(state)
+    expect(result.events[0]).toMatchObject({ type: 'move', from: 'sector-8', to: 'sector-9' })
+    expect(result.nextState.strategicTarget).toEqual({ squadId: 'enemy-1', destination: 'sector-0' })
   })
 
   it('prioritizes an immediate HQ assault over persistent pursuit', () => {
@@ -876,6 +952,29 @@ describe('campaign simulation', () => {
     expect(decideEnemyIntent(state)).toMatchObject({ squadId: 'enemy-2', kind: 'attack', target: 'sector-0' })
   })
 
+  it('lets a newly legal HQ attack preempt stale movement history', () => {
+    const base = createNewCampaign(42024)
+    const state: GameState = { ...base, enemySquads: [
+      { ...base.enemySquads[0], id: 'enemy-3', sector: 'sector-11' as const },
+    ], strategicTarget: { squadId: 'enemy-3', destination: 'sector-0' as const }, enemyHistory: [
+      { squadId: 'enemy-3', kind: 'move', from: 'sector-11', to: 'sector-10' },
+      { squadId: 'enemy-3', kind: 'move', from: 'sector-10', to: 'sector-11' },
+      { squadId: 'enemy-3', kind: 'move', from: 'sector-11', to: 'sector-10' },
+      { squadId: 'enemy-3', kind: 'move', from: 'sector-10', to: 'sector-11' },
+    ] }
+    expect(decideEnemyIntent(state)).toMatchObject({ squadId: 'enemy-3', kind: 'attack', target: 'sector-0' })
+  })
+
+  it('does not let stale ABAB movement history suppress an undefended HQ attack', () => {
+    const base = createNewCampaign(42024)
+    const state: GameState = { ...base, enemySquads: [{ ...base.enemySquads[2], id: 'enemy-3', sector: 'sector-11' as const }], strategicTarget: undefined, enemyHistory: [
+      { squadId: 'enemy-3', kind: 'move', from: 'sector-11', to: 'sector-10' },
+      { squadId: 'enemy-3', kind: 'move', from: 'sector-10', to: 'sector-11' },
+      { squadId: 'enemy-3', kind: 'move', from: 'sector-11', to: 'sector-10' },
+      { squadId: 'enemy-3', kind: 'move', from: 'sector-10', to: 'sector-11' },
+    ], squads: base.squads.map(squad => ({ ...squad, sector: 'sector-2' as const })) }
+    expect(decideEnemyIntent(state)).toMatchObject({ squadId: 'enemy-3', kind: 'move', to: 'sector-0' })
+  })
   it("requires owned HQ-connected income and competes with operational resources", () => {
     const game = createNewCampaign(42)
     const noIncome = { ...game, sectors: game.sectors.map(sector => sector.id === game.hq.player ? { ...sector, yields: { metal: 0, energy: 0, intelligence: 0 } } : { ...sector, owner: "neutral" as const }) }
