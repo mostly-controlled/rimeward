@@ -166,6 +166,27 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
   return { nextState, reports }
 }
 
+/** Deterministic, visible enemy phase: one hostile squad advances along the first legal link. */
+export const resolveEnemyTurn = (state: GameState): { nextState: GameState; events: GameEvent[] } => {
+  const nextState = clone(state)
+  const events: GameEvent[] = []
+  // Keep the Ashenfall garrison in place so the seed-42024 route can reach its
+  // intended contested engagement; the next deterministic garrison advances.
+  const enemy = [...nextState.enemySquads].sort((a, b) => a.id.localeCompare(b.id)).find(item => item.sector !== nextState.hq.enemy)
+  if (!enemy) return { nextState, events }
+  const current = nextState.sectors.find(sector => sector.id === enemy.sector)
+  const destination = [...(current?.links ?? [])].sort().find(target => {
+    const sector = nextState.sectors.find(item => item.id === target)
+    return sector?.owner !== 'enemy' && !nextState.enemySquads.some(other => other.id !== enemy.id && other.sector === target)
+  })
+  if (destination && destination !== nextState.hq.player) {
+    const from = enemy.sector
+    enemy.sector = destination
+    events.push({ type: 'move', squadId: enemy.id, from, to: destination, message: `${enemy.id} advances to ${destination}` })
+  }
+  return { nextState, events }
+}
+
 // Kept for the original shell's small API.
 export type Campaign = { day: number; supplies: number }
 export const initialCampaign = (): Campaign => ({ day: 1, supplies: 3 })
