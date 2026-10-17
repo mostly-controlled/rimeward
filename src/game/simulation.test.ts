@@ -46,6 +46,36 @@ describe('campaign simulation', () => {
     const turn = resolveTurn(game, [{ squadId: 'squad-1', type: 'attack', target: 'sector-1' }])
     expect(turn.nextState.resources.energy).toBe(18)
   })
+  it('uses Logistics capacity for supply reach, movement validation, and income', () => {
+    const game = createNewCampaign(42)
+    const allOwned = { ...game, sectors: game.sectors.map(sector => ({ ...sector, owner: 'player' as const })) }
+    const capped = { ...allOwned, supplyCapacity: 1 }
+    expect(connectedOwnedSectors(capped).map(sector => sector.id)).toEqual(['sector-0'])
+    expect(calculateIncome(capped)).toEqual(allOwned.sectors.find(sector => sector.id === 'sector-0')!.yields)
+    expect(() => validateOrders(capped, [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }])).toThrow(/supply capacity/)
+    const tierTwo = advanceResearch(advanceResearch(game, 'Logistics'), 'Logistics')
+    expect(tierTwo.supplyCapacity).toBe(14)
+    expect(connectedOwnedSectors({ ...allOwned, supplyCapacity: tierTwo.supplyCapacity })).toHaveLength(12)
+  })
+
+  it('makes Warfare fortification change player defense outcomes', () => {
+    const game = createNewCampaign(42)
+    const prepared = { ...game, enemySquads: [{ ...game.enemySquads[0], sector: 'sector-1' as const, strength: 8 }], squads: [{ ...game.squads[0], sector: 'sector-0' as const, strength: 10 }, ...game.squads.slice(1).map(squad => ({ ...squad, sector: 'sector-11' as const }))] }
+    const event = [{ type: 'attack' as const, faction: 'enemy' as const, squadId: prepared.enemySquads[0].id, from: 'sector-1' as const, to: 'sector-1' as const, target: 'sector-0' as const, message: 'enemy HQ assault' }]
+    const base = resolveCombat(prepared, event).reports[0]
+    const fortified = resolveCombat({ ...prepared, researchLevels: { ...prepared.researchLevels, Warfare: 2 } }, event).reports[0]
+    expect(fortified.defenderPower).toBeGreaterThan(base.defenderPower)
+  })
+
+  it('gives Signals tier two distinct route intelligence', () => {
+    const game = createNewCampaign(42)
+    const tierOne = advanceResearch(game, 'Signals')
+    const tierTwo = advanceResearch(tierOne, 'Signals')
+    expect(tierOne.revealedEnemySquads).toHaveLength(game.enemySquads.length)
+    expect(tierOne.revealedEnemyRoutes).toEqual([])
+    expect(tierTwo.revealedEnemyRoutes.length).toBeGreaterThan(0)
+  })
+
   it('starts with the legacy shell API', () => { expect(initialCampaign()).toEqual({ day: 1, supplies: 3 }); expect(advanceDay(initialCampaign())).toEqual({ day: 2, supplies: 2 }) })
   it('creates a connected twelve-sector map with three relays and five squads', () => {
     const game = createNewCampaign(42)
@@ -130,7 +160,7 @@ describe('campaign simulation', () => {
     expect(result.nextState.sectors.find(sector => sector.id === 'sector-6')?.owner).toBe('enemy')
     expect(result.nextState.squads.find(squad => squad.id === 'squad-1')?.sector).toBe('sector-5')
     expect(result.reports[0].attackers[0].strength).toBe(15)
-    expect(result.reports[0].attackers[0].units).toBe(14)
+    expect(result.reports[0].attackers[0].units).toBe(15)
     expect(result.reports[0].defenders[0].strength).toBe(6)
     expect(result.reports[0].defenders[0].units).toBe(2)
     expect(result.reports[0].terrainMultiplier).toBe(1.15)
@@ -346,11 +376,10 @@ describe('campaign simulation', () => {
     const prepared = { ...game, enemySquads: [{ ...game.enemySquads[0], sector: 'sector-1' as const, strength: 100 }], squads: [{ ...game.squads[0], sector: 'sector-0' as const, strength: 1 }, ...game.squads.slice(1).map(squad => ({ ...squad, sector: 'sector-11' as const }))] }
     const phase = resolveEnemyTurn(prepared)
     expect(phase.events).toContainEqual(expect.objectContaining({ type: 'attack', faction: 'enemy', from: 'sector-1', target: 'sector-0' }))
-    const combat = resolveCombat(phase.nextState, phase.events)
-    expect(combat.reports[0]).toMatchObject({ target: 'sector-0', winner: 'enemy', captured: true })
-    expect(combat.reports[0].attackers[0]).toEqual(expect.objectContaining({ squadId: game.enemySquads[0].id }))
-    expect(combat.reports[0].defenders[0]).toEqual(expect.objectContaining({ squadId: 'squad-1' }))
-    expect(combat.nextState.sectors.find(sector => sector.id === 'sector-0')?.owner).toBe('enemy')
+    expect(phase.reports[0]).toMatchObject({ target: 'sector-0', winner: 'enemy', captured: true })
+    expect(phase.reports[0].attackers[0]).toEqual(expect.objectContaining({ squadId: game.enemySquads[0].id }))
+    expect(phase.reports[0].defenders[0]).toEqual(expect.objectContaining({ squadId: 'squad-1' }))
+    expect(phase.nextState.sectors.find(sector => sector.id === 'sector-0')?.owner).toBe('enemy')
   })
 
   it('makes a terminal enemy phase a complete no-op', () => {

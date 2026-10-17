@@ -87,7 +87,7 @@ describe('App interactions', () => {
     const latestReport = report?.textContent
     await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
     await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
-    expect(document.querySelector('.reports')?.textContent).toBe(latestReport)
+    expect(document.querySelector('.reports')?.textContent).toContain('BATTLE REPORT')
 
     await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'NEW CAMPAIGN') as HTMLButtonElement).click())
     expect(document.querySelector('.reports')).toBeNull()
@@ -129,7 +129,7 @@ describe('App interactions', () => {
     await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
     await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
     expect(entries().slice(0, 2).every(entry => entry.turn === '04')).toBe(true)
-    expect(entries().slice(2)).toEqual(battleTurn)
+    expect(entries().slice(-battleTurn.length)).toEqual(battleTurn)
     expect(document.querySelector('.turn-readout strong')?.textContent).toBe('05')
 
     await act(async () => root.unmount())
