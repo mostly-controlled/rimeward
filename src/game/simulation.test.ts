@@ -71,6 +71,28 @@ describe('campaign simulation', () => {
     expect(fortified.defenderPower).toBeGreaterThan(base.defenderPower)
   })
 
+  it('keeps Warfare counter power directional at enemy HQ and isolated from hostile attackers', () => {
+    const game = createNewCampaign(42024)
+    const enemyHq = game.hq.enemy
+    const playerPrepared = { ...game, squads: [{ ...game.squads[0], class: 'Raider' as const, sector: enemyHq, strength: 10 }], enemySquads: [{ ...game.enemySquads[0], class: 'Recon' as const, sector: enemyHq, strength: 10 }] }
+    const playerAttack = [{ type: 'attack' as const, faction: 'player' as const, squadId: 'squad-1', from: enemyHq, to: enemyHq, target: enemyHq, message: 'player HQ assault' }]
+    const playerBase = resolveCombat(playerPrepared, playerAttack).reports[0]
+    const playerWarfare = resolveCombat({ ...playerPrepared, researchLevels: { ...playerPrepared.researchLevels, Warfare: 2 } }, playerAttack).reports[0]
+    expect(playerBase.attackerPower).toBeCloseTo(12.8, 10)
+    expect(playerWarfare.attackerPower).toBeCloseTo(13.95, 10)
+    expect(playerWarfare.attackerPower - playerBase.attackerPower).toBeCloseTo(1.15, 10)
+    expect(playerWarfare.classAdvantages).toContain('Raider counters Recon')
+
+    const playerHq = game.hq.player
+    const enemyPrepared = { ...game, enemySquads: [{ ...game.enemySquads[0], class: 'Sentinel' as const, sector: playerHq, strength: 10 }], squads: [{ ...game.squads[0], class: 'Raider' as const, sector: playerHq, strength: 10 }] }
+    const enemyAttack = [{ type: 'attack' as const, faction: 'enemy' as const, squadId: enemyPrepared.enemySquads[0].id, from: playerHq, to: playerHq, target: playerHq, message: 'enemy HQ assault' }]
+    const enemyBase = resolveCombat(enemyPrepared, enemyAttack).reports[0]
+    const enemyWarfare = resolveCombat({ ...enemyPrepared, researchLevels: { ...enemyPrepared.researchLevels, Warfare: 2 } }, enemyAttack).reports[0]
+    expect(enemyBase.attackerPower).toBeCloseTo(enemyWarfare.attackerPower, 10)
+    expect(enemyWarfare.attackerPower).toBeCloseTo(12.8, 10)
+    expect(enemyWarfare.winner).toBe('enemy')
+  })
+
   it('gives Signals tier two distinct route intelligence', () => {
     const game = createNewCampaign(42)
     const tierOne = advanceResearch(game, 'Signals')
@@ -438,5 +460,14 @@ describe('campaign simulation', () => {
     const undefended = { ...defended, squads: defended.squads.map(squad => ({ ...squad, sector: 'sector-11' as const })) }
     expect(decideEnemyIntent(undefended)?.kind).toBe('move')
     expect(decideEnemyIntent(undefended)?.to).toBe('sector-0')
+  })
+  it("requires owned HQ-connected income and competes with operational resources", () => {
+    const game = createNewCampaign(42)
+    const noIncome = { ...game, sectors: game.sectors.map(sector => sector.id === game.hq.player ? { ...sector, yields: { metal: 0, energy: 0, intelligence: 0 } } : { ...sector, owner: "neutral" as const }) }
+    expect(() => advanceResearch(noIncome, "Logistics")).toThrow(/HQ-connected income/)
+    expect(() => advanceResearch({ ...game, resources: { ...game.resources, metal: 1 } }, "Logistics")).toThrow(/Not enough resources/)
+    const researched = advanceResearch(game, "Logistics")
+    expect(researched.resources.metal).toBe(game.resources.metal - researchCost("Logistics", 0).metal)
+    expect(researched.supplyCapacity).toBeGreaterThan(game.supplyCapacity)
   })
 })
