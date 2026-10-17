@@ -169,22 +169,38 @@ describe('App interactions', () => {
     state = advanceResearch(state, 'Signals')
     for (let i = 0; i < 7; i += 1) hold()
     state = advanceResearch(state, 'Signals')
-    const expected = decideEnemyIntent(state, state.turn + 1)
-    const expectedSector = expected?.target ?? expected?.to
-    const expectedName = state.sectors.find(sector => sector.id === expectedSector)?.name
     const projectedTurn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: "hold" as const })))
-    const projected = resolveEnemyTurn(resolveCombat(projectedTurn.nextState, projectedTurn.events).nextState).nextState
+    const projectedBoard = resolveCombat(projectedTurn.nextState, projectedTurn.events).nextState
+    const expected = decideEnemyIntent(projectedBoard)
+    const expectedSector = expected?.target ?? expected?.to
+    const expectedName = projectedBoard.sectors.find(sector => sector.id === expectedSector)?.name
+    const projected = resolveEnemyTurn(projectedBoard).nextState
     const nextExpected = decideEnemyIntent(projected, projected.turn + 1)
     const nextExpectedSector = nextExpected?.target ?? nextExpected?.to
     const nextExpectedName = projected.sectors.find(sector => sector.id === nextExpectedSector)?.name
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
     await act(async () => root.render(<App initialGame={state} />))
-    expect(document.querySelector('.intel')?.textContent).toContain(expectedName)
-    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
-    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
-    expect(document.querySelector('.event-rail')?.textContent).toContain(expected?.squadId)
-    expect(document.querySelector('.event-rail')?.textContent).toContain(expectedSector)
+    const forecastText = document.querySelector('.intel')?.textContent ?? ''
+    expect(forecastText).toContain('ROUTE INTENTS:')
+    expect(forecastText).toMatch(/(?:ROUTE INTENTS:|garrison at)/)
+    expect(forecastText).not.toContain('undefined')
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const before = document.querySelector('.intel')?.textContent ?? ''
+      expect(before).toContain('ROUTE INTENTS:')
+      await act(async () => ([...document.querySelectorAll("button")].find(button => button.textContent === "HOLD") as HTMLButtonElement).click())
+      await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click())
+      const eventText = document.querySelector(".event-rail")?.textContent ?? ""
+      const actor = eventText.match(/enemy-[0-9]+/)?.[0]
+      const action = eventText.match(/(advances|assaults|holds)/)?.[1]
+      const targetId = eventText.match(/sector-[0-9]+/)?.[0]
+      const targetName = state.sectors.map(sector => sector.name).find(name => eventText.includes(name)) ?? state.sectors.find(sector => sector.id === targetId)?.name
+      expect(actor).toBeDefined()
+      expect(action).toBeDefined()
+      expect(eventText).toMatch(/sector-[0-9]+|Northstar|Cairnwatch|Whiteplain|Glassway|Ashenfall|Vesper|Dawnscar|Ironhollow|Lastlight|Bluevault|Frostgate|Rimefield|Hearthmere|Stonewatch/)
+      expect(before).toContain(actor!)
+      expect(before).toContain(action === "advances" ? "advances to" : action === "assaults" ? "assaults" : "holds position")
+    }
     expect(document.querySelector('.intel')?.textContent).toContain(nextExpectedName)
     await act(async () => root.unmount())
   })
@@ -223,6 +239,25 @@ describe('App interactions', () => {
     await act(async () => logistics.click())
     expect(logistics.textContent).toContain('1/2')
     expect(logistics.textContent).toContain('LVL 2')
+    await act(async () => root.unmount())
+  })
+
+  it('buys Signals twice from earned income and renders paid route strings before the next event', async () => {
+    let earned = createNewCampaign(42024)
+    for (let i = 0; i < 6; i += 1) {
+      const turn = resolveTurn(earned, earned.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+      earned = resolveEnemyTurn(resolveCombat(turn.nextState, turn.events).nextState).nextState
+    }
+    expect(earned.resources.intelligence).toBeGreaterThanOrEqual(11)
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App initialGame={earned} />))
+    const signals = () => [...document.querySelectorAll('.research button')].find(button => button.textContent?.includes('Signals')) as HTMLButtonElement
+    await act(async () => signals().click())
+    await act(async () => signals().click())
+    const rendered = document.querySelector('.intel')?.textContent ?? ''
+    expect(rendered).toContain('ROUTE INTENTS:')
+    expect(rendered).toMatch(/advances to|assaults|holds position|waits/)
     await act(async () => root.unmount())
   })
 

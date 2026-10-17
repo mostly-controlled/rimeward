@@ -13,12 +13,13 @@ export type Objective = { id: string; sector: SectorId; controlled: boolean }
 export type GameState = {
   seed: number; turn: number; sectors: Sector[]; objectives: Objective[]; hq: { player: SectorId; enemy: SectorId }
   squads: Squad[]; enemySquads: EnemySquad[]; resources: Resources; research: number
-  researchLevels: Record<ResearchBranch, number>; recentBattles: string[]; orderHistory: Order[][]; enemyHistory: EnemyIntent[]
+  researchLevels: Record<ResearchBranch, number>; recentBattles: string[]; orderHistory: Order[][]; enemyHistory: EnemyIntent[]; strategicIntent?: EnemyIntent; strategicTarget?: StrategicTarget
   terminal: TerminalStatus; terminalReason?: string; income: Resources; revealedEnemySquads: string[]; scoutedEnemyRoutes: string[]; supplyCapacity: number
 }
 export type Order = { squadId: string; type: OrderType; target?: SectorId }
 export type GameEvent = { type: 'hold' | 'recover' | 'move' | 'attack'; squadId: string; from: SectorId; to: SectorId; target?: SectorId; message: string; faction?: 'player' | 'enemy' }
 export type EnemyIntent = { squadId: string; kind: 'wait' | 'hold' | 'move' | 'attack'; from: SectorId; to?: SectorId; target?: SectorId }
+export type StrategicTarget = { squadId: string; destination: SectorId }
 export type BattleReport = {
   target: SectorId; terrain: Terrain; attackers: { squadId: string; class: UnitClass; strength: number; units: number }[]
   defenders: { squadId: string; class: UnitClass; strength: number; units: number }[]
@@ -46,7 +47,7 @@ export const createNewCampaign = (seed: number): GameState => {
   const objectiveIndexes = [3, 6, 9]
   const squads = classes.concat('Sentinel').map((unitClass, i): Squad => ({ id: `squad-${i + 1}`, class: unitClass, strength: 10, fatigue: 0, home: id(0), sector: id(0), experience: 0, upgrades: [] }))
   const enemySquads = [0, 1, 2].map((i): EnemySquad => ({ id: `enemy-${i + 1}`, class: classes[Math.floor(random() * classes.length)], strength: 6 + Math.floor(random() * 5), sector: id([6, 8, 10][i]) }))
-  const initial = { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, researchLevels: { Logistics: 0, Warfare: 0, Signals: 0 }, recentBattles: [], orderHistory: [], enemyHistory: [], terminal: 'active' as const, income: { metal: 0, energy: 0, intelligence: 0 }, revealedEnemySquads: [], scoutedEnemyRoutes: [], supplyCapacity: 10 }
+  const initial = { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, researchLevels: { Logistics: 0, Warfare: 0, Signals: 0 }, recentBattles: [], orderHistory: [], enemyHistory: [], strategicIntent: undefined, strategicTarget: undefined, terminal: 'active' as const, income: { metal: 0, energy: 0, intelligence: 0 }, revealedEnemySquads: [], scoutedEnemyRoutes: [], supplyCapacity: 10 }
   initial.income = calculateIncome(initial)
   return initial
 }
@@ -113,13 +114,6 @@ const choosePressureTarget = (state: GameState, targets: SectorId[], phaseTurn =
 const intentForEnemy = (state: GameState, enemy: EnemySquad, phaseTurn = state.turn): EnemyIntent | undefined => {
   const current = state.sectors.find(sector => sector.id === enemy.sector)
   if (enemy.sector === state.hq.enemy) return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
-  const onRelay = state.objectives.some(objective => objective.sector === enemy.sector)
-  const lastOrders = state.orderHistory.at(-1) ?? []
-  const hasOperationalOrders = state.orderHistory.some(orders => orders.some(order => order.type !== 'hold'))
-  const squadsAtHq = state.squads.every(squad => squad.sector === state.hq.player)
-  const lowPressureTurn = squadsAtHq && !hasOperationalOrders && state.orderHistory.length >= 2 && lastOrders.length > 0 && lastOrders.every(order => order.type === 'hold')
-  const holdRun = squadsAtHq && lastOrders.length > 0 && lastOrders.every(order => order.type === 'hold')
-  if (onRelay && holdRun && !lowPressureTurn && state.sectors.find(sector => sector.id === enemy.sector)?.owner !== 'player') return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
   const hqAssault = enemy.sector !== state.hq.player && current?.links.includes(state.hq.player) && state.squads.some(squad => squad.sector === state.hq.player)
   if (hqAssault) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: state.hq.player }
   const occupiedPlayerTargets = [...(current?.links ?? [])].filter(target => {
@@ -135,8 +129,39 @@ const intentForEnemy = (state: GameState, enemy: EnemySquad, phaseTurn = state.t
     const isUndefendedHq = target === state.hq.player && !state.squads.some(squad => squad.sector === target)
     return sector && sector.owner !== "enemy" && !state.enemySquads.some(other => other.id !== enemy.id && other.sector === target) && (isUndefendedHq || !state.squads.some(squad => squad.sector === target))
   })
-  const destination = choosePressureTarget(state, destinations, phaseTurn, true, lowPressureTurn)
+  const destination = choosePressureTarget(state, destinations, phaseTurn, true, false)
   return destination ? { squadId: enemy.id, kind: "move", from: enemy.sector, to: destination } : undefined
+}
+const distanceBetween = (state: GameState, start: SectorId, destination: SectorId): number => {
+  if (start === destination) return 0
+  const seen = new Set<SectorId>([start]); const queue: Array<[SectorId, number]> = [[start, 0]]
+  while (queue.length) { const [current, distance] = queue.shift()!; const sector = state.sectors.find(item => item.id === current); for (const link of sector?.links ?? []) { if (link === destination) return distance + 1; if (!seen.has(link)) { seen.add(link); queue.push([link, distance + 1]) } } }
+  return Number.MAX_SAFE_INTEGER
+}
+const intentToward = (state: GameState, target: StrategicTarget, phaseTurn: number): EnemyIntent | undefined => {
+  const enemy = state.enemySquads.find(item => item.id === target.squadId); if (!enemy) return undefined
+  const destinationSector = state.sectors.find(item => item.id === target.destination);
+  if (!destinationSector || (target.destination !== state.hq.player && destinationSector.owner === 'enemy')) return undefined
+  const current = state.sectors.find(item => item.id === enemy.sector); if (!current || enemy.sector === target.destination) return undefined
+  if (current.links.includes(target.destination)) {
+    const occupied = state.squads.some(squad => squad.sector === target.destination)
+    const relay = state.objectives.some(objective => objective.sector === target.destination)
+    if (occupied && (destinationSector.owner === 'player' || relay)) return { squadId: enemy.id, kind: 'attack', from: enemy.sector, to: enemy.sector, target: target.destination }
+  }
+  const blockedForward = current.links.filter(next => { const sector = state.sectors.find(item => item.id === next); return sector && distanceBetween(state, next, target.destination) < distanceBetween(state, current.id, target.destination) && state.squads.some(squad => squad.sector === next) })[0]
+  if (blockedForward) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: blockedForward }
+  const steps = current.links.filter(next => { const sector = state.sectors.find(item => item.id === next); return sector && sector.owner !== 'enemy' && !state.enemySquads.some(other => other.id !== enemy.id && other.sector === next) && !state.squads.some(squad => squad.sector === next) })
+  const step = steps.sort((a, b) => distanceBetween(state, a, target.destination) - distanceBetween(state, b, target.destination) || pressureHash(state, `${target.squadId}:${a}`, phaseTurn) - pressureHash(state, `${target.squadId}:${b}`, phaseTurn) || a.localeCompare(b))[0]
+  return step ? { squadId: enemy.id, kind: 'move', from: enemy.sector, to: step } : undefined
+}
+const destinationForIntent = (state: GameState, intent: EnemyIntent): SectorId | undefined => {
+  if (state.strategicTarget?.squadId === intent.squadId) return state.strategicTarget.destination
+  if (intent.kind === 'attack') return intent.target
+  if (intent.kind !== 'move') return undefined
+  // Strategic identity is the objective, not the one-hop step. HQ is primary;
+  // if it is no longer relevant, retain a live uncaptured relay objective.
+  if (state.sectors.find(sector => sector.id === state.hq.player)?.owner !== 'enemy') return state.hq.player
+  return state.objectives.find(objective => !objective.controlled)?.sector
 }
 export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn): EnemyIntent | undefined => {
   if (state.terminal !== "active") return undefined
@@ -145,20 +170,12 @@ export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn): Ene
   if (!intents.length) return undefined
   const hq = intents.filter(intent => intent.kind === 'attack' && intent.target === state.hq.player)
   const relay = intents.filter(intent => intent.kind === 'attack' && state.objectives.some(objective => objective.sector === intent.target))
-  const tier = hq.length ? hq : relay.length ? relay : intents.filter(intent => intent.kind !== 'hold')
+  const tactical = hq.length ? hq : relay
+  if (tactical.length) return tactical.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.target}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.target}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
+  if (state.strategicTarget) { const pursuing = intentToward(state, state.strategicTarget, phaseTurn); if (pursuing) return pursuing }
+  const tier = intents.filter(intent => intent.kind !== 'hold')
   const candidates = tier.length ? tier : intents
-  const lastOrders = state.orderHistory.at(-1) ?? []
-  const hasOperationalOrders = state.orderHistory.some(orders => orders.some(order => order.type !== 'hold'))
-  const squadsAtHq = state.squads.every(squad => squad.sector === state.hq.player)
-  const lowPressureTurn = squadsAtHq && !hasOperationalOrders && state.orderHistory.length >= 2 && lastOrders.length > 0 && lastOrders.every(order => order.type === 'hold')
-  const recentEnemyMoves = lowPressureTurn ? state.enemyHistory.slice(-3).filter(intent => intent.kind === 'move') : []
-  const protectedPlayerTargets = new Set(state.orderHistory.slice(-2).flatMap(orders => orders.flatMap(order => order.target ? [order.target] : [])))
-  const nonOscillating = candidates.filter(intent => {
-    if (intent.kind !== 'move' || !intent.to) return !intent.to || !protectedPlayerTargets.has(intent.to)
-    return !protectedPlayerTargets.has(intent.to) && !recentEnemyMoves.some(previous => previous.squadId === intent.squadId && previous.from === intent.to)
-  })
-  const pool = nonOscillating.length ? nonOscillating : candidates
-  return pool.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.to ?? a.target ?? a.from}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.to ?? b.target ?? b.from}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
+  return candidates.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.to ?? a.target ?? a.from}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.to ?? b.target ?? b.from}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
 }
 const scoutRoutes = (state: GameState, phaseTurn = state.turn): string[] => {
   const selected = decideEnemyIntent(state, phaseTurn)
@@ -292,6 +309,14 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
   if (reports.length) nextState.recentBattles = reports.map(report => `${report.target}:${report.winner}`)
   if (nextState.researchLevels.Signals > 0) nextState.revealedEnemySquads = nextState.enemySquads.map(enemy => enemy.id)
   if (nextState.researchLevels.Signals > 1) nextState.scoutedEnemyRoutes = scoutRoutes(nextState)
+  if (reports.length > 0 && nextState.strategicTarget) {
+    const target = nextState.strategicTarget
+    const targetEnemy = nextState.enemySquads.find(enemy => enemy.id === target.squadId)
+    const targetWasAttacked = attacks.some(event => event.squadId === target.squadId)
+    const objectiveWasFoughtOver = reports.some(report => report.target === target.destination)
+    const destination = nextState.sectors.find(sector => sector.id === target.destination)
+    if (!targetEnemy || targetWasAttacked || objectiveWasFoughtOver || !destination || (destination.id !== nextState.hq.player && destination.owner === 'enemy')) nextState.strategicTarget = undefined
+  }
   return { nextState, reports }
 }
 
@@ -300,9 +325,10 @@ export const resolveEnemyTurn = (state: GameState): { nextState: GameState; even
   const nextState = clone(state)
   const events: GameEvent[] = []
   const phaseActive = nextState.terminal === 'active'
+  if (nextState.strategicTarget) { const targetEnemy = nextState.enemySquads.find(enemy => enemy.id === nextState.strategicTarget?.squadId); const destination = nextState.sectors.find(sector => sector.id === nextState.strategicTarget?.destination); if (!targetEnemy || !destination || (destination.id !== nextState.hq.player && destination.owner === "enemy")) nextState.strategicTarget = undefined }
   const intent = phaseActive ? decideEnemyIntent(nextState) : undefined
   const enemy = intent && nextState.enemySquads.find(item => item.id === intent.squadId)
-  if (intent) nextState.enemyHistory = [...nextState.enemyHistory, clone(intent)]
+  if (intent) { nextState.enemyHistory = [...nextState.enemyHistory, clone(intent)]; nextState.strategicIntent = clone(intent); const destination = destinationForIntent(nextState, intent); nextState.strategicTarget = destination ? { squadId: intent.squadId, destination } : undefined }
   if (intent?.kind === 'move' && enemy && intent.to) {
     const from = enemy.sector
     enemy.sector = intent.to
