@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { advanceDay, createNewCampaign, initialCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, validateOrders, type Order } from './simulation'
+import { advanceDay, createNewCampaign, initialCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, terminalState, validateOrders, type Order } from './simulation'
 
 describe('campaign simulation', () => {
+
+  it('ends in defeat when no Ward squads remain', () => {
+    const game = createNewCampaign(9)
+    const defeated = terminalState({ ...game, squads: [], terminal: 'active' })
+    expect(defeated.terminal).toBe('defeat')
+    expect(defeated.terminalReason).toContain('No Ward squads')
+    expect(() => resolveTurn(defeated, [])).toThrow(/over|orders/i)
+  })
+
+  it('charges each atomic order exactly once and rejects unaffordable batches', () => {
+    const game = createNewCampaign(10)
+    const before = JSON.parse(JSON.stringify(game))
+    expect(() => resolveTurn({ ...game, resources: { metal: 0, energy: 1, intelligence: 5 } }, [
+      { squadId: 'squad-1', type: 'attack', target: 'sector-1' },
+      { squadId: 'squad-2', type: 'attack', target: 'sector-1' },
+    ])).toThrow(/energy/)
+    expect(game).toEqual(before)
+    const turn = resolveTurn(game, [{ squadId: 'squad-1', type: 'attack', target: 'sector-1' }])
+    expect(turn.nextState.resources.energy).toBe(18)
+  })
   it('starts with the legacy shell API', () => { expect(initialCampaign()).toEqual({ day: 1, supplies: 3 }); expect(advanceDay(initialCampaign())).toEqual({ day: 2, supplies: 2 }) })
   it('creates a connected twelve-sector map with three relays and five squads', () => {
     const game = createNewCampaign(42)
