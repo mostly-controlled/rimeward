@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceDay, advanceResearch, calculateIncome, connectedOwnedSectors, createNewCampaign, initialCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, researchCost, terminalState, validateOrders, type Order } from './simulation'
+import { advanceDay, advanceResearch, calculateIncome, connectedOwnedSectors, createNewCampaign, initialCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, decideEnemyIntent, researchCost, terminalState, validateOrders, type Order } from './simulation'
 
 describe('campaign simulation', () => {
 
@@ -378,7 +378,8 @@ describe('campaign simulation', () => {
     const tier2 = advanceResearch(tier1, 'Signals')
     expect(tier2.revealedEnemySquads).toEqual(tier1.revealedEnemySquads)
     expect(tier2.scoutedEnemyRoutes).toHaveLength(base.enemySquads.length)
-    expect(tier2.scoutedEnemyRoutes.every(route => route.includes('->'))).toBe(true)
+    expect(tier2.scoutedEnemyRoutes.every(route => route.includes(' garrison ') && (route.includes('advances to ') || route.includes('assaults ') || route.includes('holds position') || route.includes('waits')))).toBe(true)
+    expect(tier2.scoutedEnemyRoutes.every(route => !route.includes('sector-'))).toBe(true)
     expect(tier2.scoutedEnemyRoutes).not.toEqual(tier1.revealedEnemySquads)
   })
 
@@ -417,4 +418,25 @@ describe('campaign simulation', () => {
     expect(phase.nextState).toEqual(terminal)
   })
 
+  it('shares the seed-42024 scout forecast with the actual enemy event', () => {
+    const game = createNewCampaign(42024)
+    const signals = advanceResearch(advanceResearch(game, 'Signals'), 'Signals')
+    const intent = decideEnemyIntent(signals)
+    const phase = resolveEnemyTurn(signals)
+    expect(intent?.squadId).toBe(phase.events[0]?.squadId)
+    expect(intent?.kind).toBe(phase.events[0]?.type)
+    expect(intent?.to ?? intent?.target ?? intent?.from).toBe(phase.events[0]?.to ?? phase.events[0]?.target ?? phase.events[0]?.from)
+  })
+
+  it('reports blocked, defended, and undefended HQ intent from current occupancy', () => {
+    const game = createNewCampaign(42024)
+    const enemy = game.enemySquads[0]
+    const blocked = { ...game, enemySquads: [{ ...enemy, sector: 'sector-2' as const }, { ...game.enemySquads[1], sector: 'sector-1' as const }, { ...game.enemySquads[2], sector: 'sector-3' as const }] }
+    expect(decideEnemyIntent(blocked)?.kind).toBe('hold')
+    const defended = { ...game, enemySquads: [{ ...enemy, sector: 'sector-1' as const }], squads: [{ ...game.squads[0], sector: 'sector-0' as const }, ...game.squads.slice(1).map(squad => ({ ...squad, sector: 'sector-11' as const }))] }
+    expect(decideEnemyIntent(defended)?.kind).toBe('attack')
+    const undefended = { ...defended, squads: defended.squads.map(squad => ({ ...squad, sector: 'sector-11' as const })) }
+    expect(decideEnemyIntent(undefended)?.kind).toBe('move')
+    expect(decideEnemyIntent(undefended)?.to).toBe('sector-0')
+  })
 })

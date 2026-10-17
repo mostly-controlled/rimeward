@@ -212,8 +212,9 @@ describe('App interactions', () => {
     await act(async () => root.unmount())
     const tier2Root = createRoot(document.getElementById('root')!)
     await act(async () => tier2Root.render(<App initialGame={tier2} />))
-    expect(document.querySelector('.intel')?.textContent).toContain('POTENTIAL ROUTES')
-    expect(document.querySelector('.research-effects')?.textContent).toContain('potential routes')
+    expect(document.querySelector('.intel')?.textContent).toContain('ROUTE INTENTS:')
+    expect(document.querySelector('.intel')?.textContent).toContain('advances to')
+    expect(document.querySelector('.research-effects')?.textContent).toContain('legal route intents')
     await act(async () => tier2Root.unmount())
   })
 
