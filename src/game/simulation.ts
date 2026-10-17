@@ -1,17 +1,20 @@
 export type UnitClass = 'Sentinel' | 'Raider' | 'Recon' | 'Artillery'
 export type Terrain = 'ice' | 'ridge' | 'tundra' | 'crater'
 export type OrderType = 'hold' | 'recover' | 'move' | 'attack'
+export type ResearchBranch = 'Logistics' | 'Warfare' | 'Signals'
+export type TerminalStatus = 'active' | 'victory' | 'defeat'
 
 export type SectorId = `sector-${number}`
 export type Resources = { metal: number; energy: number; intelligence: number }
-export type Sector = { id: SectorId; name: string; terrain: Terrain; links: SectorId[]; owner: 'player' | 'enemy' | 'neutral' }
+export type Sector = { id: SectorId; name: string; terrain: Terrain; links: SectorId[]; owner: 'player' | 'enemy' | 'neutral'; yields: Resources }
 export type Squad = { id: string; class: UnitClass; strength: number; fatigue: number; home: SectorId; sector: SectorId; experience: number; upgrades: string[] }
 export type EnemySquad = { id: string; strength: number; sector: SectorId; class: UnitClass }
 export type Objective = { id: string; sector: SectorId; controlled: boolean }
 export type GameState = {
   seed: number; turn: number; sectors: Sector[]; objectives: Objective[]; hq: { player: SectorId; enemy: SectorId }
   squads: Squad[]; enemySquads: EnemySquad[]; resources: Resources; research: number
-  recentBattles: string[]; orderHistory: Order[][]
+  researchLevels: Record<ResearchBranch, number>; recentBattles: string[]; orderHistory: Order[][]
+  terminal: TerminalStatus; terminalReason?: string; income: Resources
 }
 export type Order = { squadId: string; type: OrderType; target?: SectorId }
 export type GameEvent = { type: 'hold' | 'recover' | 'move' | 'attack'; squadId: string; from: SectorId; to: SectorId; target?: SectorId; message: string }
@@ -36,13 +39,13 @@ const rng = (seed: number) => {
 
 export const createNewCampaign = (seed: number): GameState => {
   const random = rng(seed)
-  const sectors = names.map((name, i): Sector => ({ id: id(i), name, terrain: terrains[i % terrains.length], links: [id((i + 1) % 12), id((i + 11) % 12)], owner: i === 0 ? 'player' : i === 6 ? 'enemy' : 'neutral' }))
+  const sectors = names.map((name, i): Sector => ({ id: id(i), name, terrain: terrains[i % terrains.length], links: [id((i + 1) % 12), id((i + 11) % 12)], owner: i === 0 ? 'player' : i === 6 ? 'enemy' : 'neutral', yields: { metal: 1 + (i % 3), energy: i % 2, intelligence: i % 4 === 0 ? 1 : 0 } }))
   // Add fixed cross-links so the map is hex-like while remaining fully deterministic.
   for (const [a, b] of [[1, 5], [3, 8], [7, 10]] as const) { sectors[a].links.push(id(b)); sectors[b].links.push(id(a)) }
   const objectiveIndexes = [3, 6, 9]
   const squads = classes.concat('Sentinel').map((unitClass, i): Squad => ({ id: `squad-${i + 1}`, class: unitClass, strength: 10, fatigue: 0, home: id(0), sector: id(0), experience: 0, upgrades: [] }))
   const enemySquads = [0, 1, 2].map((i): EnemySquad => ({ id: `enemy-${i + 1}`, class: classes[Math.floor(random() * classes.length)], strength: 6 + Math.floor(random() * 5), sector: id([6, 8, 10][i]) }))
-  return { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, recentBattles: [], orderHistory: [] }
+  return { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, researchLevels: { Logistics: 0, Warfare: 0, Signals: 0 }, recentBattles: [], orderHistory: [], terminal: 'active', income: { metal: 0, energy: 0, intelligence: 0 } }
 }
 
 const error = (message: string): never => { throw new Error(message) }
@@ -56,7 +59,13 @@ const supplied = (state: GameState, sectorId: SectorId): boolean => {
   visit(state.hq.player)
   return reached.has(sectorId)
 }
+export const connectedOwnedSectors = (state: GameState): Sector[] => state.sectors.filter(sector => sector.owner === 'player' && supplied(state, sector.id))
+export const calculateIncome = (state: GameState): Resources => connectedOwnedSectors(state).reduce((sum, sector) => ({ metal: sum.metal + sector.yields.metal, energy: sum.energy + sector.yields.energy, intelligence: sum.intelligence + sector.yields.intelligence }), { metal: 0, energy: 0, intelligence: 0 })
+export const researchCost = (branch: ResearchBranch, level: number): Resources => ({ metal: branch === 'Logistics' ? 2 + level : 0, energy: branch === 'Warfare' ? 2 + level : 0, intelligence: branch === 'Signals' ? 2 + level : 0 })
+export const advanceResearch = (state: GameState, branch: ResearchBranch): GameState => { if (state.terminal !== 'active') error('Campaign is over'); const level = state.researchLevels[branch]; if (level >= 2) error(`${branch} is complete`); const cost = researchCost(branch, level); if (Object.keys(cost).some(key => state.resources[key as keyof Resources] < cost[key as keyof Resources])) error(`Not enough resources for ${branch}`); const next = clone(state); next.resources = { metal: next.resources.metal - cost.metal, energy: next.resources.energy - cost.energy, intelligence: next.resources.intelligence - cost.intelligence }; next.researchLevels[branch] += 1; next.research += 1; return next }
+export const terminalState = (state: GameState): GameState => { const next = clone(state); if (next.objectives.every(objective => objective.controlled)) { next.terminal = 'victory'; next.terminalReason = 'All three relays secured.' } else if (!next.squads.length) { next.terminal = 'defeat'; next.terminalReason = 'No Ward squads remain.' } else if (next.sectors.find(sector => sector.id === next.hq.player)?.owner === 'enemy') { next.terminal = 'defeat'; next.terminalReason = 'Player HQ lost.' } else if (next.turn > 18) { next.terminal = 'defeat'; next.terminalReason = 'Turn 18 reached without victory.' } return next }
 export const validateOrders = (state: GameState, orders: Order[]): void => {
+  if (state.terminal !== 'active') error('Campaign is over; orders are blocked')
   const seen = new Set<string>()
   let attackEnergy = 0
   let recoverMetal = 0
@@ -94,7 +103,7 @@ export const resolveTurn = (state: GameState, playerOrders: Order[]): { nextStat
     const squad = nextState.squads.find(item => item.id === order.squadId)!
     const from = squad.sector
     if (order.type === 'move') { squad.sector = order.target!; const destination = nextState.sectors.find(sector => sector.id === squad.sector); if (destination?.owner === 'neutral') destination.owner = 'player' }
-    if (order.type === 'recover') { squad.strength = Math.min(10, squad.strength + 1); squad.fatigue = Math.max(0, squad.fatigue - 2); nextState.resources.metal -= 1 }
+    if (order.type === 'recover') { squad.strength = Math.min(10 + nextState.researchLevels.Logistics * 2, squad.strength + 1 + nextState.researchLevels.Logistics); squad.fatigue = Math.max(0, squad.fatigue - 2 - nextState.researchLevels.Logistics); nextState.resources.metal -= 1 }
     if (order.type === 'attack') nextState.resources.energy -= 2
     if (order.type === 'hold') squad.fatigue = Math.max(0, squad.fatigue - 1)
     events.push({ type: order.type, squadId: squad.id, from, to: squad.sector, target: order.target, message: `${squad.id} ${order.type}${order.target ? ` ${order.target}` : ''}` })
@@ -132,9 +141,9 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     const classAdvantages = attackers.flatMap(attacker => defenders.filter(defender => counters[attacker.class] === defender.class).map(defender => `${attacker.class} counters ${defender.class}`))
     const defenderCounters = defenders.flatMap(defender => attackers.filter(attacker => counters[defender.class] === attacker.class).map(attacker => `${defender.class} counters ${attacker.class}`))
     const fatiguePenalty = attackers.reduce((sum, squad) => sum + squad.fatigue, 0)
-    const variance = battleRandom(nextState.seed, target, nextState.turn)
+    const variance = battleRandom(nextState.seed, target, nextState.turn) + nextState.researchLevels.Signals
     const terrainMultiplier = terrainPower[sector.terrain]
-    const attackerPower = attackers.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + defenders.filter(defender => counters[squad.class] === defender.class).length * 0.2), 0) - fatiguePenalty + variance
+    const attackerPower = attackers.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + defenders.filter(defender => counters[squad.class] === defender.class).length * 0.2), 0) - fatiguePenalty + variance + nextState.researchLevels.Warfare * 2
     const defenderPower = defenders.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + attackers.filter(attacker => counters[squad.class] === attacker.class).length * 0.2), 0)
     const attackerStrengthBefore = new Map(attackers.map(squad => [squad.id, squad.strength]))
     const defenderStrengthBefore = new Map(defenders.map(squad => [squad.id, squad.strength]))
@@ -190,7 +199,9 @@ export const resolveEnemyTurn = (state: GameState): { nextState: GameState; even
     events.push({ type: 'hold', squadId: enemy.id, from: enemy.sector, to: enemy.sector, message: `${enemy.id} holds at ${enemy.sector}` })
   }
   nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
-  return { nextState, events }
+  nextState.income = calculateIncome(nextState)
+  nextState.resources = { metal: Math.min(99, nextState.resources.metal + nextState.income.metal), energy: Math.min(99, nextState.resources.energy + nextState.income.energy), intelligence: Math.min(99, nextState.resources.intelligence + nextState.income.intelligence) }
+  return { nextState: terminalState(nextState), events }
 }
 
 // Kept for the original shell's small API.
