@@ -27,4 +27,22 @@ describe('App interactions', () => {
 
     await act(async () => root.unmount())
   })
+
+  it('uses the selected action for neutral targets and exposes keyboard selection', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+
+    await act(async () => root.render(<App />))
+    const attack = [...document.querySelectorAll('button')].find(button => button.textContent === 'ATTACK') as HTMLButtonElement
+    await act(async () => attack.click())
+    expect(attack.getAttribute('aria-pressed')).toBe('true')
+
+    const target = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement
+    expect(target.getAttribute('aria-label')).toContain('attack target')
+    await act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })))
+    expect((document.querySelector('.execute') as HTMLButtonElement).disabled).toBe(false)
+    expect(document.querySelector('.order-active')?.textContent).toBe('ATTACK')
+
+    await act(async () => root.unmount())
+  })
 })
