@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceDay, createNewCampaign, initialCampaign, resolveTurn, validateOrders, type Order } from './simulation'
+import { advanceDay, createNewCampaign, initialCampaign, resolveCombat, resolveTurn, validateOrders, type Order } from './simulation'
 
 describe('campaign simulation', () => {
   it('starts with the legacy shell API', () => { expect(initialCampaign()).toEqual({ day: 1, supplies: 3 }); expect(advanceDay(initialCampaign())).toEqual({ day: 2, supplies: 2 }) })
@@ -75,5 +75,63 @@ describe('campaign simulation', () => {
     expect(() => resolveTurn(lowMetal, orders)).toThrow(/metal/)
     expect(lowMetal.resources.metal).toBe(1)
     expect(lowMetal.squads.map(squad => squad.strength)).toEqual([10, 10, 10, 10, 10])
+  })
+  it('resolves pending attack intents with a typed deterministic battle report', () => {
+    const game = createNewCampaign(42)
+    const prepared = { ...game, squads: [{ ...game.squads[0], sector: 'sector-5' as const, class: 'Recon' as const, fatigue: 2, strength: 15 }, ...game.squads.slice(1)], enemySquads: [{ id: 'enemy-1', class: 'Artillery' as const, strength: 6, sector: 'sector-6' as const }] }
+    const turn = resolveTurn(prepared, [{ squadId: 'squad-1', type: 'attack', target: 'sector-6' }])
+    const result = resolveCombat(turn.nextState, turn.events)
+    expect(result.reports[0]).toMatchObject({ target: 'sector-6', terrain: 'ridge', winner: 'player', captured: false, fatiguePenalty: 2 })
+    expect(result.reports[0].classAdvantages).toContain('Recon counters Artillery')
+    expect(result.nextState.sectors.find(sector => sector.id === 'sector-6')?.owner).toBe('enemy')
+    expect(result.nextState.squads.find(squad => squad.id === 'squad-1')?.sector).toBe('sector-5')
+    expect(result.reports[0].attackers[0].strength).toBe(15)
+    expect(result.reports[0].attackers[0].units).toBe(14)
+    expect(result.reports[0].defenders[0].strength).toBe(6)
+    expect(result.reports[0].defenders[0].units).toBe(2)
+    expect(result.reports[0].terrainMultiplier).toBe(1.15)
+    expect(result.reports[0].defenderCounters).toEqual([])
+    expect(turn.nextState.resources.energy).toBe(18)
+    expect(result.nextState.resources.energy).toBe(18)
+  })
+  it('captures only after all living defenders are gone and reports defender counters', () => {
+    const game = createNewCampaign(42)
+    const prepared = { ...game, squads: [{ ...game.squads[0], sector: 'sector-5' as const, class: 'Recon' as const, strength: 20 }, ...game.squads.slice(1)], enemySquads: [{ id: 'enemy-1', class: 'Raider' as const, strength: 10, sector: 'sector-6' as const }] }
+    const turn = resolveTurn(prepared, [{ squadId: 'squad-1', type: 'attack', target: 'sector-6' }])
+    const result = resolveCombat(turn.nextState, turn.events)
+    expect(result.reports[0].winner).toBe('player')
+    expect(result.reports[0].captured).toBe(false)
+    expect(result.nextState.sectors.find(sector => sector.id === 'sector-6')?.owner).toBe('enemy')
+    expect(result.reports[0].defenderCounters).toEqual(['Raider counters Recon'])
+  })
+  it('boosts defender power when the defender class counters the attacker', () => {
+    const game = createNewCampaign(42)
+    const prepared = { ...game, squads: [{ ...game.squads[0], sector: 'sector-5' as const, class: 'Recon' as const, strength: 10 }, ...game.squads.slice(1)], enemySquads: [{ id: 'enemy-1', class: 'Raider' as const, strength: 10, sector: 'sector-6' as const }] }
+    const turn = resolveTurn(prepared, [{ squadId: 'squad-1', type: 'attack', target: 'sector-6' }])
+    const result = resolveCombat(turn.nextState, turn.events)
+    expect(result.reports[0].defenderPower).toBe(13.799999999999999)
+  })
+  it('does not boost defender power when only the attacker counters the defender', () => {
+    const game = createNewCampaign(42)
+    const prepared = { ...game, squads: [{ ...game.squads[0], sector: 'sector-5' as const, class: 'Recon' as const, strength: 10 }, ...game.squads.slice(1)], enemySquads: [{ id: 'enemy-1', class: 'Artillery' as const, strength: 10, sector: 'sector-6' as const }] }
+    const turn = resolveTurn(prepared, [{ squadId: 'squad-1', type: 'attack', target: 'sector-6' }])
+    const result = resolveCombat(turn.nextState, turn.events)
+    expect(result.reports[0].defenderPower).toBe(11.5)
+  })
+  it('retreats to an adjacent owned sector or remains in place', () => {
+    const game = createNewCampaign(42)
+    const prepared = { ...game, squads: [{ ...game.squads[0], sector: 'sector-5' as const, strength: 10 }, ...game.squads.slice(1)], enemySquads: [{ id: 'enemy-1', class: 'Sentinel' as const, strength: 20, sector: 'sector-6' as const }] }
+    const turn = resolveTurn(prepared, [{ squadId: 'squad-1', type: 'attack', target: 'sector-6' }])
+    const result = resolveCombat(turn.nextState, turn.events)
+    expect(result.reports[0].retreat).toEqual([{ squadId: 'squad-1', to: 'sector-5' }])
+    expect(result.nextState.squads.find(squad => squad.id === 'squad-1')?.sector).toBe('sector-5')
+  })
+  it('groups multi-squad attacks by target and replays atomically from seed and order', () => {
+    const game = createNewCampaign(123)
+    const prepared = { ...game, squads: game.squads.map((squad, index) => ({ ...squad, sector: 'sector-5' as const, strength: index < 2 ? 10 : squad.strength })), enemySquads: [{ ...game.enemySquads[0], sector: 'sector-6' as const, strength: 8 }] }
+    const orders: Order[] = [{ squadId: 'squad-1', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-6' }]
+    const a = resolveTurn(prepared, orders); const b = resolveTurn(prepared, orders)
+    expect(resolveCombat(a.nextState, a.events)).toEqual(resolveCombat(b.nextState, b.events))
+    expect(resolveCombat(a.nextState, a.events).reports).toHaveLength(1)
   })
 })
