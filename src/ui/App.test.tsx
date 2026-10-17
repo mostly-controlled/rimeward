@@ -45,4 +45,33 @@ describe('App interactions', () => {
 
     await act(async () => root.unmount())
   })
+
+  it('plays the seed 42024 route through rendered map controls to a battle report', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    const clickSector = async (name: string) => {
+      const sector = document.querySelector(`[role="button"][aria-label*="${name}"]`) as SVGGElement
+      expect(sector).not.toBeNull()
+      await act(async () => sector.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
+    }
+
+    await act(async () => root.render(<App />))
+    expect(document.querySelector('.seed-readout')?.textContent).toBe('SEED 42024')
+    expect(document.querySelector('.turn-readout')?.textContent).toContain('NEW CAMPAIGN')
+
+    await clickSector('Whiteplain')
+    await clickSector('Glassway')
+    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'ATTACK') as HTMLButtonElement).click())
+    await clickSector('Ashenfall')
+
+    expect(document.querySelector('.event-rail')?.textContent).toContain('squad-1 attack sector-6')
+    const report = document.querySelector('.reports')
+    expect(report?.textContent).toContain('BATTLE REPORT')
+    expect(report?.textContent).toContain('Ashenfall')
+    expect(report?.textContent).toMatch(/ATTACKER/)
+    expect(report?.textContent).toMatch(/DEFENDER/)
+
+    await act(async () => root.unmount())
+  })
 })
