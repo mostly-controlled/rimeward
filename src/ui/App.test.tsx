@@ -74,4 +74,12 @@ describe('App interactions', () => {
 
     await act(async () => root.unmount())
   })
+
+  it('falls back to a live squad id when the selected squad dies', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App />))
+    expect(document.body.textContent).toContain('SELECTED: SENTINEL 1')
+    await act(async () => root.unmount())
+  })
 })
