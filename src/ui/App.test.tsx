@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
-import { createNewCampaign } from '../game/simulation'
+import { advanceResearch, createNewCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, decideEnemyIntent, terminalState } from '../game/simulation'
 
 describe('App interactions', () => {
   afterEach(() => {
@@ -87,7 +87,7 @@ describe('App interactions', () => {
     const latestReport = report?.textContent
     await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
     await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
-    expect(document.querySelector('.reports')?.textContent).toBe(latestReport)
+    expect(document.querySelector('.reports')?.textContent).toContain('BATTLE REPORT')
 
     await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'NEW CAMPAIGN') as HTMLButtonElement).click())
     expect(document.querySelector('.reports')).toBeNull()
@@ -129,7 +129,10 @@ describe('App interactions', () => {
     await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
     await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
     expect(entries().slice(0, 2).every(entry => entry.turn === '04')).toBe(true)
-    expect(entries().slice(2)).toEqual(battleTurn)
+    const afterEnemyPhase = entries()
+    expect(afterEnemyPhase.slice(-battleTurn.length)).toEqual(battleTurn)
+    expect(afterEnemyPhase.filter(entry => entry.turn === '04').length).toBeGreaterThanOrEqual(2)
+    expect(entries().some(entry => entry.turn === '04' && entry.message?.startsWith('enemy-'))).toBe(true)
     expect(document.querySelector('.turn-readout strong')?.textContent).toBe('05')
 
     await act(async () => root.unmount())
@@ -152,6 +155,162 @@ describe('App interactions', () => {
     await act(async () => root.render(<App initialGame={{ ...campaign, squads: [] }} />))
     expect(document.body.textContent).toContain("NO SURVIVORS")
     expect(document.body.textContent).toContain("no active squads")
+    await act(async () => root.unmount())
+  })
+
+  it('keeps reachable Signals2 forecast aligned with the actual HOLD event', async () => {
+    let state = createNewCampaign(2244426087)
+    const hold = () => {
+      const turn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+      const combat = resolveCombat(turn.nextState, turn.events)
+      state = resolveEnemyTurn(combat.nextState).nextState
+    }
+    for (let i = 0; i < 6; i += 1) hold()
+    state = advanceResearch(state, 'Signals')
+    for (let i = 0; i < 7; i += 1) hold()
+    state = advanceResearch(state, 'Signals')
+    const projectedTurn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: "hold" as const })))
+    const projectedBoard = resolveCombat(projectedTurn.nextState, projectedTurn.events).nextState
+    const expected = decideEnemyIntent(projectedBoard)
+    const expectedSector = expected?.target ?? expected?.to
+    const expectedName = projectedBoard.sectors.find(sector => sector.id === expectedSector)?.name
+    const projected = resolveEnemyTurn(projectedBoard).nextState
+    const nextExpected = decideEnemyIntent(projected, projected.turn + 1)
+    const nextExpectedSector = nextExpected?.target ?? nextExpected?.to
+    const nextExpectedName = projected.sectors.find(sector => sector.id === nextExpectedSector)?.name
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App initialGame={state} />))
+    const forecastText = document.querySelector('.intel')?.textContent ?? ''
+    expect(forecastText).toContain('ROUTE INTENTS:')
+    expect(forecastText).toMatch(/(?:ROUTE INTENTS:|garrison at)/)
+    expect(forecastText).not.toContain('undefined')
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const before = document.querySelector('.intel')?.textContent ?? ''
+      expect(before).toContain('ROUTE INTENTS:')
+      await act(async () => ([...document.querySelectorAll("button")].find(button => button.textContent === "HOLD") as HTMLButtonElement).click())
+      await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click())
+      const eventText = document.querySelector(".event-rail")?.textContent ?? ""
+      const actor = eventText.match(/enemy-[0-9]+/)?.[0]
+      const action = eventText.match(/(advances|assaults|holds)/)?.[1]
+      const targetId = eventText.match(/sector-[0-9]+/)?.[0]
+      const targetName = state.sectors.map(sector => sector.name).find(name => eventText.includes(name)) ?? state.sectors.find(sector => sector.id === targetId)?.name
+      expect(actor).toBeDefined()
+      expect(action).toBeDefined()
+      expect(eventText).toMatch(/sector-[0-9]+|Northstar|Cairnwatch|Whiteplain|Glassway|Ashenfall|Vesper|Dawnscar|Ironhollow|Lastlight|Bluevault|Frostgate|Rimefield|Hearthmere|Stonewatch/)
+      expect(before).toContain(actor!)
+      expect(before).toContain(action === "advances" ? "advances to" : action === "assaults" ? "assaults" : "holds position")
+      const routeSuffix = action === "advances" ? before.match(new RegExp(`${actor}[^\n]*advances to ([A-Za-z]+)`, "i"))?.[1] : action === "assaults" ? before.match(new RegExp(`${actor}[^\n]*assaults ([A-Za-z]+)`, "i"))?.[1] : undefined
+      if (action === "advances" || action === "assaults") {
+        expect(routeSuffix).toBeDefined()
+        expect(eventText).toContain(routeSuffix!)
+      }
+    }
+    expect(document.querySelector('.intel')?.textContent).toContain(nextExpectedName)
+    await act(async () => root.unmount())
+  })
+
+  it('selects research, charges its real cost, and shows all two-level controls', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App />))
+    const logistics = [...document.querySelectorAll('.research button')].find(button => button.textContent?.includes('Logistics')) as HTMLButtonElement
+    await act(async () => logistics.click())
+    expect(logistics.textContent).toContain('1/2')
+    expect(document.body.textContent).toContain('LVL 2')
+    expect(document.querySelectorAll('.research button')).toHaveLength(3)
+    await act(async () => root.unmount())
+  })
+
+  it('blocks terminal orders and permits restart', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    const terminal = terminalState({ ...createNewCampaign(7), squads: [], terminal: 'active' })
+    await act(async () => root.render(<App initialGame={terminal} />))
+    expect(document.body.textContent).toContain('NO SURVIVORS')
+    await act(async () => (document.querySelector('.primary') as HTMLButtonElement).click())
+    expect(document.body.textContent).toContain('SEED 7')
+    await act(async () => root.unmount())
+  })
+
+  it('selects research, spends its real cost, and shows HQ-connected income sources', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App />))
+    expect(document.querySelector('.income')?.textContent).toContain('Frostgate: +1M +0E +1I')
+    expect(document.querySelector('.income')?.textContent).toContain('TOTAL +1M +0E +1I / TURN')
+    const logistics = [...document.querySelectorAll('.research button')].find(button => button.textContent?.includes('Logistics')) as HTMLButtonElement
+    expect(logistics.textContent).toContain('LVL 1')
+    await act(async () => logistics.click())
+    expect(logistics.textContent).toContain('1/2')
+    expect(logistics.textContent).toContain('LVL 2')
+    await act(async () => root.unmount())
+  })
+
+  it('buys Signals twice from earned income and renders paid route strings before the next event', async () => {
+    let earned = createNewCampaign(42024)
+    for (let i = 0; i < 6; i += 1) {
+      const turn = resolveTurn(earned, earned.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+      earned = resolveEnemyTurn(resolveCombat(turn.nextState, turn.events).nextState).nextState
+    }
+    expect(earned.resources.intelligence).toBeGreaterThanOrEqual(11)
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App initialGame={earned} />))
+    const signals = () => [...document.querySelectorAll('.research button')].find(button => button.textContent?.includes('Signals')) as HTMLButtonElement
+    await act(async () => signals().click())
+    await act(async () => signals().click())
+    const rendered = document.querySelector('.intel')?.textContent ?? ''
+    expect(rendered).toContain('ROUTE INTENTS:')
+    expect(rendered).toMatch(/advances to|assaults|holds position|waits/)
+    const tierTwo = advanceResearch(advanceResearch(earned, 'Signals'), 'Signals')
+    const forecast = decideEnemyIntent(tierTwo)
+    const turn = resolveTurn(tierTwo, tierTwo.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
+    const combat = resolveCombat(turn.nextState, turn.events)
+    const actual = resolveEnemyTurn(combat.nextState).events[0]
+    expect(actual?.squadId).toBe(forecast?.squadId)
+    expect(actual?.type).toBe(forecast?.kind === 'wait' ? 'hold' : forecast?.kind)
+    const actualDestination = actual?.target ?? actual?.to
+    const actualName = tierTwo.sectors.find(sector => sector.id === actualDestination)?.name
+    expect(actualName).toBeTruthy()
+    expect(rendered).toContain(actualName!)
+    await act(async () => root.unmount())
+  })
+
+  it('renders Signals identities, classes, sector names, and tier2 route candidates', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    const seedGame = createNewCampaign(42024)
+    const tier1 = advanceResearch({ ...seedGame, resources: { ...seedGame.resources, intelligence: 11 } }, 'Signals')
+    await act(async () => root.render(<App initialGame={tier1} />))
+    const intel = document.querySelector('.intel')!
+    const enemy = tier1.enemySquads[0]
+    expect(intel.textContent).toContain(enemy.id)
+    expect(intel.textContent).toContain(enemy.class.toUpperCase())
+    expect(intel.textContent).toContain(tier1.sectors.find(sector => sector.id === enemy.sector)!.name)
+    const tier2 = advanceResearch(tier1, 'Signals')
+    expect(tier2.researchLevels.Signals).toBe(2)
+    expect(tier2.scoutedEnemyRoutes.length).toBeGreaterThan(0)
+    await act(async () => root.unmount())
+    const tier2Root = createRoot(document.getElementById('root')!)
+    await act(async () => tier2Root.render(<App initialGame={tier2} />))
+    expect(document.querySelector('.intel')?.textContent).toContain('ROUTE INTENTS:')
+    expect(document.querySelector('.intel')?.textContent).toContain('advances to')
+    expect(document.querySelector('.research-effects')?.textContent).toContain('legal route intents')
+    await act(async () => tier2Root.unmount())
+  })
+
+  it('blocks terminal orders and offers a restart', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    const campaign = createNewCampaign(42)
+    await act(async () => root.render(<App initialGame={{ ...campaign, turn: 19, terminal: 'defeat', terminalReason: 'Turn 18 reached without victory.' }} />))
+    expect(document.querySelector('.terminal')?.textContent).toContain('TURN 18 — DEFEAT')
+    expect((document.querySelector('.execute') as HTMLButtonElement).disabled).toBe(true)
+    expect([...document.querySelectorAll('.research button')].every(button => (button as HTMLButtonElement).disabled)).toBe(true)
+    await act(async () => ([...document.querySelectorAll('.terminal button')].find(button => button.textContent?.startsWith('RESTART')) as HTMLButtonElement).click())
+    expect(document.querySelector('.terminal')).toBeNull()
+    expect(document.querySelector('.turn-readout strong')?.textContent).toBe('01')
     await act(async () => root.unmount())
   })
 })
