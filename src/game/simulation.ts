@@ -18,7 +18,7 @@ export type GameEvent = { type: 'hold' | 'recover' | 'move' | 'attack'; squadId:
 export type BattleReport = {
   target: SectorId; terrain: Terrain; attackers: { squadId: string; class: UnitClass; strength: number; units: number }[]
   defenders: { squadId: string; class: UnitClass; strength: number; units: number }[]
-  classAdvantages: string[]; fatiguePenalty: number; variance: number; attackerPower: number; defenderPower: number
+  classAdvantages: string[]; defenderCounters: string[]; terrainMultiplier: number; fatiguePenalty: number; variance: number; attackerPower: number; defenderPower: number
   winner: 'player' | 'enemy' | 'draw'; casualties: { squadId: string; side: 'player' | 'enemy'; strength: number }[]
   retreat: { squadId: string; to: SectorId }[]; captured: boolean; relayControlled: boolean
 }
@@ -116,7 +116,7 @@ const retreatDestination = (state: GameState, squad: Squad): SectorId => {
   const current = state.sectors.find(sector => sector.id === squad.sector)
   const occupiedByEnemy = new Set(state.enemySquads.map(enemy => enemy.sector))
   const valid = (sectorId: SectorId) => state.sectors.find(sector => sector.id === sectorId)?.owner === 'player' && !occupiedByEnemy.has(sectorId)
-  return [...(current?.links ?? [])].sort().find(valid) ?? (valid(squad.sector) ? squad.sector : state.hq.player)
+  return [...(current?.links ?? [])].sort().find(valid) ?? squad.sector
 }
 
 /** Resolve only attack intents already recorded in GameEvent/orderHistory. */
@@ -130,11 +130,12 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     const attackers = attacks.filter(event => event.target === target).map(event => nextState.squads.find(squad => squad.id === event.squadId)!).filter(Boolean)
     const defenders = nextState.enemySquads.filter(squad => squad.sector === target)
     const classAdvantages = attackers.flatMap(attacker => defenders.filter(defender => counters[attacker.class] === defender.class).map(defender => `${attacker.class} counters ${defender.class}`))
+    const defenderCounters = defenders.flatMap(defender => attackers.filter(attacker => counters[defender.class] === attacker.class).map(attacker => `${defender.class} counters ${attacker.class}`))
     const fatiguePenalty = attackers.reduce((sum, squad) => sum + squad.fatigue, 0)
     const variance = battleRandom(nextState.seed, target, nextState.turn)
     const terrainMultiplier = terrainPower[sector.terrain]
     const attackerPower = attackers.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + defenders.filter(defender => counters[squad.class] === defender.class).length * 0.2), 0) - fatiguePenalty + variance
-    const defenderPower = defenders.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + attackers.filter(attacker => counters[attacker.class] === squad.class).length * 0.2), 0)
+    const defenderPower = defenders.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + attackers.filter(attacker => counters[squad.class] === attacker.class).length * 0.2), 0)
     const attackerStrengthBefore = new Map(attackers.map(squad => [squad.id, squad.strength]))
     const defenderStrengthBefore = new Map(defenders.map(squad => [squad.id, squad.strength]))
     const winner = attackerPower > defenderPower ? 'player' : attackerPower < defenderPower ? 'enemy' : 'draw'
@@ -150,14 +151,15 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     nextState.squads = nextState.squads.filter(squad => squad.strength > 0)
     nextState.enemySquads = nextState.enemySquads.filter(squad => squad.strength > 0)
     const retreat: BattleReport['retreat'] = []
-    if (winner === 'player') {
+    if (winner === 'player' && nextState.enemySquads.some(squad => squad.sector === target && squad.strength > 0) === false) {
       sector.owner = 'player'
       for (const squad of attackers) { const live = nextState.squads.find(item => item.id === squad.id); if (live) { live.sector = target; live.experience += 1; live.fatigue = Math.min(10, live.fatigue + 2) } }
     } else if (winner === 'enemy') {
       for (const squad of attackers) { const live = nextState.squads.find(item => item.id === squad.id); if (live) { live.experience += 1; live.fatigue = Math.min(10, live.fatigue + 2); live.sector = retreatDestination(nextState, live); retreat.push({ squadId: live.id, to: live.sector }) } }
     }
     const relayControlled = nextState.objectives.some(objective => objective.sector === target && sector.owner === 'player')
-    reports.push({ target, terrain: sector.terrain, attackers: attackers.map(squad => ({ squadId: squad.id, class: squad.class, strength: attackerStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), defenders: defenders.map(squad => ({ squadId: squad.id, class: squad.class, strength: defenderStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), classAdvantages, fatiguePenalty, variance, attackerPower, defenderPower, winner, casualties, retreat, captured: winner === 'player', relayControlled })
+    const captured = winner === 'player' && !nextState.enemySquads.some(squad => squad.sector === target && squad.strength > 0)
+    reports.push({ target, terrain: sector.terrain, terrainMultiplier, attackers: attackers.map(squad => ({ squadId: squad.id, class: squad.class, strength: attackerStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), defenders: defenders.map(squad => ({ squadId: squad.id, class: squad.class, strength: defenderStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), classAdvantages, defenderCounters, fatiguePenalty, variance, attackerPower, defenderPower, winner, casualties, retreat, captured, relayControlled })
   }
   nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
   nextState.recentBattles = reports.map(report => `${report.target}:${report.winner}`)
