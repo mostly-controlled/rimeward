@@ -172,4 +172,30 @@ describe('campaign simulation', () => {
     expect(state.turn).toBe(4)
     expect(state.recentBattles).toHaveLength(1)
   })
+
+  it('does not enter an occupied player sector and can capture undefended player territory', () => {
+    const game = createNewCampaign(42024)
+    const enemy = game.enemySquads.find(item => item.id === 'enemy-2')!
+    enemy.sector = 'sector-2'
+    game.squads[0].sector = 'sector-1'
+    game.sectors.find(item => item.id === 'sector-1')!.owner = 'player'
+    const occupied = resolveEnemyTurn(game)
+    expect(occupied.nextState.enemySquads.find(item => item.id === enemy.id)?.sector).not.toBe('sector-1')
+
+    const undefended = createNewCampaign(42024)
+    const undefendedEnemy = undefended.enemySquads.find(item => item.id === 'enemy-2')!
+    undefendedEnemy.sector = 'sector-2'
+    undefended.sectors.find(item => item.id === 'sector-1')!.owner = 'player'
+    const captured = resolveEnemyTurn(undefended)
+    expect(captured.nextState.sectors.find(item => item.id === 'sector-1')?.owner).toBe('enemy')
+  })
+
+  it('chooses a legal route instead of stalling at the player HQ', () => {
+    const game = createNewCampaign(42024)
+    const enemy = game.enemySquads.find(item => item.id === 'enemy-2')!
+    enemy.sector = 'sector-1'
+    const result = resolveEnemyTurn(game)
+    expect(result.events).toHaveLength(1)
+    expect(result.nextState.enemySquads.find(item => item.id === enemy.id)?.sector).not.toBe('sector-0')
+  })
 })
