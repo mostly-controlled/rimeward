@@ -188,6 +188,12 @@ const destinationForIntent = (state: GameState, intent: EnemyIntent): SectorId |
   if (state.sectors.find(sector => sector.id === state.hq.player)?.owner !== 'enemy') return state.hq.player
   return state.objectives.find(objective => !objective.controlled)?.sector
 }
+const relevantStrategicTarget = (state: GameState, target: StrategicTarget | undefined): boolean => {
+  if (!target) return false
+  const enemy = state.enemySquads.find(item => item.id === target.squadId)
+  const destination = state.sectors.find(sector => sector.id === target.destination)
+  return Boolean(enemy && destination && (target.destination === state.hq.player || destination.owner !== 'enemy'))
+}
 export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn): EnemyIntent | undefined => {
   if (state.terminal !== "active") return undefined
   const enemies = [...state.enemySquads].sort((a, b) => a.id.localeCompare(b.id))
@@ -358,7 +364,17 @@ export const resolveEnemyTurn = (state: GameState): { nextState: GameState; even
   if (nextState.strategicTarget) { const targetEnemy = nextState.enemySquads.find(enemy => enemy.id === nextState.strategicTarget?.squadId); const destination = nextState.sectors.find(sector => sector.id === nextState.strategicTarget?.destination); if (!targetEnemy || !destination || (destination.id !== nextState.hq.player && destination.owner === "enemy")) nextState.strategicTarget = undefined }
   const intent = phaseActive ? decideEnemyIntent(nextState) : undefined
   const enemy = intent && nextState.enemySquads.find(item => item.id === intent.squadId)
-  if (intent) { nextState.enemyHistory = [...nextState.enemyHistory, clone(intent)]; nextState.strategicIntent = clone(intent); const destination = destinationForIntent(nextState, intent); nextState.strategicTarget = destination ? { squadId: intent.squadId, destination } : undefined }
+  if (intent) {
+    nextState.enemyHistory = [...nextState.enemyHistory, clone(intent)]
+    nextState.strategicIntent = clone(intent)
+    const destination = destinationForIntent(nextState, intent)
+    const heldTarget = nextState.strategicTarget
+    if (heldTarget?.squadId === intent.squadId) {
+      if (!relevantStrategicTarget(nextState, heldTarget)) nextState.strategicTarget = undefined
+    } else if (destination) {
+      nextState.strategicTarget = { squadId: intent.squadId, destination }
+    }
+  }
   if (intent?.kind === 'move' && enemy && intent.to) {
     const from = enemy.sector
     enemy.sector = intent.to
