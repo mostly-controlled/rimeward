@@ -78,29 +78,45 @@ export const researchCost = (branch: ResearchBranch, level: number): Resources =
 }
 export const researchCurrency = (branch: ResearchBranch): keyof Resources => branch === 'Logistics' ? 'metal' : branch === 'Warfare' ? 'energy' : 'intelligence'
 export const researchIncomeThreshold = (_branch: ResearchBranch, _level: number): number => 1
-export const decideEnemyIntent = (state: GameState): EnemyIntent | undefined => {
-  if (state.terminal !== "active") return undefined
-  const enemy = [...state.enemySquads].sort((a, b) => a.id.localeCompare(b.id)).find(item => item.sector !== state.hq.enemy)
-  if (!enemy) return undefined
+const intentForEnemy = (state: GameState, enemy: EnemySquad): EnemyIntent | undefined => {
   const current = state.sectors.find(sector => sector.id === enemy.sector)
+  if (enemy.sector === state.hq.enemy) return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
   const hqAssault = enemy.sector !== state.hq.player && current?.links.includes(state.hq.player) && state.squads.some(squad => squad.sector === state.hq.player)
   if (hqAssault) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: state.hq.player }
+  const occupiedPlayerTarget = [...(current?.links ?? [])].sort().find(target => {
+    const sector = state.sectors.find(item => item.id === target)
+    const occupied = state.squads.some(squad => squad.sector === target)
+    const relay = state.objectives.some(objective => objective.sector === target)
+    return occupied && (sector?.owner === 'player' || relay)
+  })
+  if (occupiedPlayerTarget) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: occupiedPlayerTarget }
   const destination = [...(current?.links ?? [])].sort().find(target => {
     const sector = state.sectors.find(item => item.id === target)
     const isUndefendedHq = target === state.hq.player && !state.squads.some(squad => squad.sector === target)
     return sector && sector.owner !== "enemy" && !state.enemySquads.some(other => other.id !== enemy.id && other.sector === target) && (isUndefendedHq || !state.squads.some(squad => squad.sector === target))
   })
-  return destination ? { squadId: enemy.id, kind: "move", from: enemy.sector, to: destination } : { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
+  return destination ? { squadId: enemy.id, kind: "move", from: enemy.sector, to: destination } : undefined
 }
-const scoutRoutes = (state: GameState): string[] => state.enemySquads.map(enemy => {
+export const decideEnemyIntent = (state: GameState): EnemyIntent | undefined => {
+  if (state.terminal !== "active") return undefined
+  const enemies = [...state.enemySquads].sort((a, b) => a.id.localeCompare(b.id))
+  const selected = enemies.filter(enemy => enemy.sector !== state.hq.enemy).map(enemy => intentForEnemy(state, enemy)).find(Boolean)
+  if (selected) return selected
+  const garrison = enemies.find(enemy => enemy.sector === state.hq.enemy)
+  return garrison ? intentForEnemy(state, garrison) : undefined
+}
+const scoutRoutes = (state: GameState): string[] => {
   const selected = decideEnemyIntent(state)
-  const origin = state.sectors.find(sector => sector.id === enemy.sector)?.name ?? "unknown sector"
-  if (enemy.sector === state.hq.enemy) return enemy.class + " garrison at " + origin + ": holds position"
-  if (!selected || selected.squadId !== enemy.id) return enemy.class + " garrison at " + origin + ": waits"
-  if (selected.kind === "attack") return enemy.class + " garrison from " + origin + ": assaults " + (state.sectors.find(item => item.id === selected.target)?.name ?? "HQ")
-  if (selected.kind === "move") return enemy.class + " garrison from " + origin + ": advances to " + (state.sectors.find(item => item.id === selected.to)?.name ?? "unknown sector")
-  return enemy.class + " garrison at " + origin + ": holds position"
-})
+  return state.enemySquads.map(enemy => {
+    const acting = selected?.squadId === enemy.id ? selected : undefined
+    const origin = state.sectors.find(sector => sector.id === enemy.sector)?.name ?? "unknown sector"
+    if (!acting) return enemy.class + " garrison at " + origin + ": waits"
+    if (acting.kind === "hold") return enemy.class + " garrison at " + origin + ": holds position"
+    if (acting.kind === "attack") return enemy.class + " garrison from " + origin + ": assaults " + (state.sectors.find(item => item.id === acting.target)?.name ?? "HQ")
+    if (acting.kind === "move") return enemy.class + " garrison from " + origin + ": advances to " + (state.sectors.find(item => item.id === acting.to)?.name ?? "unknown sector")
+    return enemy.class + " garrison at " + origin + ": holds position"
+  })
+}
 export const advanceResearch = (state: GameState, branch: ResearchBranch): GameState => { if (state.terminal !== 'active') error('Campaign is over'); const level = state.researchLevels[branch]; if (level >= 2) error(`${branch} is complete`); const income = calculateIncome(state); const threshold = researchIncomeThreshold(branch, level); if (!Object.values(income).some(value => value >= threshold)) error(`${branch} requires ${threshold} unit of owned HQ-connected income`); const cost = researchCost(branch, level); if (Object.keys(cost).some(key => state.resources[key as keyof Resources] < cost[key as keyof Resources])) error(`Not enough resources for ${branch}`); const next = clone(state); next.resources = { metal: next.resources.metal - cost.metal, energy: next.resources.energy - cost.energy, intelligence: next.resources.intelligence - cost.intelligence }; next.researchLevels[branch] += 1; next.research += 1; if (branch === 'Logistics') next.supplyCapacity = 10 + next.researchLevels.Logistics * 2; if (branch === 'Signals') { next.revealedEnemySquads = next.enemySquads.map(enemy => enemy.id); if (next.researchLevels.Signals >= 2) next.scoutedEnemyRoutes = scoutRoutes(next) } return next }
 export const terminalState = (state: GameState): GameState => { const next = clone(state); if (next.objectives.every(objective => objective.controlled)) { next.terminal = 'victory'; next.terminalReason = 'All three relays secured.' } else if (!next.squads.length) { next.terminal = 'defeat'; next.terminalReason = 'No Ward squads remain.' } else if (next.sectors.find(sector => sector.id === next.hq.player)?.owner === 'enemy') { next.terminal = 'defeat'; next.terminalReason = 'Player HQ lost.' } else if (next.turn > 18) { next.terminal = 'defeat'; next.terminalReason = 'Turn 18 reached without victory.' } return next }
 export const validateOrders = (state: GameState, orders: Order[]): void => {
@@ -244,7 +260,10 @@ export const resolveEnemyTurn = (state: GameState): { nextState: GameState; even
     events.push({ type: 'hold', squadId: enemy.id, from: enemy.sector, to: enemy.sector, message: `${enemy.id} holds at ${enemy.sector}` })
   }
   nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
-  if (intent?.kind === 'attack' && enemy && intent.target) events.push({ type: 'attack', faction: 'enemy', squadId: enemy.id, from: enemy.sector, to: enemy.sector, target: intent.target, message: `${enemy.id} assaults player HQ` })
+  if (intent?.kind === 'attack' && enemy && intent.target) {
+    const targetName = nextState.sectors.find(sector => sector.id === intent.target)?.name ?? intent.target
+    events.push({ type: 'attack', faction: 'enemy', squadId: enemy.id, from: enemy.sector, to: enemy.sector, target: intent.target, message: `${enemy.id} assaults ${targetName}` })
+  }
   if (!phaseActive) return { nextState, events: [], reports: [] }
   const combat = resolveCombat(nextState, events)
   const combatState = combat.nextState

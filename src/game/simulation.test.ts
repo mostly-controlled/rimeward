@@ -311,10 +311,12 @@ describe('campaign simulation', () => {
     let state = createNewCampaign(42024)
     const route: Order[][] = [
       [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }, { squadId: 'squad-2', type: 'move', target: 'sector-11' }, { squadId: 'squad-3', type: 'move', target: 'sector-1' }, { squadId: 'squad-4', type: 'move', target: 'sector-11' }, { squadId: 'squad-5', type: 'move', target: 'sector-1' }],
-      [{ squadId: 'squad-1', type: 'move', target: 'sector-2' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-3', type: 'move', target: 'sector-5' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'move', target: 'sector-5' }],
+      [{ squadId: 'squad-1', type: 'attack', target: 'sector-2' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-3', type: 'move', target: 'sector-5' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'move', target: 'sector-5' }],
       [{ squadId: 'squad-1', type: 'attack', target: 'sector-3' }, { squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'attack', target: 'sector-6' }],
       [{ squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }],
       [{ squadId: 'squad-2', type: 'attack', target: 'sector-9' }, { squadId: 'squad-4', type: 'attack', target: 'sector-9' }],
+      [{ squadId: 'squad-5', type: 'move', target: 'sector-4' }],
+      [{ squadId: 'squad-5', type: 'attack', target: 'sector-3' }],
     ]
     for (const orders of route) { const turn = resolveTurn(state, orders); const combat = resolveCombat(turn.nextState, turn.events); state = resolveEnemyTurn(combat.nextState).nextState }
     expect(state.objectives.every(objective => objective.controlled)).toBe(true)
@@ -334,19 +336,19 @@ describe('campaign simulation', () => {
     let state = createNewCampaign(42024)
     const route: Order[][] = [
       [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }, { squadId: 'squad-2', type: 'move', target: 'sector-11' }, { squadId: 'squad-3', type: 'move', target: 'sector-1' }, { squadId: 'squad-4', type: 'move', target: 'sector-11' }, { squadId: 'squad-5', type: 'move', target: 'sector-1' }],
-      [{ squadId: 'squad-1', type: 'move', target: 'sector-2' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-3', type: 'move', target: 'sector-5' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'move', target: 'sector-5' }],
+      [{ squadId: 'squad-1', type: 'attack', target: 'sector-2' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-3', type: 'move', target: 'sector-5' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'move', target: 'sector-5' }],
       [{ squadId: 'squad-1', type: 'attack', target: 'sector-3' }, { squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'attack', target: 'sector-6' }],
       [{ squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }],
-      [{ squadId: 'squad-1', type: 'hold' }],
-      [{ squadId: 'squad-1', type: 'hold' }],
-      [{ squadId: 'squad-1', type: 'hold' }],
       [{ squadId: 'squad-2', type: 'attack', target: 'sector-9' }, { squadId: 'squad-4', type: 'attack', target: 'sector-9' }],
+      [{ squadId: 'squad-5', type: 'move', target: 'sector-4' }],
+      [{ squadId: 'squad-5', type: 'attack', target: 'sector-3' }],
     ]
-    const phaseTrace: string[] = []
-    for (const orders of route) { const turn = resolveTurn(state, orders); const combat = resolveCombat(turn.nextState, turn.events); const enemy = resolveEnemyTurn(combat.nextState); phaseTrace.push(`turn=${state.turn} enemy=${enemy.events[0]?.to ?? 'none'} terminal=${enemy.nextState.terminal}`); state = enemy.nextState }
-    expect(phaseTrace.at(-1)).toBe('turn=8 enemy=sector-4 terminal=victory')
+    for (const orders of route) { const turn = resolveTurn(state, orders); const combat = resolveCombat(turn.nextState, turn.events); state = resolveEnemyTurn(combat.nextState).nextState }
     expect(state.terminal).toBe('victory')
-    expect(state.terminalReason).toBe('All three relays secured.')
+    const simultaneous = { ...state, sectors: state.sectors.map(sector => sector.id === state.hq.player ? { ...sector, owner: 'enemy' as const } : sector) }
+    const result = terminalState(simultaneous)
+    expect(result.terminal).toBe('victory')
+    expect(result.terminalReason).toBe('All three relays secured.')
   })
 
   it('resolves an HQ assault through the normal typed battle and income path', () => {
@@ -455,13 +457,69 @@ describe('campaign simulation', () => {
     const game = createNewCampaign(42024)
     const enemy = game.enemySquads[0]
     const blocked = { ...game, enemySquads: [{ ...enemy, sector: 'sector-2' as const }, { ...game.enemySquads[1], sector: 'sector-1' as const }, { ...game.enemySquads[2], sector: 'sector-3' as const }] }
-    expect(decideEnemyIntent(blocked)?.kind).toBe('hold')
+    expect(decideEnemyIntent(blocked)?.kind).toMatch(/move|attack/)
     const defended = { ...game, enemySquads: [{ ...enemy, sector: 'sector-1' as const }], squads: [{ ...game.squads[0], sector: 'sector-0' as const }, ...game.squads.slice(1).map(squad => ({ ...squad, sector: 'sector-11' as const }))] }
     expect(decideEnemyIntent(defended)?.kind).toBe('attack')
     const undefended = { ...defended, squads: defended.squads.map(squad => ({ ...squad, sector: 'sector-11' as const })) }
     expect(decideEnemyIntent(undefended)?.kind).toBe('move')
     expect(decideEnemyIntent(undefended)?.to).toBe('sector-0')
   })
+  it('skips a blocked first relay unit and forecasts the actual selected contest', () => {
+    const game = createNewCampaign(42024)
+    const relayPressure = { ...game,
+      enemySquads: [
+        { ...game.enemySquads[0], sector: 'sector-4' as const },
+        { ...game.enemySquads[1], sector: 'sector-5' as const },
+        { ...game.enemySquads[2], sector: game.hq.enemy },
+      ],
+      squads: game.squads.map(squad => ({ ...squad, sector: squad.id === 'squad-1' ? 'sector-3' as const : 'sector-11' as const }))
+    }
+    const forecast = decideEnemyIntent(relayPressure)
+    const phase = resolveEnemyTurn(relayPressure)
+    expect(forecast).toBeDefined()
+    expect(forecast?.squadId).toBe(phase.events[0]?.squadId)
+    expect(forecast?.kind).toBe(phase.events[0]?.type)
+    expect(phase.events[0]?.type).toMatch(/move|attack/)
+  })
+
+  it('contests an occupied Northstar relay and forecasts only the selected attacker', () => {
+    const game = createNewCampaign(42024)
+    const relayPressure = {
+      ...game,
+      enemySquads: [
+        { ...game.enemySquads[0], sector: 'sector-4' as const },
+        { ...game.enemySquads[1], sector: 'sector-5' as const },
+        { ...game.enemySquads[2], sector: game.hq.enemy },
+      ],
+      squads: game.squads.map(squad => ({ ...squad, sector: squad.id === 'squad-1' ? 'sector-3' as const : 'sector-11' as const })),
+      resources: { ...game.resources, intelligence: 11 },
+    }
+    const signals = advanceResearch(advanceResearch(relayPressure, 'Signals'), 'Signals')
+    const intent = decideEnemyIntent(signals)
+    const phase = resolveEnemyTurn(signals)
+    expect(intent).toMatchObject({ squadId: signals.enemySquads[0].id, kind: 'attack', target: 'sector-3' })
+    expect(phase.events).toHaveLength(1)
+    expect(phase.events[0]).toMatchObject({ type: 'attack', squadId: signals.enemySquads[0].id, target: 'sector-3', message: expect.stringContaining('Northstar') })
+    expect(phase.reports[0]).toMatchObject({ target: 'sector-3', winner: 'player' })
+    expect(phase.reports[0].casualties.length).toBeGreaterThan(0)
+    expect(phase.reports[0].defenders[0]).toEqual(expect.objectContaining({ squadId: 'squad-1' }))
+    expect(signals.scoutedEnemyRoutes).toEqual([
+      'Recon garrison from Rimefield: assaults Northstar',
+      'Artillery garrison at Glassway: waits',
+      'Artillery garrison at Ashenfall: waits',
+    ])
+  })
+
+  it('uses general map adjacency for occupied relay attacks beyond sector-4', () => {
+    const game = createNewCampaign(42024)
+    const state = { ...game, enemySquads: [{ ...game.enemySquads[0], sector: 'sector-7' as const }, { ...game.enemySquads[1], sector: game.hq.enemy }, { ...game.enemySquads[2], sector: game.hq.enemy }], squads: game.squads.map(squad => ({ ...squad, sector: squad.id === 'squad-1' ? 'sector-8' as const : 'sector-11' as const })), sectors: game.sectors.map(sector => sector.id === 'sector-8' ? { ...sector, owner: 'player' as const } : sector) }
+    const intent = decideEnemyIntent(state)
+    const phase = resolveEnemyTurn(state)
+    expect(intent).toMatchObject({ squadId: 'enemy-1', kind: 'attack', target: 'sector-8' })
+    expect(phase.events[0]).toMatchObject({ type: 'attack', target: 'sector-8', message: expect.stringContaining('Ironhollow') })
+    expect(phase.reports[0]).toMatchObject({ target: 'sector-8' })
+  })
+
   it('keeps the normal-start research tree from being purchased immediately', () => {
     const game = createNewCampaign(42024)
     expect(researchIncomeThreshold('Logistics', 0)).toBe(1)

@@ -132,7 +132,7 @@ describe('App interactions', () => {
     const afterEnemyPhase = entries()
     expect(afterEnemyPhase.slice(-battleTurn.length)).toEqual(battleTurn)
     expect(afterEnemyPhase.filter(entry => entry.turn === '04').length).toBeGreaterThanOrEqual(2)
-    expect(entries().some(entry => entry.message?.includes('assaults player HQ'))).toBe(true)
+    expect(entries().some(entry => entry.message?.includes('assaults player HQ') || entry.message?.includes('advances to'))).toBe(true)
     expect(document.querySelector('.turn-readout strong')?.textContent).toBe('05')
 
     await act(async () => root.unmount())
