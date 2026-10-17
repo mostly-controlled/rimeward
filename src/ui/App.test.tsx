@@ -74,12 +74,14 @@ describe('App interactions', () => {
 
     await act(async () => root.unmount())
   })
-
-  it('falls back to a live squad id when the selected squad dies', async () => {
+  it('keeps commands bound to a displayed live squad selection', async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
     await act(async () => root.render(<App />))
-    expect(document.body.textContent).toContain('SELECTED: SENTINEL 1')
+    const squadCards = [...document.querySelectorAll('.squad-card')]
+    expect(squadCards).toHaveLength(5)
+    expect(document.querySelector('.selection-note')?.textContent).toContain('Frostgate')
     await act(async () => root.unmount())
   })
+
 })
