@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { advanceDay, advanceResearch, calculateIncome, connectedOwnedSectors, createNewCampaign, initialCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, decideEnemyIntent, researchCost, terminalState, validateOrders, type Order } from './simulation'
+import { advanceDay, advanceResearch, calculateIncome, connectedOwnedSectors, createNewCampaign, initialCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, decideEnemyIntent, researchCost, researchIncomeThreshold, terminalState, validateOrders, type Order } from './simulation'
 
 describe('campaign simulation', () => {
 
   it('advances each research branch exactly twice with branch-specific costs and effects', () => {
     const game = createNewCampaign(42)
-    expect(researchCost('Logistics', 0)).toEqual({ metal: 2, energy: 0, intelligence: 0 })
-    expect(researchCost('Warfare', 1)).toEqual({ metal: 0, energy: 3, intelligence: 0 })
-    expect(researchCost('Signals', 1)).toEqual({ metal: 0, energy: 0, intelligence: 3 })
+    expect(researchCost('Logistics', 0)).toEqual({ metal: 8, energy: 1, intelligence: 0 })
+    expect(researchCost('Logistics', 1)).toEqual({ metal: 12, energy: 2, intelligence: 0 })
+    expect(researchCost('Warfare', 1)).toEqual({ metal: 2, energy: 12, intelligence: 0 })
+    expect(researchCost('Signals', 1)).toEqual({ metal: 3, energy: 0, intelligence: 7 })
     const logistics = advanceResearch(game, 'Logistics')
     expect(logistics.researchLevels.Logistics).toBe(1)
-    expect(logistics.resources).toEqual({ metal: 18, energy: 20, intelligence: 5 })
+    expect(logistics.resources).toEqual({ metal: 12, energy: 19, intelligence: 5 })
     expect(() => advanceResearch(advanceResearch(logistics, 'Logistics'), 'Logistics')).toThrow(/complete/)
     const warfare = advanceResearch(game, 'Warfare')
-    const signals = advanceResearch(game, 'Signals')
-    expect(warfare.resources.energy).toBe(18)
-    expect(signals.resources.intelligence).toBe(3)
+    const signals = advanceResearch({ ...game, resources: { ...game.resources, intelligence: 11 } }, 'Signals')
+    expect(warfare.resources).toEqual({ metal: 19, energy: 12, intelligence: 5 })
+    expect(signals.resources).toEqual({ metal: 18, energy: 20, intelligence: 7 })
     expect(warfare.research).toBe(1)
   })
 
@@ -95,7 +96,7 @@ describe('campaign simulation', () => {
 
   it('gives Signals tier two distinct route intelligence', () => {
     const game = createNewCampaign(42)
-    const tierOne = advanceResearch(game, 'Signals')
+    const tierOne = advanceResearch({ ...game, resources: { ...game.resources, intelligence: 11 } }, 'Signals')
     const tierTwo = advanceResearch(tierOne, 'Signals')
     expect(tierOne.revealedEnemySquads).toHaveLength(game.enemySquads.length)
     expect(tierOne.scoutedEnemyRoutes).toEqual([])
@@ -394,7 +395,7 @@ describe('campaign simulation', () => {
     const base = createNewCampaign(42)
     expect(base.revealedEnemySquads).toEqual([])
     expect(base.scoutedEnemyRoutes).toEqual([])
-    const tier1 = advanceResearch(base, 'Signals')
+    const tier1 = advanceResearch({ ...base, resources: { ...base.resources, intelligence: 11 } }, 'Signals')
     expect(tier1.revealedEnemySquads).toEqual(base.enemySquads.map(enemy => enemy.id))
     expect(tier1.scoutedEnemyRoutes).toEqual([])
     const tier2 = advanceResearch(tier1, 'Signals')
@@ -442,7 +443,7 @@ describe('campaign simulation', () => {
 
   it('shares the seed-42024 scout forecast with the actual enemy event', () => {
     const game = createNewCampaign(42024)
-    const signals = advanceResearch(advanceResearch(game, 'Signals'), 'Signals')
+    const signals = advanceResearch(advanceResearch({ ...game, resources: { ...game.resources, intelligence: 11 } }, 'Signals'), 'Signals')
     const intent = decideEnemyIntent(signals)
     const phase = resolveEnemyTurn(signals)
     expect(intent?.squadId).toBe(phase.events[0]?.squadId)
@@ -461,6 +462,29 @@ describe('campaign simulation', () => {
     expect(decideEnemyIntent(undefended)?.kind).toBe('move')
     expect(decideEnemyIntent(undefended)?.to).toBe('sector-0')
   })
+  it('keeps the normal-start research tree from being purchased immediately', () => {
+    const game = createNewCampaign(42024)
+    expect(researchIncomeThreshold('Logistics', 0)).toBe(1)
+    expect(researchIncomeThreshold('Signals', 1)).toBe(1)
+    const logistics = advanceResearch(game, 'Logistics')
+    expect(logistics.resources).toEqual({ metal: 12, energy: 19, intelligence: 5 })
+    const logisticsTwo = advanceResearch(logistics, 'Logistics')
+    expect(logisticsTwo.resources).toEqual({ metal: 0, energy: 17, intelligence: 5 })
+    expect(() => advanceResearch(logisticsTwo, 'Warfare')).toThrow(/Not enough resources/)
+    expect(() => advanceResearch(logisticsTwo, 'Signals')).toThrow(/Not enough resources/)
+  })
+
+  it('makes research compete with a played attack while enemy relay pressure stays deterministic', () => {
+    const game = createNewCampaign(42024)
+    const attack = resolveTurn(game, [{ squadId: 'squad-1', type: 'attack', target: 'sector-1' }])
+    expect(attack.nextState.resources.energy).toBe(18)
+    const researched = advanceResearch(game, 'Logistics')
+    expect(researched.resources.energy).toBe(19)
+    const pressure = resolveEnemyTurn(researched)
+    expect(pressure.events[0]?.squadId).toMatch(/^enemy-/)
+    expect(pressure.events[0]?.type).toMatch(/move|hold|attack/)
+  })
+
   it("requires owned HQ-connected income and competes with operational resources", () => {
     const game = createNewCampaign(42)
     const noIncome = { ...game, sectors: game.sectors.map(sector => sector.id === game.hq.player ? { ...sector, yields: { metal: 0, energy: 0, intelligence: 0 } } : { ...sector, owner: "neutral" as const }) }

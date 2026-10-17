@@ -199,7 +199,7 @@ describe('App interactions', () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
     const seedGame = createNewCampaign(42024)
-    const tier1 = advanceResearch({ ...seedGame, resources: { ...seedGame.resources, intelligence: 10 } }, 'Signals')
+    const tier1 = advanceResearch({ ...seedGame, resources: { ...seedGame.resources, intelligence: 11 } }, 'Signals')
     await act(async () => root.render(<App initialGame={tier1} />))
     const intel = document.querySelector('.intel')!
     const enemy = tier1.enemySquads[0]

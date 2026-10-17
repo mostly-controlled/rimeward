@@ -68,8 +68,16 @@ const supplied = (state: GameState, sectorId: SectorId): boolean => {
 }
 export const connectedOwnedSectors = (state: GameState): Sector[] => state.sectors.filter(sector => sector.owner === 'player' && supplied(state, sector.id))
 export const calculateIncome = (state: GameState): Resources => connectedOwnedSectors(state).reduce((sum, sector) => ({ metal: sum.metal + sector.yields.metal, energy: sum.energy + sector.yields.energy, intelligence: sum.intelligence + sector.yields.intelligence }), { metal: 0, energy: 0, intelligence: 0 })
-export const researchCost = (branch: ResearchBranch, level: number): Resources => ({ metal: branch === 'Logistics' ? 2 + level : 0, energy: branch === 'Warfare' ? 2 + level : 0, intelligence: branch === 'Signals' ? 2 + level : 0 })
+export const researchCost = (branch: ResearchBranch, level: number): Resources => {
+  const costs: Record<ResearchBranch, Resources[]> = {
+    Logistics: [{ metal: 8, energy: 1, intelligence: 0 }, { metal: 12, energy: 2, intelligence: 0 }],
+    Warfare: [{ metal: 1, energy: 8, intelligence: 0 }, { metal: 2, energy: 12, intelligence: 0 }],
+    Signals: [{ metal: 2, energy: 0, intelligence: 4 }, { metal: 3, energy: 0, intelligence: 7 }],
+  }
+  return costs[branch][level]
+}
 export const researchCurrency = (branch: ResearchBranch): keyof Resources => branch === 'Logistics' ? 'metal' : branch === 'Warfare' ? 'energy' : 'intelligence'
+export const researchIncomeThreshold = (_branch: ResearchBranch, _level: number): number => 1
 export const decideEnemyIntent = (state: GameState): EnemyIntent | undefined => {
   if (state.terminal !== "active") return undefined
   const enemy = [...state.enemySquads].sort((a, b) => a.id.localeCompare(b.id)).find(item => item.sector !== state.hq.enemy)
@@ -93,7 +101,7 @@ const scoutRoutes = (state: GameState): string[] => state.enemySquads.map(enemy 
   if (selected.kind === "move") return enemy.class + " garrison from " + origin + ": advances to " + (state.sectors.find(item => item.id === selected.to)?.name ?? "unknown sector")
   return enemy.class + " garrison at " + origin + ": holds position"
 })
-export const advanceResearch = (state: GameState, branch: ResearchBranch): GameState => { if (state.terminal !== 'active') error('Campaign is over'); const level = state.researchLevels[branch]; if (level >= 2) error(`${branch} is complete`); const income = calculateIncome(state); if (!Object.values(income).some(value => value > 0)) error(`${branch} requires owned HQ-connected income`); const cost = researchCost(branch, level); if (Object.keys(cost).some(key => state.resources[key as keyof Resources] < cost[key as keyof Resources])) error(`Not enough resources for ${branch}`); const next = clone(state); next.resources = { metal: next.resources.metal - cost.metal, energy: next.resources.energy - cost.energy, intelligence: next.resources.intelligence - cost.intelligence }; next.researchLevels[branch] += 1; next.research += 1; if (branch === 'Logistics') next.supplyCapacity = 10 + next.researchLevels.Logistics * 2; if (branch === 'Signals') { next.revealedEnemySquads = next.enemySquads.map(enemy => enemy.id); if (next.researchLevels.Signals >= 2) next.scoutedEnemyRoutes = scoutRoutes(next) } return next }
+export const advanceResearch = (state: GameState, branch: ResearchBranch): GameState => { if (state.terminal !== 'active') error('Campaign is over'); const level = state.researchLevels[branch]; if (level >= 2) error(`${branch} is complete`); const income = calculateIncome(state); const threshold = researchIncomeThreshold(branch, level); if (!Object.values(income).some(value => value >= threshold)) error(`${branch} requires ${threshold} unit of owned HQ-connected income`); const cost = researchCost(branch, level); if (Object.keys(cost).some(key => state.resources[key as keyof Resources] < cost[key as keyof Resources])) error(`Not enough resources for ${branch}`); const next = clone(state); next.resources = { metal: next.resources.metal - cost.metal, energy: next.resources.energy - cost.energy, intelligence: next.resources.intelligence - cost.intelligence }; next.researchLevels[branch] += 1; next.research += 1; if (branch === 'Logistics') next.supplyCapacity = 10 + next.researchLevels.Logistics * 2; if (branch === 'Signals') { next.revealedEnemySquads = next.enemySquads.map(enemy => enemy.id); if (next.researchLevels.Signals >= 2) next.scoutedEnemyRoutes = scoutRoutes(next) } return next }
 export const terminalState = (state: GameState): GameState => { const next = clone(state); if (next.objectives.every(objective => objective.controlled)) { next.terminal = 'victory'; next.terminalReason = 'All three relays secured.' } else if (!next.squads.length) { next.terminal = 'defeat'; next.terminalReason = 'No Ward squads remain.' } else if (next.sectors.find(sector => sector.id === next.hq.player)?.owner === 'enemy') { next.terminal = 'defeat'; next.terminalReason = 'Player HQ lost.' } else if (next.turn > 18) { next.terminal = 'defeat'; next.terminalReason = 'Turn 18 reached without victory.' } return next }
 export const validateOrders = (state: GameState, orders: Order[]): void => {
   if (state.terminal !== 'active') error('Campaign is over; orders are blocked')
