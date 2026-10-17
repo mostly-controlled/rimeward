@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceDay, createNewCampaign, initialCampaign, resolveCombat, resolveTurn, validateOrders, type Order } from './simulation'
+import { advanceDay, createNewCampaign, initialCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, validateOrders, type Order } from './simulation'
 
 describe('campaign simulation', () => {
   it('starts with the legacy shell API', () => { expect(initialCampaign()).toEqual({ day: 1, supplies: 3 }); expect(advanceDay(initialCampaign())).toEqual({ day: 2, supplies: 2 }) })
@@ -134,4 +134,54 @@ describe('campaign simulation', () => {
     expect(resolveCombat(a.nextState, a.events)).toEqual(resolveCombat(b.nextState, b.events))
     expect(resolveCombat(a.nextState, a.events).reports).toHaveLength(1)
   })
+  it('runs a legal deterministic enemy phase without teleporting', () => {
+    const game = createNewCampaign(42024)
+    const a = resolveEnemyTurn(game)
+    const b = resolveEnemyTurn(game)
+    expect(a).toEqual(b)
+    const moved = a.events[0]
+    if (moved) {
+      expect(game.sectors.find(sector => sector.id === moved.from)?.links).toContain(moved.to)
+      expect(a.nextState.enemySquads.find(enemy => enemy.id === moved.squadId)?.sector).toBe(moved.to)
+    }
+  })
+
+  it('completes the seed 42024 three-turn route and produces a real battle report', () => {
+    let state = createNewCampaign(42024)
+    const route: Order[] = [
+      { squadId: 'squad-1', type: 'move', target: 'sector-1' },
+      { squadId: 'squad-1', type: 'move', target: 'sector-5' },
+      { squadId: 'squad-1', type: 'attack', target: 'sector-6' },
+    ]
+
+    for (const [turnIndex, order] of route.entries()) {
+      const turn = resolveTurn(state, [order])
+      expect(turn.nextState.squads.find(squad => squad.id === 'squad-1')?.sector).toBe(turnIndex === 0 ? 'sector-1' : 'sector-5')
+      const combat = resolveCombat(turn.nextState, turn.events)
+      const enemy = resolveEnemyTurn(combat.nextState)
+      state = enemy.nextState
+
+      if (turnIndex === 2) {
+        expect(combat.reports).toHaveLength(1)
+        expect(combat.reports[0]).toMatchObject({ target: 'sector-6', terrain: 'ridge' })
+        expect(combat.reports[0].winner).toMatch(/player|enemy|draw/)
+        expect(combat.reports[0].attackers[0]).toEqual(expect.objectContaining({ squadId: 'squad-1' }))
+      } else expect(combat.reports).toEqual([])
+    }
+
+    expect(state.turn).toBe(4)
+    expect(state.recentBattles).toHaveLength(1)
+  })
+  it('keeps enemy movement out of occupied and HQ sectors and captures undefended Ward sectors', () => {
+    const game = createNewCampaign(1)
+    const enemy = { ...game.enemySquads[0], sector: 'sector-5' as const }
+    const occupied = { ...game, enemySquads: [enemy], squads: [{ ...game.squads[0], sector: 'sector-1' as const }] }
+    const blocked = resolveEnemyTurn(occupied)
+    expect(blocked.events.every(event => event.to !== 'sector-1')).toBe(true)
+    const undefended = { ...game, enemySquads: [enemy], squads: game.squads.map(squad => ({ ...squad, sector: 'sector-0' as const })), sectors: game.sectors.map(sector => sector.id === 'sector-1' ? { ...sector, owner: 'player' as const } : sector) }
+    const captured = resolveEnemyTurn(undefended)
+    expect(captured.nextState.sectors.find(sector => sector.id === 'sector-1')?.owner).toBe('enemy')
+    expect(captured.nextState.objectives.find(objective => objective.sector === 'sector-1')?.controlled).not.toBe(true)
+  })
+
 })
