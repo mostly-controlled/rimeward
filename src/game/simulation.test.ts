@@ -885,7 +885,7 @@ describe('campaign simulation', () => {
     }
   })
 
-  it('retargets a blocked HQ goal after repeated full phase cycles without oscillating', () => {
+  it('holds a blocked HQ goal purposefully for twelve full phase cycles', () => {
     const base = createNewCampaign(42024)
     let state: GameState = {
       ...base,
@@ -894,19 +894,17 @@ describe('campaign simulation', () => {
       strategicTarget: { squadId: 'enemy-2', destination: 'sector-0' as const },
     }
     const destinations: string[] = []
-    for (let cycle = 0; cycle < 10; cycle += 1) {
+    for (let cycle = 0; cycle < 12; cycle += 1) {
       const turn = resolveTurn(state, state.squads.map(squad => ({ squadId: squad.id, type: 'hold' as const })))
       const combat = resolveCombat(turn.nextState, turn.events)
       const phase = resolveEnemyTurn(combat.nextState)
-      expect(phase.events).toHaveLength(1)
+      expect(phase.events).toMatchObject([{ type: 'hold', squadId: 'enemy-2', from: 'sector-8', to: 'sector-8' }])
       destinations.push(phase.events[0].to)
       state = phase.nextState
     }
-    expect(new Set(destinations).size).toBeGreaterThan(1)
-    expect(destinations.some((destination, index) => index >= 2 && destinations[index - 2] === 'sector-7' && destinations[index - 1] === 'sector-10' && destination === 'sector-7')).toBe(false)
-    expect(state.enemyHistory.filter(intent => intent.squadId === 'enemy-2').length).toBe(10)
-    expect(state.strategicTarget?.squadId ?? 'held').toBeOneOf(['enemy-2', 'held'])
-    if (state.strategicTarget) expect(state.strategicTarget.destination).not.toBe('sector-3')
+    expect(new Set(destinations)).toEqual(new Set(['sector-8']))
+    expect(state.enemyHistory.filter(intent => intent.squadId === 'enemy-2').length).toBe(12)
+    expect(state.strategicTarget).toEqual({ squadId: 'enemy-2', destination: 'sector-0' })
   })
 
   it('resumes a newly reopened route after frozen history has exhausted pursuit', () => {
