@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
-import { createNewCampaign } from '../game/simulation'
+import { createNewCampaign, terminalState } from '../game/simulation'
 
 describe('App interactions', () => {
   afterEach(() => {
@@ -155,31 +155,54 @@ describe('App interactions', () => {
     await act(async () => root.unmount())
   })
 
-  it('exposes research costs/effects and HQ-connected income sources', async () => {
+  it('selects research, charges its real cost, and shows all two-level controls', async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
     await act(async () => root.render(<App />))
-    expect(document.querySelector('.income')?.textContent).toContain('Frostgate +1')
-    const logistics = [...document.querySelectorAll('.research button')].find(button => button.textContent?.startsWith('Logistics')) as HTMLButtonElement
-    expect(logistics.textContent).toContain('COST 2 metal')
-    expect(logistics.textContent).toContain('+recovery strength')
+    const logistics = [...document.querySelectorAll('.research button')].find(button => button.textContent?.includes('Logistics')) as HTMLButtonElement
     await act(async () => logistics.click())
-    expect(logistics.textContent).toContain('Logistics 1/2')
-    expect(document.querySelector('.resource-strip')?.textContent).toContain('METAL 18')
+    expect(logistics.textContent).toContain('1/2')
+    expect(document.body.textContent).toContain('LVL 2')
+    expect(document.querySelectorAll('.research button')).toHaveLength(3)
     await act(async () => root.unmount())
   })
 
-  it('blocks terminal orders and supports restart and new seed controls', async () => {
+  it('blocks terminal orders and permits restart', async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
-    const campaign = createNewCampaign(9)
-    await act(async () => root.render(<App initialGame={{ ...campaign, terminal: 'defeat', terminalReason: 'Turn 18 reached without victory.' }} />))
-    expect(document.body.textContent).toContain('DEFEAT')
+    const terminal = terminalState({ ...createNewCampaign(7), squads: [], terminal: 'active' })
+    await act(async () => root.render(<App initialGame={terminal} />))
+    expect(document.body.textContent).toContain('NO SURVIVORS')
+    await act(async () => (document.querySelector('.primary') as HTMLButtonElement).click())
+    expect(document.body.textContent).toContain('SEED 7')
+    await act(async () => root.unmount())
+  })
+
+  it('selects research, spends its real cost, and shows HQ-connected income sources', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App />))
+    expect(document.querySelector('.income')?.textContent).toContain('Frostgate: +1M +0E +1I')
+    expect(document.querySelector('.income')?.textContent).toContain('TOTAL +1M +0E +1I / TURN')
+    const logistics = [...document.querySelectorAll('.research button')].find(button => button.textContent?.includes('Logistics')) as HTMLButtonElement
+    expect(logistics.textContent).toContain('LVL 1')
+    await act(async () => logistics.click())
+    expect(logistics.textContent).toContain('1/2')
+    expect(logistics.textContent).toContain('LVL 2')
+    await act(async () => root.unmount())
+  })
+
+  it('blocks terminal orders and offers a restart', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    const campaign = createNewCampaign(42)
+    await act(async () => root.render(<App initialGame={{ ...campaign, turn: 19, terminal: 'defeat', terminalReason: 'Turn 18 reached without victory.' }} />))
+    expect(document.querySelector('.terminal')?.textContent).toContain('TURN 18 — DEFEAT')
     expect((document.querySelector('.execute') as HTMLButtonElement).disabled).toBe(true)
     expect([...document.querySelectorAll('.research button')].every(button => (button as HTMLButtonElement).disabled)).toBe(true)
-    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'NEW SEED') as HTMLButtonElement).click())
-    expect(document.querySelector('.seed-readout')?.textContent).toBe('SEED 42025')
-    expect(document.body.textContent).not.toContain('DEFEAT')
+    await act(async () => ([...document.querySelectorAll('.terminal button')].find(button => button.textContent?.startsWith('RESTART')) as HTMLButtonElement).click())
+    expect(document.querySelector('.terminal')).toBeNull()
+    expect(document.querySelector('.turn-readout strong')?.textContent).toBe('01')
     await act(async () => root.unmount())
   })
 })
