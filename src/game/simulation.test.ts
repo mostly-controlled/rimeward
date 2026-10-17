@@ -543,6 +543,30 @@ describe('campaign simulation', () => {
     expect(pressure.events[0]?.type).toMatch(/move|hold|attack/)
   })
 
+  it('replays the owner-played HQ-safe Signals route with recovery and all Ward squads alive', () => {
+    let state = advanceResearch(createNewCampaign(42024), 'Signals')
+    const route: Order[][] = [
+      [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }, { squadId: 'squad-2', type: 'move', target: 'sector-11' }, { squadId: 'squad-3', type: 'move', target: 'sector-1' }, { squadId: 'squad-4', type: 'move', target: 'sector-11' }, { squadId: 'squad-5', type: 'move', target: 'sector-1' }],
+      [{ squadId: 'squad-1', type: 'attack', target: 'sector-2' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-3', type: 'move', target: 'sector-5' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'move', target: 'sector-5' }],
+      [{ squadId: 'squad-1', type: 'attack', target: 'sector-3' }, { squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }, { squadId: 'squad-5', type: 'attack', target: 'sector-6' }],
+      [{ squadId: 'squad-1', type: 'recover' }, { squadId: 'squad-3', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }],
+      [{ squadId: 'squad-1', type: 'recover' }, { squadId: 'squad-2', type: 'attack', target: 'sector-9' }, { squadId: 'squad-4', type: 'attack', target: 'sector-9' }],
+      [{ squadId: 'squad-1', type: 'recover' }, { squadId: 'squad-5', type: 'move', target: 'sector-4' }],
+      [{ squadId: 'squad-1', type: 'recover' }, { squadId: 'squad-5', type: 'attack', target: 'sector-3' }],
+    ]
+    for (const [index, orders] of route.entries()) {
+      if (index === 6) state = advanceResearch(state, 'Signals')
+      const turn = resolveTurn(state, orders)
+      const combat = resolveCombat(turn.nextState, turn.events)
+      state = resolveEnemyTurn(combat.nextState).nextState
+    }
+    expect(state.terminal).toBe('victory')
+    expect(state.sectors.find(sector => sector.id === state.hq.player)?.owner).toBe('player')
+    expect(state.objectives.filter(objective => objective.controlled)).toHaveLength(3)
+    expect(state.squads).toHaveLength(5)
+    expect(state.resources).toEqual({ metal: 94, energy: 16, intelligence: 3 })
+  })
+
   it("requires owned HQ-connected income and competes with operational resources", () => {
     const game = createNewCampaign(42)
     const noIncome = { ...game, sectors: game.sectors.map(sector => sector.id === game.hq.player ? { ...sector, yields: { metal: 0, energy: 0, intelligence: 0 } } : { ...sector, owner: "neutral" as const }) }
