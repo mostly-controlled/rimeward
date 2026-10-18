@@ -112,19 +112,33 @@ const choosePressureTarget = (state: GameState, targets: SectorId[], phaseTurn =
   })[0]
 }
 
+const attackIsViable = (state: GameState, enemy: EnemySquad, target: SectorId): boolean => {
+  const sector = state.sectors.find(item => item.id === target)
+  const defenders = state.squads.filter(squad => squad.sector === target && squad.strength > 0)
+  if (!sector || !defenders.length) return true
+  const enemyPower = enemy.strength * terrainPower[sector.terrain]
+  const playerPower = defenders.reduce((sum, squad) => sum + squad.strength * terrainPower[sector.terrain], 0)
+  return enemyPower >= playerPower * 0.5
+}
+const viableEnemyIntent = (state: GameState, intent: EnemyIntent): boolean => {
+  if (intent.kind !== 'attack') return true
+  const enemy = state.enemySquads.find(item => item.id === intent.squadId)
+  return Boolean(enemy && intent.target && attackIsViable(state, enemy, intent.target))
+}
+
 const intentForEnemy = (state: GameState, enemy: EnemySquad, phaseTurn = state.turn): EnemyIntent | undefined => {
   const current = state.sectors.find(sector => sector.id === enemy.sector)
   const recentMoves = state.enemyHistory.filter(item => item.squadId === enemy.id && item.kind === 'move' && item.from !== item.to).slice(-4)
   if (enemy.sector === state.hq.enemy) return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
   const hqAssault = enemy.sector !== state.hq.player && current?.links.includes(state.hq.player) && state.squads.some(squad => squad.sector === state.hq.player)
-  if (hqAssault) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: state.hq.player }
+  if (hqAssault && attackIsViable(state, enemy, state.hq.player)) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: state.hq.player }
   const occupiedPlayerTargets = [...(current?.links ?? [])].filter(target => {
     const sector = state.sectors.find(item => item.id === target)
     const occupied = state.squads.some(squad => squad.sector === target)
     const relay = state.objectives.some(objective => objective.sector === target)
     return occupied && (sector?.owner === 'player' || relay)
   })
-  const occupiedPlayerTarget = choosePressureTarget(state, occupiedPlayerTargets, phaseTurn)
+  const occupiedPlayerTarget = choosePressureTarget(state, occupiedPlayerTargets.filter(target => attackIsViable(state, enemy, target)), phaseTurn)
   if (occupiedPlayerTarget) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: occupiedPlayerTarget }
   const destinations = [...(current?.links ?? [])].filter(target => {
     const sector = state.sectors.find(item => item.id === target)
@@ -167,10 +181,10 @@ const intentToward = (state: GameState, target: StrategicTarget, phaseTurn: numb
   if (current.links.includes(target.destination)) {
     const occupied = state.squads.some(squad => squad.sector === target.destination)
     const relay = state.objectives.some(objective => objective.sector === target.destination)
-    if (occupied && (destinationSector.owner === 'player' || relay)) return { squadId: enemy.id, kind: 'attack', from: enemy.sector, to: enemy.sector, target: target.destination }
+    if (occupied && (destinationSector.owner === 'player' || relay) && attackIsViable(state, enemy, target.destination)) return { squadId: enemy.id, kind: 'attack', from: enemy.sector, to: enemy.sector, target: target.destination }
   }
   const blockedForward = current.links.filter(next => { const sector = state.sectors.find(item => item.id === next); return sector && distanceBetween(state, next, target.destination) < distanceBetween(state, current.id, target.destination) && state.squads.some(squad => squad.sector === next) })[0]
-  if (blockedForward) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: blockedForward }
+  if (blockedForward && attackIsViable(state, enemy, blockedForward)) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: blockedForward }
   const steps = current.links.filter(next => { const sector = state.sectors.find(item => item.id === next); return sector && sector.owner !== 'enemy' && !state.enemySquads.some(other => other.id !== enemy.id && other.sector === next) && !state.squads.some(squad => squad.sector === next) })
   const step = steps.filter(step => legalDistance(step) < currentDistance).sort((a, b) => legalDistance(a) - legalDistance(b) || pressureHash(state, `${target.squadId}:${a}`, phaseTurn) - pressureHash(state, `${target.squadId}:${b}`, phaseTurn) || a.localeCompare(b))[0]
   return step ? { squadId: enemy.id, kind: 'move', from: enemy.sector, to: step } : undefined
@@ -206,7 +220,7 @@ export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn, excl
   if (tactical.length) return tactical.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.target}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.target}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
   if (state.strategicTarget) {
     const pursuing = excluded.has(state.strategicTarget.squadId) ? undefined : intentToward(state, state.strategicTarget, phaseTurn)
-    if (pursuing) return pursuing
+    if (pursuing && viableEnemyIntent(state, pursuing)) return pursuing
     const targetEnemy = enemies.find(enemy => enemy.id === state.strategicTarget?.squadId)
     if (targetEnemy && !excluded.has(targetEnemy.id)) return { squadId: targetEnemy.id, kind: 'hold', from: targetEnemy.sector, to: targetEnemy.sector }
   }
@@ -214,11 +228,11 @@ export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn, excl
   const candidates = tier.length ? tier : intents
   return candidates.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.to ?? a.target ?? a.from}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.to ?? b.target ?? b.from}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
 }
-/** Return the deterministic hostile sequence for a phase. Explicit budgets may be zero; omitted means one. */
+/** Return the deterministic hostile sequence for a phase. The committed phase
+ * gives every currently live hostile squad one slot; an explicit budget caps
+ * that set for forecast/test callers. */
 export const decideEnemyIntents = (state: GameState, actionBudget?: number): EnemyIntent[] => {
-  // A phase always has one mandatory hostile pressure slot. The UI passes
-  // the submitted-order count, so zero orders must not buy a free HOLD turn.
-  const limit = actionBudget === undefined || actionBudget <= 0 ? 1 : actionBudget
+  const limit = actionBudget === undefined || actionBudget <= 0 ? state.enemySquads.filter(enemy => enemy.strength > 0).length : actionBudget
   let remaining = state
   const acted = new Set<string>()
   const intents: EnemyIntent[] = []
@@ -233,7 +247,7 @@ export const decideEnemyIntents = (state: GameState, actionBudget?: number): Ene
   return intents
 }
 const scoutRoutes = (state: GameState, phaseTurn = state.turn): string[] => {
-  const selected = decideEnemyIntents(state, 1).map(intent => [intent.squadId, intent] as const)
+  const selected = decideEnemyIntents(state).map(intent => [intent.squadId, intent] as const)
   const bySquad = new Map(selected)
   return state.enemySquads.map(enemy => {
     const acting = bySquad.get(enemy.id)
@@ -342,7 +356,13 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     const attackerWon = winner === attackerFaction
     const defenderWon = winner === defenderFaction
     if (attackerWon || winner === 'draw') for (const squad of defenders) casualties.push({ squadId: squad.id, side: defenderFaction, strength: Math.min(squad.strength, Math.max(1, Math.ceil(attackerPower / Math.max(1, attackers.length * 4))) ) })
+    if (attackerWon && enemyAttack) for (const squad of attackers) casualties.push({ squadId: squad.id, side: attackerFaction, strength: Math.min(squad.strength, 1) })
+    // A failed Ward assault still exacts a visible screening cost from the
+    // finite hostile stack; otherwise a defender can absorb unlimited orders
+    // without symmetric attrition.
+    if (defenderWon && !enemyAttack) for (const squad of defenders) casualties.push({ squadId: squad.id, side: 'enemy', strength: Math.min(squad.strength, 1) })
     if (defenderWon || winner === 'draw') for (const squad of attackers) casualties.push({ squadId: squad.id, side: attackerFaction, strength: Math.min(squad.strength, Math.max(1, Math.ceil(defenderPower / Math.max(1, attackers.length * 5))) ) })
+    if (defenderWon && enemyAttack) for (const squad of defenders) casualties.push({ squadId: squad.id, side: defenderFaction, strength: Math.min(squad.strength, 1) })
     for (const casualty of casualties) {
       const squad = casualty.side === 'player' ? nextState.squads.find(item => item.id === casualty.squadId) : nextState.enemySquads.find(item => item.id === casualty.squadId)
       if (squad) squad.strength -= casualty.strength
@@ -404,7 +424,8 @@ const resolveEnemyTurnOnce = (state: GameState, acted: Set<string> = new Set()):
     const sector = nextState.sectors.find(item => item.id === intent.to)!
     if (sector.owner === 'player') sector.owner = 'enemy'
     nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
-    events.push({ type: 'move', squadId: enemy.id, from, to: intent.to, message: `${enemy.id} advances to ${intent.to}` })
+    const destinationName = nextState.sectors.find(item => item.id === intent.to)?.name ?? intent.to
+    events.push({ type: 'move', squadId: enemy.id, from, to: intent.to, message: `${enemy.id} advances to ${intent.to} (${destinationName})` })
   } else if (intent?.kind === 'hold' && enemy) {
     events.push({ type: 'hold', squadId: enemy.id, from: enemy.sector, to: enemy.sector, message: `${enemy.id} holds at ${enemy.sector}` })
   }
@@ -419,14 +440,15 @@ const resolveEnemyTurnOnce = (state: GameState, acted: Set<string> = new Set()):
   return { nextState: combatState, events, reports: combat.reports }
 }
 
-/** Each Ward order grants one hostile pressure slot; omitted/zero budgets retain one mandatory slot. */
+/** Resolve one coherent phase. Every live hostile squad acts once by default;
+ * explicit budgets are caps used by forecast/test callers. */
 export const resolveEnemyTurn = (state: GameState, actionBudget?: number): { nextState: GameState; events: GameEvent[]; reports: BattleReport[] } => {
   if (state.terminal !== 'active') return { nextState: state, events: [], reports: [] }
   let nextState = clone(state)
   const events: GameEvent[] = []
   const reports: BattleReport[] = []
   const acted = new Set<string>()
-  const requestedSlots = actionBudget === undefined || actionBudget <= 0 ? 1 : actionBudget
+  const requestedSlots = actionBudget === undefined || actionBudget <= 0 ? state.enemySquads.filter(enemy => enemy.strength > 0).length : actionBudget
   const slots = Math.min(requestedSlots, state.enemySquads.filter(enemy => enemy.strength > 0).length)
   for (let index = 0; index < slots && nextState.terminal === 'active'; index += 1) {
     const phase = resolveEnemyTurnOnce(nextState, acted)
