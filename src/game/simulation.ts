@@ -47,7 +47,7 @@ export const createNewCampaign = (seed: number): GameState => {
   for (const [a, b] of [[1, 5], [3, 8], [7, 10]] as const) { sectors[a].links.push(id(b)); sectors[b].links.push(id(a)) }
   const objectiveIndexes = [3, 6, 9]
   const squads = classes.concat('Sentinel').map((unitClass, i): Squad => ({ id: `squad-${i + 1}`, class: unitClass, strength: 10, fatigue: 0, home: id(0), sector: id(0), experience: 0, upgrades: [] }))
-  const enemySquads = [0, 1, 2].map((i): EnemySquad => ({ id: `enemy-${i + 1}`, class: classes[Math.floor(random() * classes.length)], strength: 6 + Math.floor(random() * 5), sector: id([6, 8, 10][i]) }))
+  const enemySquads = [0, 1, 2].map((i): EnemySquad => ({ id: `enemy-${i + 1}`, class: classes[Math.floor(random() * classes.length)], strength: 7 + Math.floor(random() * 3), sector: id([6, 8, 10][i]) }))
   const initial = { seed: seed >>> 0, turn: 1, sectors, objectives: objectiveIndexes.map((n, i) => ({ id: `relay-${i + 1}`, sector: id(n), controlled: false })), hq: { player: id(0), enemy: id(6) }, squads, enemySquads, resources: { metal: 20, energy: 20, intelligence: 5 }, research: 0, researchLevels: { Logistics: 0, Warfare: 0, Signals: 0 }, recentBattles: [], orderHistory: [], enemyHistory: [], strategicIntent: undefined, strategicTarget: undefined, terminal: 'active' as const, income: { metal: 0, energy: 0, intelligence: 0 }, revealedEnemySquads: [], scoutedEnemyRoutes: [], supplyCapacity: 10 }
   initial.income = calculateIncome(initial)
   return initial
@@ -145,6 +145,8 @@ const intentForEnemy = (state: GameState, enemy: EnemySquad, phaseTurn = state.t
   })
   const occupiedPlayerTarget = choosePressureTarget(state, occupiedPlayerTargets.filter(target => attackIsViable(state, enemy, target, excluded)), phaseTurn)
   if (occupiedPlayerTarget) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: occupiedPlayerTarget }
+  const guardsRelay = state.objectives.some(objective => objective.sector === enemy.sector && !objective.controlled)
+  if (guardsRelay) return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
   const destinations = [...(current?.links ?? [])].filter(target => {
     const sector = state.sectors.find(item => item.id === target)
     const isUndefendedHq = target === state.hq.player && !state.squads.some(squad => squad.sector === target)
@@ -224,6 +226,10 @@ export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn, excl
   const tactical = hq.length ? hq : relay
   if (tactical.length) return tactical.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.target}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.target}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
   if (state.strategicTarget) {
+    const defender = intents.find(intent => intent.squadId === state.strategicTarget?.squadId)
+    const defenderEnemy = enemies.find(enemy => enemy.id === state.strategicTarget?.squadId)
+    const defenderRelay = defenderEnemy && state.objectives.some(objective => objective.sector === defenderEnemy.sector && !objective.controlled)
+    if (defender?.kind === 'hold' && defenderRelay) return defender
     const pursuing = excluded.has(state.strategicTarget.squadId) ? undefined : intentToward(state, state.strategicTarget, phaseTurn, excluded)
     if (pursuing && viableEnemyIntent(state, pursuing, excluded)) return pursuing
     const targetEnemy = enemies.find(enemy => enemy.id === state.strategicTarget?.squadId)
