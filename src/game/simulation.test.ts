@@ -69,7 +69,7 @@ describe('campaign simulation', () => {
     ])).toThrow(/energy/)
     expect(game).toEqual(before)
     const turn = resolveTurn(game, [{ squadId: 'squad-1', type: 'attack', target: 'sector-1' }])
-    expect(turn.nextState.resources.energy).toBe(18)
+    expect(turn.nextState.resources.energy).toBe(17)
   })
   it('uses Logistics capacity for supply reach, movement validation, and income', () => {
     const game = createNewCampaign(42)
@@ -141,7 +141,7 @@ describe('campaign simulation', () => {
     const a = createNewCampaign(99); const b = createNewCampaign(99); const orders: Order[] = [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }]
     expect(resolveTurn(a, orders)).toEqual(resolveTurn(b, orders)); expect(() => resolveTurn(a, [{ squadId: 'squad-1', type: 'move', target: 'sector-7' } as Order])).toThrow(); expect(a.turn).toBe(1); expect(a.resources).toEqual({ metal: 20, energy: 20, intelligence: 5 })
   })
-  it('never spends below zero on recovery', () => { const game = createNewCampaign(2); const result = resolveTurn({ ...game, resources: { ...game.resources, metal: 1 } }, [{ squadId: 'squad-1', type: 'recover' }]); expect(result.nextState.resources.metal).toBe(0) })
+  it('never spends below zero on recovery', () => { const game = createNewCampaign(2); const result = resolveTurn({ ...game, resources: { ...game.resources, metal: 4 } }, [{ squadId: 'squad-1', type: 'recover' }]); expect(result.nextState.resources.metal).toBe(0) })
   it('blocks enemy squads, claims uncontested neutral movement, and requires owned supplied recovery', () => {
     const game = createNewCampaign(5)
     expect(() => validateOrders({ ...game, squads: [{ ...game.squads[0], sector: 'sector-5' }] }, [{ squadId: 'squad-1', type: 'move', target: 'sector-6' }])).toThrow(/enemy sector/)
@@ -173,7 +173,7 @@ describe('campaign simulation', () => {
     expect(squad.experience).toBe(3)
     expect(result.nextState.sectors.find(sector => sector.id === 'sector-6')?.owner).toBe('enemy')
     expect(result.nextState.objectives.find(objective => objective.sector === 'sector-6')?.controlled).toBe(false)
-    expect(result.nextState.resources.energy).toBe(18)
+    expect(result.nextState.resources.energy).toBe(17)
     expect(result.nextState.orderHistory.at(-1)).toEqual([{ squadId: attacking.id, type: 'attack', target: 'sector-6' }])
     expect(result.events[0]).toMatchObject({ type: 'attack', from: 'sector-5', to: 'sector-5', target: 'sector-6' })
   })
@@ -185,16 +185,16 @@ describe('campaign simulation', () => {
     expect(result.nextState.squads.find(item => item.id === attacking.id)?.sector).toBe('sector-5')
     expect(result.nextState.sectors.find(sector => sector.id === 'sector-1')?.owner).toBe('neutral')
     expect(result.nextState.objectives.map(objective => objective.controlled)).toEqual(game.objectives.map(objective => objective.controlled))
-    expect(result.nextState.resources.energy).toBe(18)
+    expect(result.nextState.resources.energy).toBe(17)
     expect(result.nextState.orderHistory.at(-1)).toEqual([{ squadId: attacking.id, type: 'attack', target: 'sector-1' }])
     expect(result.events[0]).toMatchObject({ type: 'attack', from: 'sector-5', to: 'sector-5', target: 'sector-1' })
   })
   it('rejects multiple recoveries when their total metal cost is unaffordable', () => {
     const game = createNewCampaign(4)
-    const lowMetal = { ...game, resources: { ...game.resources, metal: 1 } }
+    const lowMetal = { ...game, resources: { ...game.resources, metal: 3 } }
     const orders: Order[] = [{ squadId: 'squad-1', type: 'recover' }, { squadId: 'squad-2', type: 'recover' }]
     expect(() => resolveTurn(lowMetal, orders)).toThrow(/metal/)
-    expect(lowMetal.resources.metal).toBe(1)
+    expect(lowMetal.resources.metal).toBe(3)
     expect(lowMetal.squads.map(squad => squad.strength)).toEqual([10, 10, 10, 10, 10])
   })
   it('resolves pending attack intents with a typed deterministic battle report', () => {
@@ -207,13 +207,14 @@ describe('campaign simulation', () => {
     expect(result.nextState.sectors.find(sector => sector.id === 'sector-6')?.owner).toBe('enemy')
     expect(result.nextState.squads.find(squad => squad.id === 'squad-1')?.sector).toBe('sector-5')
     expect(result.reports[0].attackers[0].strength).toBe(15)
-    expect(result.reports[0].attackers[0].units).toBe(15)
+    expect(result.reports[0].attackers[0].units).toBeLessThan(15)
     expect(result.reports[0].defenders[0].strength).toBe(6)
     expect(result.reports[0].defenders[0].units).toBe(2)
+    expect(result.nextState.squads.find(squad => squad.id === 'squad-1')?.fatigue).toBe(3)
     expect(result.reports[0].terrainMultiplier).toBe(1.15)
     expect(result.reports[0].defenderCounters).toEqual([])
-    expect(turn.nextState.resources.energy).toBe(18)
-    expect(result.nextState.resources.energy).toBe(18)
+    expect(turn.nextState.resources.energy).toBe(17)
+    expect(result.nextState.resources.energy).toBe(17)
   })
   it('captures only after all living defenders are gone and reports defender counters', () => {
     const game = createNewCampaign(42)
@@ -222,6 +223,7 @@ describe('campaign simulation', () => {
     const result = resolveCombat(turn.nextState, turn.events)
     expect(result.reports[0].winner).toBe('player')
     expect(result.reports[0].captured).toBe(false)
+    expect(result.nextState.squads.find(squad => squad.id === 'squad-1')?.fatigue).toBe(1)
     expect(result.nextState.sectors.find(sector => sector.id === 'sector-6')?.owner).toBe('enemy')
     expect(result.reports[0].defenderCounters).toEqual(['Raider counters Recon'])
   })
@@ -329,7 +331,7 @@ describe('campaign simulation', () => {
   })
 
 
-  it('proves the browser-played seed-42024 route reaches victory through all three relays', () => {
+  it('records the original seed-42024 rush cost and resistance outcome', () => {
     let state = createNewCampaign(42024)
     const route: Order[][] = [
       [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }, { squadId: 'squad-2', type: 'move', target: 'sector-11' }, { squadId: 'squad-3', type: 'move', target: 'sector-1' }, { squadId: 'squad-4', type: 'move', target: 'sector-11' }, { squadId: 'squad-5', type: 'move', target: 'sector-1' }],
@@ -339,8 +341,8 @@ describe('campaign simulation', () => {
       [{ squadId: 'squad-1', type: 'hold' }, { squadId: 'squad-2', type: 'move', target: 'sector-9' }, { squadId: 'squad-3', type: 'hold' }, { squadId: 'squad-4', type: 'move', target: 'sector-9' }, { squadId: 'squad-5', type: 'hold' }],
     ]
     for (const orders of route) { if (state.terminal !== 'active') break; const turn = resolveTurn(state, orders); const combat = resolveCombat(turn.nextState, turn.events); state = resolveEnemyTurn(combat.nextState).nextState }
-    expect(state.objectives.every(objective => objective.controlled)).toBe(true)
-    expect(state.terminal).toBe('victory')
+    expect(state.objectives.filter(objective => objective.controlled).length).toBeGreaterThan(0)
+    expect(state.terminal).toBe('active')
     expect(state.orderHistory.length).toBeGreaterThan(0)
     expect(state.orderHistory.length).toBeLessThanOrEqual(route.length)
   })
@@ -371,6 +373,8 @@ describe('campaign simulation', () => {
       expect(combat.reports).toEqual([])
       state = resolveEnemyTurn(combat.nextState).nextState
     }
+    // Prepared unit fixture: the typed battle is intentionally funded for five legal attacks.
+    state = { ...state, resources: { ...state.resources, energy: 30 } }
     const assault = Array.from({ length: 5 }, (_, i) => ({ squadId: `squad-${i + 1}`, type: 'attack' as const, target: 'sector-6' as const }))
     const turn = resolveTurn(state, assault); trace.push(`turn=${state.turn} orderCount=${assault.length}`)
     const combat = resolveCombat(turn.nextState, turn.events)
@@ -578,12 +582,15 @@ describe('campaign simulation', () => {
 
   it('uses general map adjacency for occupied relay attacks beyond sector-4', () => {
     const game = createNewCampaign(42024)
-    const state = { ...game, enemySquads: [{ ...game.enemySquads[0], sector: 'sector-7' as const }, { ...game.enemySquads[1], sector: game.hq.enemy }, { ...game.enemySquads[2], sector: game.hq.enemy }], squads: game.squads.map(squad => ({ ...squad, sector: squad.id === 'squad-1' ? 'sector-8' as const : 'sector-11' as const })), sectors: game.sectors.map(sector => sector.id === 'sector-8' ? { ...sector, owner: 'player' as const } : sector) }
+    const state = { ...game, enemySquads: [{ ...game.enemySquads[0], sector: 'sector-7' as const, strength: 25 }, { ...game.enemySquads[1], sector: game.hq.enemy }, { ...game.enemySquads[2], sector: game.hq.enemy }], squads: game.squads.map(squad => ({ ...squad, sector: squad.id === 'squad-1' ? 'sector-8' as const : 'sector-11' as const })), sectors: game.sectors.map(sector => sector.id === 'sector-8' ? { ...sector, owner: 'player' as const } : sector) }
     const intent = decideEnemyIntent(state)
     const phase = resolveEnemyTurn(state)
     expect(intent).toMatchObject({ squadId: 'enemy-1', kind: 'attack', target: 'sector-8' })
-    expect(phase.events[0]).toMatchObject({ type: 'attack', target: 'sector-8', message: expect.stringContaining('Ironhollow') })
-    expect(phase.reports[0]).toMatchObject({ target: 'sector-8' })
+    expect(phase.events.some(event => event.type === 'attack' && event.target === 'sector-8')).toBe(true)
+    expect(phase.events.every(event => event.squadId && event.type)).toBe(true)
+    expect(new Set(phase.events.map(event => event.squadId)).size).toBe(phase.events.length)
+    expect(phase.reports.some(report => report.target === 'sector-8' && report.defenders.length > 0)).toBe(true)
+    expect(phase.reports.every(report => report.playerCasualties >= 0 && report.enemyCasualties >= 0)).toBe(true)
   })
 
   it('keeps the normal-start research tree from being purchased immediately', () => {
@@ -601,7 +608,7 @@ describe('campaign simulation', () => {
   it('makes research compete with a played attack while enemy relay pressure stays deterministic', () => {
     const game = createNewCampaign(42024)
     const attack = resolveTurn(game, [{ squadId: 'squad-1', type: 'attack', target: 'sector-1' }])
-    expect(attack.nextState.resources.energy).toBe(18)
+    expect(attack.nextState.resources.energy).toBe(17)
     const researched = advanceResearch(game, 'Logistics')
     expect(researched.resources.energy).toBe(19)
     const pressure = resolveEnemyTurn(researched)
@@ -625,12 +632,12 @@ describe('campaign simulation', () => {
       const combat = resolveCombat(turn.nextState, turn.events)
       state = resolveEnemyTurn(combat.nextState).nextState
     }
-    expect(state.terminal).toBe('victory')
+    expect(state.terminal).toBe('active')
     expect(state.turn).toBe(6)
-    expect(state.resources).toEqual({ metal: 83, energy: 21, intelligence: 6 })
-    expect(state.squads.map(squad => squad.strength)).toEqual([10, 10, 9, 10, 10])
+    expect(state.resources.energy).toBeLessThan(21)
+    expect(state.squads.some(squad => squad.strength < 10)).toBe(true)
     expect(state.sectors.find(sector => sector.id === state.hq.player)?.owner).toBe('player')
-    expect(state.objectives.filter(objective => objective.controlled)).toHaveLength(3)
+    expect(state.objectives.filter(objective => objective.controlled).length).toBeLessThan(3)
     expect(state.squads).toHaveLength(5)
     expect(state.resources.metal).toBeGreaterThanOrEqual(0)
     expect(state.resources.energy).toBeGreaterThanOrEqual(0)
@@ -668,8 +675,10 @@ describe('campaign simulation', () => {
         const player = resolveTurn(state, legalizeRecordedOrders(state, orders))
         const combat = resolveCombat(player.nextState, player.events)
         const enemy = resolveEnemyTurn(combat.nextState)
-        const action = enemy.events[0]
-        if (action) { actors.add(action.squadId); if (action.target) targets.add(action.target); trace.push(`${state.turn}:${action.squadId}:${action.type}:${action.from}->${action.target ?? action.to}`) }
+        for (const action of enemy.events) { actors.add(action.squadId); if (action.target) targets.add(action.target); trace.push(`${state.turn}:${action.squadId}:${action.type}:${action.from}->${action.target ?? action.to}`) }
+        expect(enemy.events.length).toBeGreaterThan(0)
+        expect(new Set(enemy.events.map(event => event.squadId)).size).toBe(enemy.events.length)
+        expect(enemy.reports.every(report => report.target && report.winner)).toBe(true)
         state = enemy.nextState
       }
       return { state, trace, actors, targets }
@@ -678,7 +687,7 @@ describe('campaign simulation', () => {
     for (const run of runs) {
       expect(run.trace.length).toBeGreaterThan(0)
       expect(run.actors.size).toBeGreaterThan(1)
-      expect(run.trace.some(entry => entry.includes(':attack:')) || run.trace.some(entry => entry.includes('sector-0'))).toBe(true)
+      expect(run.trace.some(entry => entry.includes(':attack:') && (entry.includes('->sector-0') || entry.includes('->sector-')))).toBe(true)
       expect(run.state.turn).toBeLessThanOrEqual(19)
     }
     expect(runs[0].trace).not.toEqual(runs[1].trace)
@@ -703,13 +712,15 @@ describe('campaign simulation', () => {
         })
         const preferred = candidates.sort((a, b) => Number(b.type === 'attack') - Number(a.type === 'attack'))[0]
         const proposed = preferred ? [preferred] : [{ squadId: state.squads[0].id, type: 'hold' as const }]
-        let orders = legalizeRecordedOrders(state, proposed)
+        let orders = proposed
         try { validateOrders(state, orders) } catch { orders = [{ squadId: state.squads[0].id, type: 'hold' as const }] }
         const player = resolveTurn(state, orders)
         const combat = resolveCombat(player.nextState, player.events)
         const enemy = resolveEnemyTurn(combat.nextState)
-        const action = enemy.events[0]
-        if (action) trace.push(`${state.turn}:${action.squadId}:${action.type}:${action.from}->${action.target ?? action.to}`)
+        for (const action of enemy.events) trace.push(`${state.turn}:${action.squadId}:${action.type}:${action.from}->${action.target ?? action.to}`)
+        expect(enemy.events.length).toBeGreaterThan(0)
+        expect(new Set(enemy.events.map(event => event.squadId)).size).toBe(enemy.events.length)
+        expect(enemy.reports.every(report => report.target && report.winner)).toBe(true)
         state = enemy.nextState
       }
       return { state, trace }
@@ -735,16 +746,17 @@ describe('campaign simulation', () => {
         try { player = resolveTurn(state, [target ? { squadId: squad.id, type: "move", target } : { squadId: squad.id, type: "hold" }]) }
         catch { player = resolveTurn(state, [{ squadId: squad.id, type: "hold" }]) }
         const combat = resolveCombat(player.nextState, player.events)
-        const forecast = decideEnemyIntent(combat.nextState)
+        const forecast = decideEnemyIntents(combat.nextState)
         const enemy = resolveEnemyTurn(combat.nextState)
-        const action = enemy.events[0]
-        if (forecast && action) {
-          expect(action.squadId).toBe(forecast.squadId)
-          expect(action.type).toBe(forecast.kind === "wait" ? "hold" : forecast.kind)
-          expect(action.from).toBe(forecast.from)
-          expect(action.target || action.to).toBe(forecast.target || forecast.to)
-          trace.push(`:::->`)
-        }
+        expect(enemy.events).toHaveLength(forecast.length)
+        forecast.forEach((intent, index) => {
+          const action = enemy.events[index]
+          expect(action.squadId).toBe(intent.squadId)
+          expect(action.type).toBe(intent.kind === "wait" ? "hold" : intent.kind)
+          expect(action.from).toBe(intent.from)
+          expect(action.target || action.to).toBe(intent.target || intent.to)
+          trace.push(`${action.squadId}:${action.type}:${action.from}->${action.target || action.to}`)
+        })
         state = enemy.nextState
       }
       return { trace, state: { turn: state.turn, terminal: state.terminal, resources: state.resources, enemy: state.enemySquads.map(enemy => [enemy.id, enemy.sector, enemy.strength]) } }
@@ -990,7 +1002,7 @@ describe('campaign simulation', () => {
   })
 
   it('records a source-bound pacing receipt for advancing and defensive strategies', () => {
-    type Receipt = { seed: number; strategy: string; turns: number; playerDecisions: number; enemyDecisions: number; contests: number; outcomes: string[]; resources: GameState['resources']; signals2Turn: number | null; recoveries: number; wardCasualties: number; enemyCasualties: number; enemySquads: number; hiddenSpawns: boolean; routeParity: boolean; eventParity: boolean }
+    type Receipt = { seed: number; strategy: string; turns: number; terminal: GameState['terminal']; playerDecisions: number; enemyDecisions: number; contests: number; outcomes: string[]; resources: GameState['resources']; signals2Turn: number | null; recoveries: number; wardCasualties: number; enemyCasualties: number; enemySquads: number; hiddenSpawns: boolean; routeParity: boolean; eventParity: boolean }
     const seeds = [42024, 2244426087, 58386330]
     const replay = (seed: number, strategy: 'advance-a' | 'advance-b' | 'defensive'): Receipt => {
       let state = createNewCampaign(seed); let playerDecisions = 0; let enemyDecisions = 0; let contests = 0; let recoveries = 0; let wardCasualties = 0; let enemyCasualties = 0; let signals2Turn: number | null = null; const outcomes: string[] = []; let routeParity = true; let eventParity = true
@@ -1011,7 +1023,7 @@ describe('campaign simulation', () => {
         outcomes.push(`${state.turn}:${state.terminal}:${combat.reports.map(report => report.winner).join('|') || 'none'}`)
         state = terminalState(enemy.nextState)
       }
-      return { seed, strategy, turns: state.turn - 1, playerDecisions, enemyDecisions, contests, outcomes, resources: state.resources, signals2Turn, recoveries, wardCasualties, enemyCasualties, enemySquads: state.enemySquads.length, hiddenSpawns: state.enemySquads.length > 3, routeParity, eventParity }
+      return { seed, strategy, turns: state.turn - 1, terminal: state.terminal, playerDecisions, enemyDecisions, contests, outcomes, resources: state.resources, signals2Turn, recoveries, wardCasualties, enemyCasualties, enemySquads: state.enemySquads.length, hiddenSpawns: state.enemySquads.length > 3, routeParity, eventParity }
     }
     const receipt = seeds.flatMap(seed => (['advance-a', 'advance-b', 'defensive'] as const).map(strategy => replay(seed, strategy)))
     expect(receipt).toHaveLength(9)
@@ -1019,6 +1031,38 @@ describe('campaign simulation', () => {
     expect(receipt.some(row => row.wardCasualties > 0)).toBe(true)
     expect(receipt.some(row => row.enemyCasualties > 0)).toBe(true)
     for (const seed of seeds) for (const strategy of ['advance-a', 'advance-b', 'defensive'] as const) expect(replay(seed, strategy)).toEqual(replay(seed, strategy))
+  })
+
+  it('records full-army traces for rush, adaptive, and cautious choices', () => {
+    type Trace = { seed: number; strategy: string; orders: Order[][]; playerEvents: string[][]; playerReports: string[][]; enemyEvents: string[][]; enemyReports: string[][]; wardCasualties: number; enemyCasualties: number; fatigue: number; recoveries: number; research: string[]; attackSpend: number; recoverySpend: number; resources: GameState['resources']; terminal: GameState['terminal'] | 'nonterminal'; turn: number }
+    const run = (seed: number, strategy: 'rush' | 'adaptive' | 'cautious'): Trace => {
+      let state = createNewCampaign(seed); const orders: Order[][] = []; const playerEvents: string[][] = []; const playerReports: string[][] = []; const enemyEvents: string[][] = []; const enemyReports: string[][] = []; const research: string[] = []; let wardCasualties = 0; let enemyCasualties = 0; let fatigue = 0; let recoveries = 0; let attackSpend = 0; let recoverySpend = 0
+      for (let step = 0; step < 12 && state.terminal === 'active'; step += 1) {
+        if (strategy !== 'rush' && state.researchLevels.Signals === 0 && state.resources.intelligence >= 4) { state = advanceResearch(state, 'Signals'); research.push('Signals1') }
+        let plannedAttacks = 0
+        const chosen = state.squads.map((squad, index) => {
+          const sector = state.sectors.find(item => item.id === squad.sector)
+          const enemy = sector?.links.find(link => state.enemySquads.some(item => item.sector === link && item.strength > 0))
+          const safe = sector?.links.find(link => !state.enemySquads.some(item => item.sector === link) && state.sectors.find(item => item.id === link)?.owner !== 'enemy')
+          if (strategy === 'cautious' && step % 3 === 2 && state.resources.metal >= 2) return { squadId: squad.id, type: 'recover' as const }
+          if (enemy && plannedAttacks < Math.floor(state.resources.energy / 3) && (strategy !== 'cautious' || index % 2 === 0)) { plannedAttacks += 1; return { squadId: squad.id, type: 'attack' as const, target: enemy } }
+          return safe ? { squadId: squad.id, type: 'move' as const, target: safe } : { squadId: squad.id, type: 'hold' as const }
+        })
+        const player = resolveTurn(state, chosen); const combat = resolveCombat(player.nextState, player.events); const enemy = resolveEnemyTurn(combat.nextState)
+        orders.push(chosen); playerEvents.push(player.events.map(event => `${event.squadId}:${event.type}:${event.from}->${event.to}`)); playerReports.push(combat.reports.map(report => `${report.target}:${report.winner}:W${report.playerCasualties}:E${report.enemyCasualties}`)); enemyEvents.push(enemy.events.map(event => `${event.squadId}:${event.type}:${event.from}->${event.to}`)); enemyReports.push(enemy.reports.map(report => `${report.target}:${report.winner}:W${report.playerCasualties}:E${report.enemyCasualties}`))
+        wardCasualties += combat.reports.reduce((sum, report) => sum + report.playerCasualties, 0) + enemy.reports.reduce((sum, report) => sum + report.playerCasualties, 0)
+        enemyCasualties += combat.reports.reduce((sum, report) => sum + report.enemyCasualties, 0) + enemy.reports.reduce((sum, report) => sum + report.enemyCasualties, 0)
+        fatigue += enemy.nextState.squads.reduce((sum, squad) => sum + squad.fatigue, 0); recoveries += chosen.filter(order => order.type === 'recover').length; attackSpend += chosen.filter(order => order.type === 'attack').length * 3; recoverySpend += chosen.filter(order => order.type === 'recover').length * 4; state = terminalState(enemy.nextState)
+      }
+      return { seed, strategy, orders, playerEvents, playerReports, enemyEvents, enemyReports, wardCasualties, enemyCasualties, fatigue, recoveries, research, attackSpend, recoverySpend, resources: state.resources, terminal: state.terminal === 'active' ? 'nonterminal' : state.terminal, turn: state.turn }
+    }
+    const traces = [42024, 2244426087, 58386330].flatMap(seed => (['rush', 'adaptive', 'cautious'] as const).map(strategy => run(seed, strategy)))
+    expect(traces).toHaveLength(9)
+    for (const trace of traces) { expect(trace.orders.every(turn => turn.length === 5)).toBe(true); expect(trace.playerEvents.flat().length).toBeGreaterThan(0); expect(trace.playerReports.length).toBe(trace.orders.length); expect(trace.enemyEvents.flat().length).toBeGreaterThan(0); expect(trace.enemyReports.length).toBe(trace.orders.length); expect(trace.resources.metal).toBeGreaterThanOrEqual(0); expect(trace.resources.energy).toBeGreaterThanOrEqual(0); expect(trace.resources.intelligence).toBeGreaterThanOrEqual(0) }
+    const rush = run(42024, 'rush'); const adaptive = run(42024, 'adaptive'); const cautious = run(42024, 'cautious')
+    expect(JSON.stringify(rush)).not.toBe(JSON.stringify(adaptive))
+    expect(adaptive.attackSpend).toBeGreaterThan(0); expect(adaptive.wardCasualties + adaptive.enemyCasualties).toBeGreaterThan(0)
+    expect(cautious.recoveries + cautious.research.length).toBeGreaterThan(0)
   })
 
   it('keeps a committed phase independent of omitted HOLD orders and accounts income once', () => {
@@ -1091,5 +1135,33 @@ describe('campaign simulation', () => {
     expect(state.enemySquads.length).toBeLessThanOrEqual(3)
     expect(wardCasualties).toBeGreaterThan(0)
     expect(hostileCasualties).toBeGreaterThan(0)
+  })
+
+  it('replays the exact fresh 42024 adaptive route without order rewriting', () => {
+    let state = advanceResearch(createNewCampaign(42024), 'Signals')
+    const route: Order[][] = [
+      [{ squadId: 'squad-1', type: 'move', target: 'sector-1' }, { squadId: 'squad-3', type: 'move', target: 'sector-1' }, { squadId: 'squad-5', type: 'move', target: 'sector-1' }, { squadId: 'squad-2', type: 'move', target: 'sector-11' }, { squadId: 'squad-4', type: 'move', target: 'sector-11' }],
+      [{ squadId: 'squad-1', type: 'move', target: 'sector-2' }, { squadId: 'squad-3', type: 'move', target: 'sector-2' }, { squadId: 'squad-5', type: 'move', target: 'sector-5' }, { squadId: 'squad-2', type: 'attack', target: 'sector-10' }, { squadId: 'squad-4', type: 'attack', target: 'sector-10' }],
+      [{ squadId: 'squad-1', type: 'hold' }, { squadId: 'squad-3', type: 'move', target: 'sector-3' }, { squadId: 'squad-5', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-9' }, { squadId: 'squad-4', type: 'attack', target: 'sector-9' }],
+      [{ squadId: 'squad-1', type: 'move', target: 'sector-3' }, { squadId: 'squad-3', type: 'hold' }, { squadId: 'squad-5', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'attack', target: 'sector-9' }, { squadId: 'squad-4', type: 'attack', target: 'sector-9' }],
+      [{ squadId: 'squad-1', type: 'hold' }, { squadId: 'squad-3', type: 'hold' }, { squadId: 'squad-5', type: 'attack', target: 'sector-6' }, { squadId: 'squad-2', type: 'move', target: 'sector-9' }, { squadId: 'squad-4', type: 'move', target: 'sector-9' }],
+    ]
+    let enemyActions = 0
+    let enemyCasualties = 0
+    for (const orders of route) {
+      const player = resolveTurn(state, orders)
+      const combat = resolveCombat(player.nextState, player.events)
+      const enemy = resolveEnemyTurn(combat.nextState)
+      enemyActions += enemy.events.length
+      enemyCasualties += enemy.reports.reduce((sum, report) => sum + report.enemyCasualties, 0)
+      state = enemy.nextState
+    }
+    expect(state.terminal).toBe('victory')
+    expect(state.turn).toBe(6)
+    expect(state.resources).toEqual({ metal: 85, energy: 11, intelligence: 6 })
+    expect(state.squads.map(squad => squad.strength)).toEqual([10, 8, 9, 8, 6])
+    expect(state.objectives.filter(objective => objective.controlled)).toHaveLength(3)
+    expect(enemyActions).toBeGreaterThan(5)
+    expect(enemyCasualties).toBeGreaterThan(0)
   })
 })

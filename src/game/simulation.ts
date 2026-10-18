@@ -78,6 +78,8 @@ export const researchCost = (branch: ResearchBranch, level: number): Resources =
   }
   return costs[branch][level]
 }
+const ATTACK_ENERGY_COST = 3
+const RECOVERY_METAL_COST = 4
 export const researchCurrency = (branch: ResearchBranch): keyof Resources => branch === 'Logistics' ? 'metal' : branch === 'Warfare' ? 'energy' : 'intelligence'
 export const researchIncomeThreshold = (_branch: ResearchBranch, _level: number): number => 1
 const pressureHash = (state: GameState, key: string, phaseTurn = state.turn): number => {
@@ -112,33 +114,36 @@ const choosePressureTarget = (state: GameState, targets: SectorId[], phaseTurn =
   })[0]
 }
 
-const attackIsViable = (state: GameState, enemy: EnemySquad, target: SectorId): boolean => {
+const attackIsViable = (state: GameState, enemy: EnemySquad, target: SectorId, excluded = new Set<string>()): boolean => {
   const sector = state.sectors.find(item => item.id === target)
   const defenders = state.squads.filter(squad => squad.sector === target && squad.strength > 0)
   if (!sector || !defenders.length) return true
+  // Viability is intentionally local: only the actor that emits the attack
+  // contributes power. Other live squads must spend their own legal slot to
+  // move, guard, or attack; they are never virtual support.
   const enemyPower = enemy.strength * terrainPower[sector.terrain]
   const playerPower = defenders.reduce((sum, squad) => sum + squad.strength * terrainPower[sector.terrain], 0)
   return enemyPower >= playerPower * 0.5
 }
-const viableEnemyIntent = (state: GameState, intent: EnemyIntent): boolean => {
+const viableEnemyIntent = (state: GameState, intent: EnemyIntent, excluded = new Set<string>()): boolean => {
   if (intent.kind !== 'attack') return true
   const enemy = state.enemySquads.find(item => item.id === intent.squadId)
-  return Boolean(enemy && intent.target && attackIsViable(state, enemy, intent.target))
+  return Boolean(enemy && intent.target && attackIsViable(state, enemy, intent.target, excluded))
 }
 
-const intentForEnemy = (state: GameState, enemy: EnemySquad, phaseTurn = state.turn): EnemyIntent | undefined => {
+const intentForEnemy = (state: GameState, enemy: EnemySquad, phaseTurn = state.turn, excluded = new Set<string>()): EnemyIntent | undefined => {
   const current = state.sectors.find(sector => sector.id === enemy.sector)
   const recentMoves = state.enemyHistory.filter(item => item.squadId === enemy.id && item.kind === 'move' && item.from !== item.to).slice(-4)
   if (enemy.sector === state.hq.enemy) return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector }
   const hqAssault = enemy.sector !== state.hq.player && current?.links.includes(state.hq.player) && state.squads.some(squad => squad.sector === state.hq.player)
-  if (hqAssault && attackIsViable(state, enemy, state.hq.player)) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: state.hq.player }
+  if (hqAssault && attackIsViable(state, enemy, state.hq.player, excluded)) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: state.hq.player }
   const occupiedPlayerTargets = [...(current?.links ?? [])].filter(target => {
     const sector = state.sectors.find(item => item.id === target)
     const occupied = state.squads.some(squad => squad.sector === target)
     const relay = state.objectives.some(objective => objective.sector === target)
     return occupied && (sector?.owner === 'player' || relay)
   })
-  const occupiedPlayerTarget = choosePressureTarget(state, occupiedPlayerTargets.filter(target => attackIsViable(state, enemy, target)), phaseTurn)
+  const occupiedPlayerTarget = choosePressureTarget(state, occupiedPlayerTargets.filter(target => attackIsViable(state, enemy, target, excluded)), phaseTurn)
   if (occupiedPlayerTarget) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: occupiedPlayerTarget }
   const destinations = [...(current?.links ?? [])].filter(target => {
     const sector = state.sectors.find(item => item.id === target)
@@ -154,7 +159,7 @@ const distanceBetween = (state: GameState, start: SectorId, destination: SectorI
   while (queue.length) { const [current, distance] = queue.shift()!; const sector = state.sectors.find(item => item.id === current); for (const link of sector?.links ?? []) { if (link === destination) return distance + 1; if (!seen.has(link)) { seen.add(link); queue.push([link, distance + 1]) } } }
   return Number.MAX_SAFE_INTEGER
 }
-const intentToward = (state: GameState, target: StrategicTarget, phaseTurn: number): EnemyIntent | undefined => {
+const intentToward = (state: GameState, target: StrategicTarget, phaseTurn: number, excluded = new Set<string>()): EnemyIntent | undefined => {
   const enemy = state.enemySquads.find(item => item.id === target.squadId); if (!enemy) return undefined
   const destinationSector = state.sectors.find(item => item.id === target.destination);
   if (!destinationSector || (target.destination !== state.hq.player && destinationSector.owner === 'enemy')) return undefined
@@ -181,10 +186,10 @@ const intentToward = (state: GameState, target: StrategicTarget, phaseTurn: numb
   if (current.links.includes(target.destination)) {
     const occupied = state.squads.some(squad => squad.sector === target.destination)
     const relay = state.objectives.some(objective => objective.sector === target.destination)
-    if (occupied && (destinationSector.owner === 'player' || relay) && attackIsViable(state, enemy, target.destination)) return { squadId: enemy.id, kind: 'attack', from: enemy.sector, to: enemy.sector, target: target.destination }
+    if (occupied && (destinationSector.owner === 'player' || relay) && attackIsViable(state, enemy, target.destination, excluded)) return { squadId: enemy.id, kind: 'attack', from: enemy.sector, to: enemy.sector, target: target.destination }
   }
   const blockedForward = current.links.filter(next => { const sector = state.sectors.find(item => item.id === next); return sector && distanceBetween(state, next, target.destination) < distanceBetween(state, current.id, target.destination) && state.squads.some(squad => squad.sector === next) })[0]
-  if (blockedForward && attackIsViable(state, enemy, blockedForward)) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: blockedForward }
+  if (blockedForward && attackIsViable(state, enemy, blockedForward, excluded)) return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: blockedForward }
   const steps = current.links.filter(next => { const sector = state.sectors.find(item => item.id === next); return sector && sector.owner !== 'enemy' && !state.enemySquads.some(other => other.id !== enemy.id && other.sector === next) && !state.squads.some(squad => squad.sector === next) })
   const step = steps.filter(step => legalDistance(step) < currentDistance).sort((a, b) => legalDistance(a) - legalDistance(b) || pressureHash(state, `${target.squadId}:${a}`, phaseTurn) - pressureHash(state, `${target.squadId}:${b}`, phaseTurn) || a.localeCompare(b))[0]
   return step ? { squadId: enemy.id, kind: 'move', from: enemy.sector, to: step } : undefined
@@ -212,15 +217,15 @@ const relevantStrategicTarget = (state: GameState, target: StrategicTarget | und
 export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn, excluded = new Set<string>()): EnemyIntent | undefined => {
   if (state.terminal !== "active") return undefined
   const enemies = [...state.enemySquads].sort((a, b) => a.id.localeCompare(b.id))
-  const intents = enemies.filter(enemy => !excluded.has(enemy.id)).map(enemy => intentForEnemy(state, enemy, phaseTurn)).filter((intent): intent is EnemyIntent => Boolean(intent))
+  const intents = enemies.filter(enemy => !excluded.has(enemy.id)).map(enemy => intentForEnemy(state, enemy, phaseTurn, excluded)).filter((intent): intent is EnemyIntent => Boolean(intent))
   if (!intents.length) return undefined
   const hq = intents.filter(intent => intent.kind === 'attack' && intent.target === state.hq.player)
   const relay = intents.filter(intent => intent.kind === 'attack' && state.objectives.some(objective => objective.sector === intent.target))
   const tactical = hq.length ? hq : relay
   if (tactical.length) return tactical.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.target}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.target}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
   if (state.strategicTarget) {
-    const pursuing = excluded.has(state.strategicTarget.squadId) ? undefined : intentToward(state, state.strategicTarget, phaseTurn)
-    if (pursuing && viableEnemyIntent(state, pursuing)) return pursuing
+    const pursuing = excluded.has(state.strategicTarget.squadId) ? undefined : intentToward(state, state.strategicTarget, phaseTurn, excluded)
+    if (pursuing && viableEnemyIntent(state, pursuing, excluded)) return pursuing
     const targetEnemy = enemies.find(enemy => enemy.id === state.strategicTarget?.squadId)
     if (targetEnemy && !excluded.has(targetEnemy.id)) return { squadId: targetEnemy.id, kind: 'hold', from: targetEnemy.sector, to: targetEnemy.sector }
   }
@@ -286,8 +291,8 @@ export const validateOrders = (state: GameState, orders: Order[]): void => {
       }
     }
     if (order.type === 'recover' && (state.sectors.find(sector => sector.id === currentSquad.sector)?.owner !== 'player' || !supplied(state, currentSquad.sector))) error(`Squad ${order.squadId} cannot recover outside supplied territory`)
-    if (order.type === 'attack') attackEnergy += 2
-    if (order.type === 'recover') recoverMetal += 1
+    if (order.type === 'attack') attackEnergy += ATTACK_ENERGY_COST
+    if (order.type === 'recover') recoverMetal += RECOVERY_METAL_COST
   }
   if (state.resources.energy < attackEnergy) error('Not enough energy to attack orders')
   if (state.resources.metal < recoverMetal) error('Not enough metal to recover orders')
@@ -302,8 +307,8 @@ export const resolveTurn = (state: GameState, playerOrders: Order[]): { nextStat
     if (!squad || squad.strength <= 0) continue
     const from = squad.sector
     if (order.type === 'move') { squad.sector = order.target!; const destination = nextState.sectors.find(sector => sector.id === squad.sector); if (destination?.owner === 'neutral') destination.owner = 'player' }
-    if (order.type === 'recover') { squad.strength = Math.min(10 + nextState.researchLevels.Logistics * 2, squad.strength + 1 + nextState.researchLevels.Logistics); squad.fatigue = Math.max(0, squad.fatigue - 2 - nextState.researchLevels.Logistics); nextState.resources.metal -= 1 }
-    if (order.type === 'attack') nextState.resources.energy -= 2
+    if (order.type === 'recover') { squad.strength = Math.min(10 + nextState.researchLevels.Logistics * 2, squad.strength + 1 + nextState.researchLevels.Logistics); squad.fatigue = Math.max(0, squad.fatigue - 2 - nextState.researchLevels.Logistics); nextState.resources.metal -= RECOVERY_METAL_COST }
+    if (order.type === 'attack') nextState.resources.energy -= ATTACK_ENERGY_COST
     if (order.type === 'hold') squad.fatigue = Math.max(0, squad.fatigue - 1)
     events.push({ type: order.type, squadId: squad.id, from, to: squad.sector, target: order.target, message: `${squad.id} ${order.type}${order.target ? ` ${order.target}` : ''}` })
   }
@@ -346,7 +351,8 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     const isEnemyHq = target === nextState.hq.enemy
     const attackerFaction = enemyAttack ? 'enemy' : 'player'
     const defenderFaction = enemyAttack ? 'player' : 'enemy'
-    const attackerPower = attackers.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + defenders.filter(defender => counters[squad.class] === defender.class).length * (0.2 + (enemyAttack ? 0 : nextState.researchLevels.Warfare * 0.05))), 0) - fatiguePenalty + variance
+    const coordinatedPower = attackers.length > 1 ? 1 + Math.min(0.3, (attackers.length - 1) * 0.15) : 1
+    const attackerPower = attackers.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + defenders.filter(defender => counters[squad.class] === defender.class).length * (0.2 + (enemyAttack ? 0 : nextState.researchLevels.Warfare * 0.05))), 0) * coordinatedPower - fatiguePenalty + variance
     const defenderFortification = defenderFaction === 'player' ? nextState.researchLevels.Warfare * 0.05 : 0
     const defenderPower = defenders.reduce((sum, squad) => sum + squad.strength * terrainMultiplier * (1 + defenderFortification + attackers.filter(attacker => counters[squad.class] === attacker.class).length * 0.2), 0)
     const attackerStrengthBefore = new Map(attackers.map(squad => [squad.id, squad.strength]))
@@ -356,6 +362,11 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     const attackerWon = winner === attackerFaction
     const defenderWon = winner === defenderFaction
     if (attackerWon || winner === 'draw') for (const squad of defenders) casualties.push({ squadId: squad.id, side: defenderFaction, strength: Math.min(squad.strength, Math.max(1, Math.ceil(attackerPower / Math.max(1, attackers.length * 4))) ) })
+    if (attackerWon && defenders.length) {
+      const terrainResistance = sector.terrain === 'ridge' ? 1.25 : sector.terrain === 'ice' ? 0.9 : 1
+      const screeningRate = Math.min(0.06, Math.max(0.01, (defenderPower / Math.max(1, attackerPower + defenderPower)) * terrainResistance))
+      for (const squad of attackers) casualties.push({ squadId: squad.id, side: attackerFaction, strength: Math.min(squad.strength, Math.max(1, Math.ceil(squad.strength * screeningRate))) })
+    }
     if (attackerWon && enemyAttack) for (const squad of attackers) casualties.push({ squadId: squad.id, side: attackerFaction, strength: Math.min(squad.strength, 1) })
     // A failed Ward assault still exacts a visible screening cost from the
     // finite hostile stack; otherwise a defender can absorb unlimited orders
@@ -373,6 +384,14 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     if (attackerWon && !enemyAttack && nextState.enemySquads.some(squad => squad.sector === target && squad.strength > 0) === false) {
       sector.owner = 'player'
       for (const squad of attackers) { const live = nextState.squads.find(item => item.id === squad.id); if (live) { live.sector = target; live.experience += 1; live.fatigue = Math.min(10, live.fatigue + 2) } }
+    } else if (attackerWon && !enemyAttack && defenders.length) {
+      // A winning chip against a defended sector still consumes tempo. Keep
+      // the cost visible in the squad state and forecasts, but do not stack it
+      // with the +2 capture cost above.
+      for (const squad of attackers) {
+        const live = nextState.squads.find(item => item.id === squad.id)
+        if (live) live.fatigue = Math.min(10, live.fatigue + 1)
+      }
     } else if (attackerWon && enemyAttack && !nextState.squads.some(squad => squad.sector === target && squad.strength > 0)) {
       sector.owner = 'enemy'
       for (const squad of attackers) { const live = nextState.enemySquads.find(item => item.id === squad.id); if (live) live.sector = target }
