@@ -3870,6 +3870,7 @@ describe("campaign simulation", () => {
       ],
     ];
     let enemyEvents = 0;
+    const recoveries = route.flat().filter((order) => order.type === "recover").length;
     for (const orders of route) {
       const player = resolveTurn(state, orders);
       const combat = resolveCombat(player.nextState, player.events);
@@ -3878,9 +3879,12 @@ describe("campaign simulation", () => {
       state = enemy.nextState;
     }
     expect(state.terminal).toBe("victory");
+    expect(state.turn).toBe(10);
     expect(state.objectives.every((objective) => objective.controlled)).toBe(true);
-    expect(state.resources.metal).toBeGreaterThanOrEqual(0);
-    expect(state.resources.energy).toBeGreaterThanOrEqual(0);
+    expect(state.resources).toMatchObject({ metal: 9, energy: 12, intelligence: 10 });
+    expect(state.squads.map((squad) => squad.strength)).toEqual([8, 7, 8, 6, 8]);
+    expect(recoveries).toBe(4);
+    expect(state.enemySquads.every((squad) => squad.strength <= 0)).toBe(true);
     expect(enemyEvents).toBeGreaterThan(0);
     expect(state.squads.every((squad) => squad.strength > 0)).toBe(true);
   });
@@ -3955,14 +3959,18 @@ describe("campaign simulation", () => {
         { squadId: "squad-5", type: "hold" },
       ],
     ];
+    const recoveries = route.flat().filter((order) => order.type === "recover").length;
     for (const orders of route) {
       const player = resolveTurn(state, orders);
       const combat = resolveCombat(player.nextState, player.events);
       state = resolveEnemyTurn(combat.nextState).nextState;
     }
     expect(state.terminal).toBe("victory");
+    expect(state.turn).toBe(10);
     expect(state.objectives.every((objective) => objective.controlled)).toBe(true);
-    expect(state.resources.metal).toBeGreaterThanOrEqual(0);
-    expect(state.resources.energy).toBeGreaterThanOrEqual(0);
+    expect(state.resources).toMatchObject({ metal: 12, energy: 14, intelligence: 10 });
+    expect(state.squads.map((squad) => squad.strength)).toEqual([5, 5, 9, 8, 8]);
+    expect(recoveries).toBe(2);
+    expect(state.enemySquads.every((squad) => squad.strength <= 0)).toBe(true);
   });
 });
