@@ -25,6 +25,7 @@ export type BattleReport = {
   defenders: { squadId: string; class: UnitClass; strength: number; units: number }[]
   classAdvantages: string[]; defenderCounters: string[]; terrainMultiplier: number; fatiguePenalty: number; variance: number; attackerPower: number; defenderPower: number
   winner: 'player' | 'enemy' | 'draw'; casualties: { squadId: string; side: 'player' | 'enemy'; strength: number }[]
+  playerCasualties: number; enemyCasualties: number
   retreat: { squadId: string; to: SectorId }[]; captured: boolean; relayControlled: boolean
 }
 const terrainPower: Record<Terrain, number> = { ice: 0.9, ridge: 1.15, tundra: 1, crater: 1.05 }
@@ -194,29 +195,48 @@ const relevantStrategicTarget = (state: GameState, target: StrategicTarget | und
   const destination = state.sectors.find(sector => sector.id === target.destination)
   return Boolean(enemy && destination && (target.destination === state.hq.player || destination.owner !== 'enemy'))
 }
-export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn): EnemyIntent | undefined => {
+export const decideEnemyIntent = (state: GameState, phaseTurn = state.turn, excluded = new Set<string>()): EnemyIntent | undefined => {
   if (state.terminal !== "active") return undefined
   const enemies = [...state.enemySquads].sort((a, b) => a.id.localeCompare(b.id))
-  const intents = enemies.map(enemy => intentForEnemy(state, enemy, phaseTurn)).filter((intent): intent is EnemyIntent => Boolean(intent))
+  const intents = enemies.filter(enemy => !excluded.has(enemy.id)).map(enemy => intentForEnemy(state, enemy, phaseTurn)).filter((intent): intent is EnemyIntent => Boolean(intent))
   if (!intents.length) return undefined
   const hq = intents.filter(intent => intent.kind === 'attack' && intent.target === state.hq.player)
   const relay = intents.filter(intent => intent.kind === 'attack' && state.objectives.some(objective => objective.sector === intent.target))
   const tactical = hq.length ? hq : relay
   if (tactical.length) return tactical.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.target}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.target}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
   if (state.strategicTarget) {
-    const pursuing = intentToward(state, state.strategicTarget, phaseTurn)
+    const pursuing = excluded.has(state.strategicTarget.squadId) ? undefined : intentToward(state, state.strategicTarget, phaseTurn)
     if (pursuing) return pursuing
     const targetEnemy = enemies.find(enemy => enemy.id === state.strategicTarget?.squadId)
-    if (targetEnemy) return { squadId: targetEnemy.id, kind: 'hold', from: targetEnemy.sector, to: targetEnemy.sector }
+    if (targetEnemy && !excluded.has(targetEnemy.id)) return { squadId: targetEnemy.id, kind: 'hold', from: targetEnemy.sector, to: targetEnemy.sector }
   }
   const tier = intents.filter(intent => intent.kind !== 'hold')
   const candidates = tier.length ? tier : intents
   return candidates.slice().sort((a, b) => pressureHash(state, `${a.squadId}:${a.to ?? a.target ?? a.from}`, phaseTurn) - pressureHash(state, `${b.squadId}:${b.to ?? b.target ?? b.from}`, phaseTurn) || a.squadId.localeCompare(b.squadId))[0]
 }
+/** Return the deterministic hostile sequence for a phase. Explicit budgets may be zero; omitted means one. */
+export const decideEnemyIntents = (state: GameState, actionBudget?: number): EnemyIntent[] => {
+  // A phase always has one mandatory hostile pressure slot. The UI passes
+  // the submitted-order count, so zero orders must not buy a free HOLD turn.
+  const limit = actionBudget === undefined || actionBudget <= 0 ? 1 : actionBudget
+  let remaining = state
+  const acted = new Set<string>()
+  const intents: EnemyIntent[] = []
+  for (let index = 0; index < limit; index += 1) {
+    const intent = decideEnemyIntent(remaining, state.turn, acted)
+    if (!intent) break
+    intents.push(intent)
+    const simulation = { ...remaining, researchLevels: { ...remaining.researchLevels, Signals: 0 } }
+    remaining = resolveEnemyTurnOnce(simulation, acted).nextState
+    acted.add(intent.squadId)
+  }
+  return intents
+}
 const scoutRoutes = (state: GameState, phaseTurn = state.turn): string[] => {
-  const selected = decideEnemyIntent(state, phaseTurn)
+  const selected = decideEnemyIntents(state, 1).map(intent => [intent.squadId, intent] as const)
+  const bySquad = new Map(selected)
   return state.enemySquads.map(enemy => {
-    const acting = selected?.squadId === enemy.id ? selected : undefined
+    const acting = bySquad.get(enemy.id)
     const origin = state.sectors.find(sector => sector.id === enemy.sector)?.name ?? "unknown sector"
     if (!acting) return enemy.class + " garrison at " + origin + ": waits"
     if (acting.kind === "hold") return enemy.class + " garrison at " + origin + ": holds position"
@@ -237,6 +257,7 @@ export const validateOrders = (state: GameState, orders: Order[]): void => {
     seen.add(order.squadId)
     const squad = state.squads.find(item => item.id === order.squadId)
     const currentSquad = squad ?? error(`Unknown squad ${order.squadId}`)
+    if (currentSquad.strength <= 0) error(`Squad ${order.squadId} is destroyed`)
     if (!['hold', 'recover', 'move', 'attack'].includes(order.type)) error(`Invalid order for ${order.squadId}`)
     if (order.type === 'move' || order.type === 'attack') {
       if (!order.target) error(`${order.type} order requires a target`)
@@ -263,7 +284,8 @@ export const resolveTurn = (state: GameState, playerOrders: Order[]): { nextStat
   const nextState = clone(state)
   const events: GameEvent[] = []
   for (const order of playerOrders) {
-    const squad = nextState.squads.find(item => item.id === order.squadId)!
+    const squad = nextState.squads.find(item => item.id === order.squadId)
+    if (!squad || squad.strength <= 0) continue
     const from = squad.sector
     if (order.type === 'move') { squad.sector = order.target!; const destination = nextState.sectors.find(sector => sector.id === squad.sector); if (destination?.owner === 'neutral') destination.owner = 'player' }
     if (order.type === 'recover') { squad.strength = Math.min(10 + nextState.researchLevels.Logistics * 2, squad.strength + 1 + nextState.researchLevels.Logistics); squad.fatigue = Math.max(0, squad.fatigue - 2 - nextState.researchLevels.Logistics); nextState.resources.metal -= 1 }
@@ -339,7 +361,7 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
     }
     const relayControlled = nextState.objectives.some(objective => objective.sector === target && sector.owner === 'player')
     const captured = attackerWon && (enemyAttack ? !nextState.squads.some(squad => squad.sector === target && squad.strength > 0) : !nextState.enemySquads.some(squad => squad.sector === target && squad.strength > 0))
-    reports.push({ target, terrain: sector.terrain, terrainMultiplier, attackers: attackers.map(squad => ({ squadId: squad.id, class: squad.class, strength: attackerStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), defenders: defenders.map(squad => ({ squadId: squad.id, class: squad.class, strength: defenderStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), classAdvantages, defenderCounters, fatiguePenalty, variance, attackerPower, defenderPower, winner, casualties, retreat, captured, relayControlled })
+    reports.push({ target, terrain: sector.terrain, terrainMultiplier, attackers: attackers.map(squad => ({ squadId: squad.id, class: squad.class, strength: attackerStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), defenders: defenders.map(squad => ({ squadId: squad.id, class: squad.class, strength: defenderStrengthBefore.get(squad.id)!, units: Math.max(0, squad.strength) })), classAdvantages, defenderCounters, fatiguePenalty, variance, attackerPower, defenderPower, winner, casualties, playerCasualties: casualties.filter(item => item.side === 'player').reduce((sum, item) => sum + item.strength, 0), enemyCasualties: casualties.filter(item => item.side === 'enemy').reduce((sum, item) => sum + item.strength, 0), retreat, captured, relayControlled })
   }
   nextState.objectives = nextState.objectives.map(objective => ({ ...objective, controlled: nextState.sectors.find(sector => sector.id === objective.sector)?.owner === 'player' }))
   if (reports.length) nextState.recentBattles = reports.map(report => `${report.target}:${report.winner}`)
@@ -357,12 +379,13 @@ export const resolveCombat = (state: GameState, events: GameEvent[]): { nextStat
 }
 
 /** Deterministic, visible enemy phase: one selected hostile squad executes one legal strategic pressure action. */
-export const resolveEnemyTurn = (state: GameState): { nextState: GameState; events: GameEvent[]; reports: BattleReport[] } => {
+const resolveEnemyTurnOnce = (state: GameState, acted: Set<string> = new Set()): { nextState: GameState; events: GameEvent[]; reports: BattleReport[] } => {
   const nextState = clone(state)
   const events: GameEvent[] = []
   const phaseActive = nextState.terminal === 'active'
   if (nextState.strategicTarget) { const targetEnemy = nextState.enemySquads.find(enemy => enemy.id === nextState.strategicTarget?.squadId); const destination = nextState.sectors.find(sector => sector.id === nextState.strategicTarget?.destination); if (!targetEnemy || !destination || (destination.id !== nextState.hq.player && destination.owner === "enemy")) nextState.strategicTarget = undefined }
-  const intent = phaseActive ? decideEnemyIntent(nextState) : undefined
+  const intent = phaseActive ? decideEnemyIntent(nextState, nextState.turn, acted) : undefined
+  if (intent && acted.has(intent.squadId)) return { nextState, events, reports: [] }
   const enemy = intent && nextState.enemySquads.find(item => item.id === intent.squadId)
   if (intent) {
     nextState.enemyHistory = [...nextState.enemyHistory, clone(intent)]
@@ -393,11 +416,31 @@ export const resolveEnemyTurn = (state: GameState): { nextState: GameState; even
   if (!phaseActive) return { nextState, events: [], reports: [] }
   const combat = resolveCombat(nextState, events)
   const combatState = combat.nextState
-  combatState.income = calculateIncome(combatState)
-  combatState.resources = { metal: Math.min(99, combatState.resources.metal + combatState.income.metal), energy: Math.min(99, combatState.resources.energy + combatState.income.energy), intelligence: Math.min(99, combatState.resources.intelligence + combatState.income.intelligence) }
-  const resolved = terminalState(combatState)
+  return { nextState: combatState, events, reports: combat.reports }
+}
+
+/** Each Ward order grants one hostile pressure slot; omitted/zero budgets retain one mandatory slot. */
+export const resolveEnemyTurn = (state: GameState, actionBudget?: number): { nextState: GameState; events: GameEvent[]; reports: BattleReport[] } => {
+  if (state.terminal !== 'active') return { nextState: state, events: [], reports: [] }
+  let nextState = clone(state)
+  const events: GameEvent[] = []
+  const reports: BattleReport[] = []
+  const acted = new Set<string>()
+  const requestedSlots = actionBudget === undefined || actionBudget <= 0 ? 1 : actionBudget
+  const slots = Math.min(requestedSlots, state.enemySquads.filter(enemy => enemy.strength > 0).length)
+  for (let index = 0; index < slots && nextState.terminal === 'active'; index += 1) {
+    const phase = resolveEnemyTurnOnce(nextState, acted)
+    nextState = phase.nextState
+    events.push(...phase.events)
+    reports.push(...phase.reports)
+    phase.events.forEach(event => acted.add(event.squadId))
+    if (!phase.events.length) break
+  }
+  nextState.income = calculateIncome(nextState)
+  nextState.resources = { metal: Math.min(99, nextState.resources.metal + nextState.income.metal), energy: Math.min(99, nextState.resources.energy + nextState.income.energy), intelligence: Math.min(99, nextState.resources.intelligence + nextState.income.intelligence) }
+  const resolved = terminalState(nextState)
   if (resolved.researchLevels.Signals > 1) resolved.scoutedEnemyRoutes = scoutRoutes(resolved, resolved.turn + 1)
-  return { nextState: resolved, events, reports: combat.reports }
+  return { nextState: resolved, events, reports }
 }
 
 // Kept for the original shell's small API.

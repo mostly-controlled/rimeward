@@ -29,6 +29,63 @@ describe('App interactions', () => {
     await act(async () => root.unmount())
   })
 
+  it('executes multiple UI orders with one shared forecasted enemy phase', async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    const issueMove = async (squadIndex: number) => {
+      await act(async () => (document.querySelectorAll('.squad-card')[squadIndex] as HTMLButtonElement).click())
+      const target = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement
+      expect(target).not.toBeNull()
+      await act(async () => target.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    }
+
+    const campaign = createNewCampaign(42024)
+    const enemySectors = ['sector-2', 'sector-4'] as const
+    const initialGame = { ...campaign, enemySquads: campaign.enemySquads.slice(0, 2).map((enemy, index) => ({ ...enemy, sector: enemySectors[index] })) }
+    const expectedTurn = resolveTurn(initialGame, initialGame.squads.slice(0, 2).map((squad, index) => ({ squadId: squad.id, type: 'move' as const, target: 'sector-1' as const })))
+    const expectedCombat = resolveCombat(expectedTurn.nextState, expectedTurn.events)
+    const expectedEnemy = resolveEnemyTurn(expectedCombat.nextState)
+    await act(async () => root.render(<App initialGame={initialGame} />))
+    await issueMove(0)
+    await issueMove(1)
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
+
+    const rail = [...document.querySelectorAll('.event-rail p')].map(entry => entry.textContent ?? '')
+    expect(rail.filter(message => message.includes('squad-1 move sector-1'))).toHaveLength(1)
+    expect(rail.filter(message => message.includes('squad-2 move sector-1'))).toHaveLength(1)
+    const enemyEvents = rail.filter(message => message.includes('enemy'))
+    expect(enemyEvents).toEqual(expectedEnemy.events.map(event => expect.stringContaining(event.message)))
+    expect(enemyEvents).toHaveLength(expectedEnemy.events.length)
+    expect(document.querySelector('.turn-readout strong')?.textContent).toBe('02')
+
+    await act(async () => root.unmount())
+  })
+
+  it('keeps fresh-42024 Signals2 all-HOLD forecast equal to every emitted enemy event', async () => {
+    let state = createNewCampaign(42024)
+    state = advanceResearch(advanceResearch({ ...state, resources: { ...state.resources, intelligence: 11 } }, 'Signals'), 'Signals')
+    const player = resolveTurn(state, [{ squadId: state.squads[0].id, type: 'hold' }])
+    const board = resolveCombat(player.nextState, player.events).nextState
+    const expected = resolveEnemyTurn(board)
+    document.body.innerHTML = '<div id="root"></div>'
+    const root = createRoot(document.getElementById('root')!)
+    await act(async () => root.render(<App initialGame={state} />))
+    await act(async () => ([...document.querySelectorAll('button')].find(button => button.textContent === 'HOLD') as HTMLButtonElement).click())
+    const forecast = document.querySelector('.intel')?.textContent ?? ''
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click())
+    const emitted = [...document.querySelectorAll('.event-rail p')].map(entry => entry.textContent ?? '').filter(message => message.includes('enemy-'))
+    expect(emitted).toHaveLength(expected.events.length)
+    for (const event of expected.events) {
+      const emittedEvent = emitted.find(message => message.includes(event.squadId))
+      expect(emittedEvent).toBeDefined()
+      expect(forecast).toContain(event.squadId)
+      const action = event.type === 'move' ? 'advances to' : event.type === 'attack' ? 'assaults' : 'holds position'
+      expect(forecast).toContain(action)
+      expect(emittedEvent).toContain(event.type === 'move' ? event.to : event.type === 'attack' ? event.target! : event.from)
+    }
+    await act(async () => root.unmount())
+  })
+
   it('uses the selected action for neutral targets and exposes keyboard selection', async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = createRoot(document.getElementById('root')!)
