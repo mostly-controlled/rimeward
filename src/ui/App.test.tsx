@@ -907,26 +907,38 @@ describe("Editable turn plan", () => {
   it("previews the recovery decision and removes it when recovery is replaced or cancelled", async () => {
     const root = await mount();
     await select(0);
+    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("No benefit");
+    expect(document.querySelector('[aria-label="Hold preview"]')?.textContent).toContain("free");
     await click(action("RECOVER"));
-    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent)
+    expect(document.querySelector('[aria-label="Recovery order preview"]')?.textContent)
       .toContain("costs 6 metal + 2 energy");
-    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("STR 10 → 10 · FTG 0 → 0");
+    expect(document.querySelector('[aria-label="Recovery order preview"]')?.textContent).toContain("STR 10 → 10 · FTG 0 → 0");
 
     await click(action("HOLD"));
-    expect(document.querySelector('[aria-label="Recovery preview"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Recovery order preview"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Recovery preview"]')).not.toBeNull();
 
     await click(action("RECOVER"));
-    expect(document.querySelector('[aria-label="Recovery preview"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Recovery order preview"]')).not.toBeNull();
     await cancel("squad-1");
-    expect(document.querySelector('[aria-label="Recovery preview"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Recovery order preview"]')).toBeNull();
     await act(async () => root.unmount());
   });
 
   it("previews Logistics recovery gains, fatigue reduction, and the strength cap", async () => {
     const campaign = { ...createNewCampaign(42024), researchLevels: { ...createNewCampaign(42024).researchLevels, Logistics: 2 }, squads: createNewCampaign(42024).squads.map((s, i) => i === 0 ? { ...s, strength: 8, fatigue: 5 } : s) };
     const root = await mount(campaign); await select(0); await click(action("RECOVER"));
-    const preview = document.querySelector('[aria-label="Recovery preview"]')?.textContent;
+    const preview = document.querySelector('[aria-label="Recovery order preview"]')?.textContent;
     expect(preview).toContain("STR 8 → 12 · FTG 5 → 1"); await act(async () => root.unmount());
+  });
+
+  it("keeps resolveTurn authoritative for unsupplied and no-benefit recovery", () => {
+    const campaign = createNewCampaign(42024);
+    const unsupplied = { ...campaign, squads: [{ ...campaign.squads[0], sector: "sector-6" as const }] };
+    expect(() => resolveTurn(unsupplied, [{ squadId: unsupplied.squads[0].id, type: "recover" }])).toThrow("outside supplied territory");
+    const noBenefit = resolveTurn(campaign, [{ squadId: campaign.squads[0].id, type: "recover" }]);
+    expect(noBenefit.nextState.squads[0].strength).toBe(campaign.squads[0].strength);
+    expect(noBenefit.nextState.squads[0].fatigue).toBe(campaign.squads[0].fatigue);
   });
 
   it("recomputes a grouped assault forecast on cancellation and clears it after the last order", async () => {
