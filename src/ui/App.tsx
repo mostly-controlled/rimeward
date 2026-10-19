@@ -73,11 +73,16 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [events, setEvents] = useState<RailEvent[]>(() => loaded?.events ?? []);
   const [reports, setReports] = useState<BattleReport[]>(() => loaded?.reports ?? []);
+  const [storageWarning, setStorageWarning] = useState(false);
   const [error, setError] = useState(!initialGame ? (loaded ? "RESUMED SAVED CAMPAIGN — queued orders were not saved." : readSaveNotice()) : "");
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
     if (!storageEnabled) return null;
     const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events: nextEvents, reports: nextReports });
-    if (warning) setError(warning);
+    if (warning) {
+      setStorageWarning(true);
+      setError(warning);
+    }
+    return warning;
   };
   const income = calculateIncome(game);
   const plannedCost = queuedCost(orders);
@@ -153,7 +158,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       setEvents(nextEvents);
       const warning = persist(enemy.nextState, nextEvents, nextReports);
       setOrders([]);
-      if (!warning) setError("");
+      if (!warning && !storageWarning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Orders rejected");
     }
@@ -163,7 +168,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const nextGame = advanceResearch(game, branch);
       setGame(nextGame);
       const warning = persist(nextGame);
-      if (!warning) setError("");
+      if (!warning && !storageWarning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Research rejected");
     }

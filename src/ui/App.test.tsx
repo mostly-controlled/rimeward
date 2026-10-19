@@ -1,7 +1,8 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { readSave, SAVE_KEY, SAVE_VERSION, writeSave } from "../game/persistence";
 import {
   advanceResearch,
   createNewCampaign,
@@ -971,6 +972,49 @@ describe("Editable turn plan", () => {
     expect(rows()).toHaveLength(0);
     expect(queue().querySelector("button")).toBeNull();
     expect(execute().disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
+
+  it("autosaves research and resumes it after remount", async () => {
+    const game = { ...createNewCampaign(42024), resources: { ...createNewCampaign(42024).resources, intelligence: 20 } };
+    writeSave({ version: SAVE_VERSION, game, events: [], reports: [] });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await click([...document.querySelectorAll(".research button")].find((button) => button.textContent?.startsWith("Signals"))!);
+    expect(readSave()?.game.researchLevels.Signals).toBe(1);
+    await act(async () => root.unmount());
+    document.body.innerHTML = '<div id="root"></div>';
+    const resumed = createRoot(document.getElementById("root")!);
+    await act(async () => resumed.render(<App />));
+    expect(document.body.textContent).toContain("RESUMED SAVED CAMPAIGN");
+    expect(document.body.textContent).toContain("Signals 1/2");
+    await act(async () => resumed.unmount());
+  });
+
+  it("saves a new seed on reset and persists terminal reason", async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await click([...document.querySelectorAll("button")].find((button) => button.textContent === "NEW CAMPAIGN")!);
+    expect(readSave()?.game).toBeDefined();
+    expect(readSave()?.game.terminal).toBe("active");
+    await act(async () => root.unmount());
+    expect(SAVE_KEY).toBe("rimeward:campaign");
+  });
+
+  it("keeps a storage warning after a successful research action", async () => {
+    let setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    const game = { ...createNewCampaign(42024), resources: { ...createNewCampaign(42024).resources, intelligence: 20 } };
+    setItem.mockRestore();
+    writeSave({ version: SAVE_VERSION, game, events: [], reports: [] });
+    setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await click([...document.querySelectorAll(".research button")].find((button) => button.textContent?.startsWith("Signals"))!);
+    expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
+    setItem.mockRestore();
     await act(async () => root.unmount());
   });
 });
