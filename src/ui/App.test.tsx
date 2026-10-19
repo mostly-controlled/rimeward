@@ -992,29 +992,44 @@ describe("Editable turn plan", () => {
     await act(async () => resumed.unmount());
   });
 
-  it("saves a new seed on reset and persists terminal reason", async () => {
+  it("resets the campaign and persists terminal reason after remount", async () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    const beforeSeed = readSave()?.game.seed;
     await click([...document.querySelectorAll("button")].find((button) => button.textContent === "NEW CAMPAIGN")!);
     expect(readSave()?.game).toBeDefined();
     expect(readSave()?.game.terminal).toBe("active");
+    expect(readSave()?.game.seed).toBe(beforeSeed);
     await act(async () => root.unmount());
+
+    const terminal = { ...createNewCampaign(42024), terminal: "defeat" as const, terminalReason: "Turn 18 reached without victory." };
+    writeSave({ version: SAVE_VERSION, game: terminal, events: [], reports: [] });
+    document.body.innerHTML = '<div id="root"></div>';
+    const resumed = createRoot(document.getElementById("root")!);
+    await act(async () => resumed.render(<App />));
+    expect(document.body.textContent).toContain("Turn 18 reached without victory.");
+    await act(async () => resumed.unmount());
     expect(SAVE_KEY).toBe("rimeward:campaign");
   });
 
-  it("keeps a storage warning after a successful research action", async () => {
-    let setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
-    const game = { ...createNewCampaign(42024), resources: { ...createNewCampaign(42024).resources, intelligence: 20 } };
-    setItem.mockRestore();
-    writeSave({ version: SAVE_VERSION, game, events: [], reports: [] });
-    setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+  it("keeps a failed save warning through queue/cancel and clears it after a successful save", async () => {
+    storage.localStorage.clear();
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
-    await click([...document.querySelectorAll(".research button")].find((button) => button.textContent?.startsWith("Signals"))!);
+    await click(action("HOLD"));
+    await click(execute());
+    expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
+    await target("Whiteplain");
+    expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
+    await cancel("squad-1");
     expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
     setItem.mockRestore();
+    await click([...document.querySelectorAll(".research button")].find((button) => button.textContent?.startsWith("Signals"))!);
+    expect(document.body.textContent).toContain("Completed turns and research saved; queued orders are not saved.");
+    expect(document.body.textContent).not.toContain("SAVE UNAVAILABLE");
     await act(async () => root.unmount());
   });
 });

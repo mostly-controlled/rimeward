@@ -30,6 +30,7 @@ const queuedCost = (orders: Order[]) =>
   );
 
 const SEED = 42024;
+const SAVE_SUCCESS = "Completed turns and research saved; queued orders are not saved.";
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
     Logistics: [
@@ -73,14 +74,15 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [events, setEvents] = useState<RailEvent[]>(() => loaded?.events ?? []);
   const [reports, setReports] = useState<BattleReport[]>(() => loaded?.reports ?? []);
-  const [storageWarning, setStorageWarning] = useState(false);
-  const [error, setError] = useState(!initialGame ? (loaded ? "RESUMED SAVED CAMPAIGN — queued orders were not saved." : readSaveNotice()) : "");
+  const [saveStatus, setSaveStatus] = useState(!initialGame ? (loaded ? SAVE_SUCCESS : readSaveNotice()) : "");
+  const [error, setError] = useState("");
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
     if (!storageEnabled) return null;
     const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events: nextEvents, reports: nextReports });
     if (warning) {
-      setStorageWarning(true);
-      setError(warning);
+      setSaveStatus(warning);
+    } else {
+      setSaveStatus(SAVE_SUCCESS);
     }
     return warning;
   };
@@ -158,7 +160,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       setEvents(nextEvents);
       const warning = persist(enemy.nextState, nextEvents, nextReports);
       setOrders([]);
-      if (!warning && !storageWarning) setError("");
+      if (!warning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Orders rejected");
     }
@@ -168,7 +170,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const nextGame = advanceResearch(game, branch);
       setGame(nextGame);
       const warning = persist(nextGame);
-      if (!warning && !storageWarning) setError("");
+      if (!warning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Research rejected");
     }
@@ -182,7 +184,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setReports([]);
     setError("");
     const warning = persist(nextGame, [], []);
-    if (warning) setError(warning);
   };
   if (!game.squads.length)
     return (
@@ -192,6 +193,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
           <h1>THE WHITE LINE</h1>
           <h2>NO SURVIVORS</h2>
           <p>The Ward has no active squads. The campaign is over.</p>
+          {saveStatus && <p className="save-status" role="status">{saveStatus}</p>}
           <button className="primary" onClick={reset}>
             NEW CAMPAIGN · SEED {game.seed}
           </button>
@@ -274,6 +276,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         </section>
       ) : (
         <>
+          {saveStatus && <p className="save-status" role="status">{saveStatus}</p>}
           {game.terminal !== "active" && (
             <section className="terminal card">
               <p className="eyebrow">CAMPAIGN TERMINAL</p>
