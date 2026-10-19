@@ -9,6 +9,7 @@ import {
   resolveCombat,
   resolveEnemyTurn,
   resolveTurn,
+  recoveryMetalCost,
   type BattleReport,
   type GameState,
   type Order,
@@ -20,10 +21,10 @@ import { readSave, readSaveNotice, SAVE_VERSION, writeSave } from "../game/persi
 
 type RailEvent = { turn: number; message: string };
 
-const queuedCost = (orders: Order[]) =>
+const queuedCost = (orders: Order[], state: GameState) =>
   orders.reduce(
     (total, order) => ({
-      metal: total.metal + (order.type === "attack" ? 2 : order.type === "recover" ? 6 : 0),
+      metal: total.metal + (order.type === "attack" ? 2 : order.type === "recover" ? recoveryMetalCost(state) : 0),
       energy: total.energy + (order.type === "attack" ? 3 : order.type === "recover" ? 2 : 0),
     }),
     { metal: 0, energy: 0 },
@@ -87,7 +88,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     return warning;
   };
   const income = calculateIncome(game);
-  const plannedCost = queuedCost(orders);
+  const plannedCost = queuedCost(orders, game);
   const remaining = {
     metal: game.resources.metal - plannedCost.metal,
     energy: game.resources.energy - plannedCost.energy,
@@ -109,6 +110,28 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const squad =
     game.squads.find((s) => s.id === selectedSquad) ?? game.squads[0];
   const selectedId = squad?.id ?? "";
+  const connectedIds = useMemo(
+    () => new Set(connectedOwnedSectors(game).map((sector) => sector.id)),
+    [game],
+  );
+  const recoveryCap = 10 + game.researchLevels.Logistics * 2;
+  const recoveryStrengthAfter = squad
+    ? Math.min(recoveryCap, squad.strength + 2 + game.researchLevels.Logistics)
+    : 0;
+  const recoveryFatigueAfter = squad
+    ? Math.max(0, squad.fatigue - 2 - game.researchLevels.Logistics)
+    : 0;
+  const recoverySupplied = Boolean(
+    squad &&
+      connectedIds.has(squad.sector) &&
+      game.sectors.find((sector) => sector.id === squad.sector)?.owner ===
+        "player",
+  );
+  const recoveryHasBenefit = Boolean(
+    squad &&
+      (recoveryStrengthAfter > squad.strength ||
+        recoveryFatigueAfter < squad.fatigue),
+  );
   useEffect(() => {
     if (selectedSquad !== selectedId) setSelectedSquad(selectedId);
   }, [selectedId, selectedSquad]);
@@ -638,7 +661,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   {(["hold", "recover", "move", "attack"] as OrderType[]).map(
                     (type) => (
                       <button
-                        disabled={game.terminal !== "active"}
+                        disabled={
+                          game.terminal !== "active" ||
+                          (type === "recover" && !recoverySupplied)
+                        }
                         key={type}
                         className={
                           orderFor(selectedSquad)?.type === type ||
@@ -663,6 +689,24 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     ),
                   )}
                 </div>
+                {orderFor(selectedSquad)?.type === "recover" && (
+                  <section className="recovery-preview" aria-label="Recovery preview">
+                    <h3>RECOVERY PREVIEW</h3>
+                    <p>
+                      BEFORE ENEMY PHASE · costs {recoveryMetalCost(game)} metal + 2 energy ·
+                      STR {squad.strength} → {recoveryStrengthAfter} · FTG {squad.fatigue} → {recoveryFatigueAfter}
+                    </p>
+                  </section>
+                )}
+                {orderFor(selectedSquad)?.type === "hold" && (
+                  <section className="recovery-preview" aria-label="Hold preview">
+                    <h3>HOLD PREVIEW</h3>
+                    <p>
+                      BEFORE ENEMY PHASE · free · STR {squad.strength} → {squad.strength} ·
+                      FTG {squad.fatigue} → {Math.max(0, squad.fatigue - 1)}
+                    </p>
+                  </section>
+                )}
                 <section className="research">
                   <h3>RESEARCH</h3>
                   {(
