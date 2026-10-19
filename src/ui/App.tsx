@@ -74,7 +74,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [events, setEvents] = useState<RailEvent[]>(() => loaded?.events ?? []);
   const [reports, setReports] = useState<BattleReport[]>(() => loaded?.reports ?? []);
-  const [saveStatus, setSaveStatus] = useState(!initialGame ? (loaded ? SAVE_SUCCESS : readSaveNotice()) : "");
+  const [saveStatus, setSaveStatus] = useState(!initialGame ? (loaded ? `RESUMED SAVED CAMPAIGN — ${SAVE_SUCCESS}` : readSaveNotice()) : "");
   const [error, setError] = useState("");
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
     if (!storageEnabled) return null;
