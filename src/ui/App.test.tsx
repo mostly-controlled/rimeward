@@ -904,6 +904,56 @@ describe("Editable turn plan", () => {
     await act(async () => root.unmount());
   });
 
+  it("keeps the persistent recovery comparison while orders change", async () => {
+    const root = await mount();
+    await select(0);
+    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("costs 6 metal + 2 energy");
+    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("No benefit");
+    expect(document.querySelector('[aria-label="Hold preview"]')?.textContent).toContain("free");
+    await click(action("RECOVER"));
+    expect(document.querySelectorAll('[aria-label="Recovery preview"]')).toHaveLength(1);
+    expect(document.querySelector('[aria-label="Recovery order preview"]')).toBeNull();
+
+    await click(action("HOLD"));
+    expect(document.querySelector('[aria-label="Recovery preview"]')).not.toBeNull();
+
+    await click(action("RECOVER"));
+    expect(document.querySelector('[aria-label="Recovery preview"]')).not.toBeNull();
+    await cancel("squad-1");
+    await act(async () => root.unmount());
+  });
+
+  it("previews Logistics recovery gains, fatigue reduction, and the strength cap", async () => {
+    const base = createNewCampaign(42024);
+    const campaign = { ...base, researchLevels: { ...base.researchLevels, Logistics: 2 }, squads: base.squads.map((s, i) => i === 0 ? { ...s, strength: 13, fatigue: 1 } : s) };
+    const expected = resolveTurn(campaign, [{ squadId: campaign.squads[0].id, type: "recover" }]).nextState.squads[0];
+    const root = await mount(campaign); await select(0);
+    const preview = document.querySelector('[aria-label="Recovery preview"]')?.textContent;
+    expect(preview).toContain(`STR 13 → ${expected.strength}`);
+    expect(preview).toContain(`FTG 1 → ${expected.fatigue}`);
+    expect(expected.strength).toBe(14);
+    expect(expected.fatigue).toBe(0);
+    await act(async () => root.unmount());
+  });
+
+  it("shows unsupplied recovery as unavailable and disables RECOVER", async () => {
+    const base = createNewCampaign(42024);
+    const unsupplied = { ...base, squads: base.squads.map((s, i) => i === 0 ? { ...s, sector: "sector-6" as const } : s) };
+    const root = await mount(unsupplied); await select(0);
+    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("Unavailable outside supplied player territory");
+    expect((action("RECOVER") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
+
+  it("keeps resolveTurn authoritative for unsupplied and no-benefit recovery", () => {
+    const campaign = createNewCampaign(42024);
+    const unsupplied = { ...campaign, squads: [{ ...campaign.squads[0], sector: "sector-6" as const }] };
+    expect(() => resolveTurn(unsupplied, [{ squadId: unsupplied.squads[0].id, type: "recover" }])).toThrow("outside supplied territory");
+    const noBenefit = resolveTurn(campaign, [{ squadId: campaign.squads[0].id, type: "recover" }]);
+    expect(noBenefit.nextState.squads[0].strength).toBe(campaign.squads[0].strength);
+    expect(noBenefit.nextState.squads[0].fatigue).toBe(campaign.squads[0].fatigue);
+  });
+
   it("recomputes a grouped assault forecast on cancellation and clears it after the last order", async () => {
     const campaign = createNewCampaign(42024);
     const initialGame = {
