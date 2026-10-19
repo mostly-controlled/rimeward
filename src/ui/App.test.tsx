@@ -11,10 +11,12 @@ import {
   decideEnemyIntent,
   terminalState,
 } from "../game/simulation";
+const storage = globalThis as typeof globalThis & { localStorage: { clear(): void } };
 
 describe("App interactions", () => {
   afterEach(() => {
     document.body.innerHTML = "";
+    storage.localStorage.clear();
   });
 
   it("documents the full attack operating cost in field notes", async () => {

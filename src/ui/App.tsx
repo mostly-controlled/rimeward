@@ -16,6 +16,7 @@ import {
   type ResearchBranch,
   type SectorId,
 } from "../game/simulation";
+import { readSave, readSaveNotice, SAVE_VERSION, writeSave } from "../game/persistence";
 
 type RailEvent = { turn: number; message: string };
 
@@ -60,17 +61,22 @@ const pos: Record<string, [number, number]> = {
 };
 
 export function App({ initialGame }: { initialGame?: GameState } = {}) {
+  const loaded = initialGame ? null : readSave();
   const [view, setView] = useState<"campaign" | "field">("field");
   const [game, setGame] = useState<GameState>(
-    () => initialGame ?? createNewCampaign(SEED),
+    () => initialGame ?? loaded?.game ?? createNewCampaign(SEED),
   );
   const [selectedSquad, setSelectedSquad] = useState("squad-1");
   const [selectedAction, setSelectedAction] =
     useState<Extract<OrderType, "move" | "attack">>("move");
   const [orders, setOrders] = useState<Order[]>([]);
-  const [events, setEvents] = useState<RailEvent[]>([]);
-  const [reports, setReports] = useState<BattleReport[]>([]);
-  const [error, setError] = useState("");
+  const [events, setEvents] = useState<RailEvent[]>(() => loaded?.events ?? []);
+  const [reports, setReports] = useState<BattleReport[]>(() => loaded?.reports ?? []);
+  const [error, setError] = useState(!initialGame ? (loaded ? "RESUMED SAVED CAMPAIGN — queued orders were not saved." : readSaveNotice()) : "");
+  const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
+    const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events: nextEvents, reports: nextReports });
+    if (warning) setError(warning);
+  };
   const income = calculateIncome(game);
   const plannedCost = queuedCost(orders);
   const remaining = {
@@ -127,8 +133,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const enemy = resolveEnemyTurn(combat.nextState);
       const phaseReports = [...combat.reports, ...enemy.reports];
       setGame(enemy.nextState);
-      if (phaseReports.length) setReports(phaseReports);
-      setEvents((previous) =>
+      const nextReports = phaseReports.length ? phaseReports : reports;
+      const nextEvents = (
         [
           ...[
             ...phaseReports.map(
@@ -138,9 +144,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             ...enemy.events.map((e) => e.message),
             ...turn.events.map((e) => e.message),
           ].map((message) => ({ turn: game.turn, message })),
-          ...previous,
-        ].slice(0, 12),
-      );
+          ...events,
+        ].slice(0, 12)
+      ) as RailEvent[];
+      if (phaseReports.length) setReports(phaseReports);
+      setEvents(nextEvents);
+      persist(enemy.nextState, nextEvents, nextReports);
       setOrders([]);
       setError("");
     } catch (e) {
@@ -149,19 +158,23 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   };
   const research = (branch: ResearchBranch) => {
     try {
-      setGame(advanceResearch(game, branch));
+      const nextGame = advanceResearch(game, branch);
+      setGame(nextGame);
+      persist(nextGame);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Research rejected");
     }
   };
   const reset = () => {
-    setGame(createNewCampaign(game.seed));
+    const nextGame = createNewCampaign(game.seed);
+    setGame(nextGame);
     setSelectedSquad("squad-1");
     setOrders([]);
     setEvents([]);
     setReports([]);
     setError("");
+    persist(nextGame, [], []);
   };
   if (!game.squads.length)
     return (
@@ -270,11 +283,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               <button
                 onClick={() => {
                   const seed = (game.seed * 1664525 + 1013904223) >>> 0;
-                  setGame(createNewCampaign(seed));
+                  const nextGame = createNewCampaign(seed);
+                  setGame(nextGame);
                   setOrders([]);
                   setEvents([]);
                   setReports([]);
                   setError("");
+                  persist(nextGame, [], []);
                 }}
               >
                 NEW SEED
