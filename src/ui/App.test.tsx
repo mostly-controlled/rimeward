@@ -800,4 +800,175 @@ describe("App interactions", () => {
     expect(document.querySelector(".budget")?.textContent).toContain("REMAINING 2M + 2E");
     await act(async () => root.unmount());
   });
+
+  it("shows named queued targets and cancels only the selected order", async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    const squads = () => [...document.querySelectorAll(".squad-card")] as HTMLButtonElement[];
+    await act(async () => squads()[0].click());
+    await act(async () => (document.querySelector(".order-buttons button:nth-child(2)") as HTMLButtonElement).click());
+    await act(async () => squads()[1].click());
+    await act(async () => (document.querySelector(".order-buttons button:nth-child(2)") as HTMLButtonElement).click());
+    expect(document.querySelectorAll(".queued-order")).toHaveLength(2);
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("RECOVER");
+    await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
+    expect(document.querySelectorAll(".queued-order")).toHaveLength(1);
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("RECOVER");
+    await act(async () => root.unmount());
+  });
+});
+
+describe("Editable turn plan", () => {
+  const queue = () => document.querySelector('[aria-label="Queued orders"]')!;
+  const rows = () => [...queue().querySelectorAll("li")];
+  const execute = () => document.querySelector(".execute") as HTMLButtonElement;
+  const budget = () => document.querySelector(".budget")!.textContent;
+  const click = async (element: Element) => {
+    await act(async () => {
+      element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+  };
+  const action = (name: string) => [...document.querySelectorAll(".order-buttons button")]
+    .find((button) => button.textContent === name)!;
+  const select = async (index: number) => click(document.querySelectorAll(".squad-card")[index]);
+  const target = async (name: string) => click(document.querySelector(`[role="button"][aria-label^="${name},"]`)!);
+  const cancel = async (id: string) => click(queue().querySelector(`[aria-label^="Cancel "][aria-label*="${id}"]`)!);
+  const mount = async (initialGame = createNewCampaign(42024)) => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={initialGame} />));
+    return root;
+  };
+
+  it("lists distinct squad identities and named MOVE/ATTACK targets; cancelling preserves the other order", async () => {
+    const root = await mount();
+    expect(queue().textContent).toContain("No orders queued");
+    expect(queue().textContent).toContain("Unassigned squads gain fatigue when the turn executes");
+    expect(execute().disabled).toBe(true);
+    await target("Whiteplain");
+    await select(1);
+    await click(action("ATTACK"));
+    await target("Lastlight");
+    expect(rows()).toHaveLength(2);
+    expect(rows()[0].textContent).toContain("SENTINEL squad-1 · MOVE → Whiteplain");
+    expect(rows()[1].textContent).toContain("RAIDER squad-2 · ATTACK → Lastlight");
+    expect(rows()[0].querySelector("button")?.getAttribute("aria-label"))
+      .toBe("Cancel SENTINEL squad-1 · MOVE → Whiteplain");
+    const resources = document.querySelector(".resource-strip")!.textContent;
+    await cancel("squad-1");
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].textContent).toContain("RAIDER squad-2 · ATTACK → Lastlight");
+    expect(document.querySelectorAll(".squad-card em")).toHaveLength(1);
+    expect(document.querySelector(".squad-card em")?.textContent).toBe("attack");
+    expect(document.querySelector(".resource-strip")!.textContent).toBe(resources);
+    expect(document.querySelector(".turn-readout strong")?.textContent).toBe("01");
+    expect(document.querySelector(".event-rail")?.textContent).toContain("Awaiting first orders");
+    expect(budget()).toContain("QUEUED 2M + 3E");
+    expect(execute().disabled).toBe(false);
+    await click(execute());
+    expect(rows()).toHaveLength(0);
+    expect(document.querySelectorAll(".squad-card")[0].textContent).toContain("FTG 1");
+    expect(document.querySelector(".event-rail")?.textContent).not.toContain("squad-1 hold");
+    await act(async () => root.unmount());
+  });
+
+  it("cancels paid recovery reservations without refunding spent research resources", async () => {
+    const root = await mount();
+    for (const index of [0, 1, 2]) {
+      await select(index);
+      await click(action("RECOVER"));
+    }
+    await click([...document.querySelectorAll(".research button")]
+      .find((button) => button.textContent?.includes("Logistics"))!);
+    expect(budget()).toContain("QUEUED 18M + 6E · REMAINING -6M + 13E");
+    expect(execute().disabled).toBe(true);
+    const spentResources = document.querySelector(".resource-strip")!.textContent;
+    expect(spentResources).toContain("METAL 12");
+    expect(spentResources).toContain("ENERGY 19");
+    await cancel("squad-2");
+    expect(budget()).toContain("QUEUED 12M + 4E · REMAINING 0M + 15E");
+    expect(budget()).not.toContain("SHORT");
+    expect(execute().disabled).toBe(false);
+    expect(rows()).toHaveLength(2);
+    await cancel("squad-1");
+    await cancel("squad-3");
+    expect(budget()).toContain("QUEUED 0M + 0E · REMAINING 12M + 19E");
+    expect(document.querySelector(".resource-strip")!.textContent).toBe(spentResources);
+    expect(document.querySelector(".turn-readout strong")?.textContent).toBe("01");
+    expect(rows()).toHaveLength(0);
+    expect(execute().disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
+
+  it("recomputes a grouped assault forecast on cancellation and clears it after the last order", async () => {
+    const campaign = createNewCampaign(42024);
+    const initialGame = {
+      ...campaign,
+      squads: campaign.squads.map((squad) => ({ ...squad, sector: "sector-5" as const })),
+    };
+    const root = await mount(initialGame);
+    await click(action("ATTACK"));
+    await target("Ashenfall");
+    await select(1);
+    await target("Ashenfall");
+    expect(rows()).toHaveLength(2);
+    expect(document.querySelector(".expected-losses")).not.toBeNull();
+    await cancel("squad-1");
+    const planned = resolveTurn(initialGame, [{ squadId: "squad-2", type: "attack", target: "sector-6" }]);
+    const report = resolveCombat(planned.nextState, planned.events).reports[0];
+    expect(document.querySelector(".expected-losses")?.textContent)
+      .toContain(`sector-6: Ward −${report.playerCasualties} · hostile −${report.enemyCasualties}`);
+    expect(budget()).toContain("QUEUED 2M + 3E · REMAINING 18M + 17E");
+    await cancel("squad-2");
+    expect(document.querySelector(".expected-losses")).toBeNull();
+    expect(rows()).toHaveLength(0);
+    expect(queue().textContent).toContain("No orders queued");
+    expect(execute().disabled).toBe(true);
+    expect(budget()).toContain("QUEUED 0M + 0E · REMAINING 20M + 20E");
+    await act(async () => root.unmount());
+  });
+
+  it("replaces an order with one updated row and clears the list on execute and reset", async () => {
+    const root = await mount();
+    await target("Whiteplain");
+    await click(action("ATTACK"));
+    await target("Lastlight");
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].textContent).toContain("SENTINEL squad-1 · ATTACK → Lastlight");
+    expect(queue().textContent).not.toContain("Whiteplain");
+    await click(action("HOLD"));
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].textContent).toContain("SENTINEL squad-1 · HOLD");
+    expect(queue().textContent).not.toContain("Lastlight");
+    await click(execute());
+    expect(rows()).toHaveLength(0);
+    expect(execute().disabled).toBe(true);
+    await click(action("RECOVER"));
+    expect(rows()).toHaveLength(1);
+    await click([...document.querySelectorAll("button")].find((button) => button.textContent === "NEW CAMPAIGN")!);
+    expect(rows()).toHaveLength(0);
+    expect(queue().textContent).toContain("No orders queued");
+    expect(execute().disabled).toBe(true);
+    expect(budget()).toContain("QUEUED 0M + 0E · REMAINING 20M + 20E");
+    await act(async () => root.unmount());
+  });
+
+  it.each(["victory", "defeat"] as const)("prevents map or action edits in a completed %s campaign", async (terminal) => {
+    const root = await mount({ ...createNewCampaign(42024), terminal });
+    expect(queue().textContent).toContain("Campaign complete");
+    await target("Whiteplain");
+    const mapTarget = document.querySelector('[role="button"][aria-label^="Whiteplain,"]')!;
+    await act(async () => {
+      mapTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(mapTarget.getAttribute("aria-disabled")).toBe("true");
+    expect(mapTarget.getAttribute("tabindex")).toBe("-1");
+    expect([...document.querySelectorAll(".order-buttons button")]
+      .every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    expect(rows()).toHaveLength(0);
+    expect(queue().querySelector("button")).toBeNull();
+    expect(execute().disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
 });
