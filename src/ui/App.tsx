@@ -689,22 +689,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     ),
                   )}
                 </div>
-                {orderFor(selectedSquad)?.type === "recover" && (
-                  <section className="recovery-preview" aria-label="Recovery order preview">
-                    <h3>RECOVERY PREVIEW</h3>
-                    <p>
-                      BEFORE ENEMY PHASE · costs {recoveryMetalCost(game)} metal + 2 energy ·
-                      STR {squad.strength} → {recoveryStrengthAfter} · FTG {squad.fatigue} → {recoveryFatigueAfter}
-                    </p>
-                  </section>
-                )}
                 <section className="recovery-preview" aria-label="Recovery preview">
                   <h3>RECOVER</h3>
                   <p>
                     {recoverySupplied
                       ? recoveryHasBenefit
                         ? `BEFORE ENEMY PHASE · costs ${recoveryMetalCost(game)} metal + 2 energy · STR ${squad.strength} → ${recoveryStrengthAfter} · FTG ${squad.fatigue} → ${recoveryFatigueAfter}`
-                        : "No benefit: recovery would not change this squad's strength or fatigue."
+                        : `BEFORE ENEMY PHASE · costs ${recoveryMetalCost(game)} metal + 2 energy · No benefit: recovery would not change this squad's strength or fatigue.`
                       : "Unavailable outside supplied player territory; recovery promises no gains."}
                   </p>
                 </section>

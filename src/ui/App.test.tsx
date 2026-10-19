@@ -904,32 +904,45 @@ describe("Editable turn plan", () => {
     await act(async () => root.unmount());
   });
 
-  it("previews the recovery decision and removes it when recovery is replaced or cancelled", async () => {
+  it("keeps the persistent recovery comparison while orders change", async () => {
     const root = await mount();
     await select(0);
+    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("costs 6 metal + 2 energy");
     expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("No benefit");
     expect(document.querySelector('[aria-label="Hold preview"]')?.textContent).toContain("free");
     await click(action("RECOVER"));
-    expect(document.querySelector('[aria-label="Recovery order preview"]')?.textContent)
-      .toContain("costs 6 metal + 2 energy");
-    expect(document.querySelector('[aria-label="Recovery order preview"]')?.textContent).toContain("STR 10 → 10 · FTG 0 → 0");
+    expect(document.querySelectorAll('[aria-label="Recovery preview"]')).toHaveLength(1);
+    expect(document.querySelector('[aria-label="Recovery order preview"]')).toBeNull();
 
     await click(action("HOLD"));
-    expect(document.querySelector('[aria-label="Recovery order preview"]')).toBeNull();
     expect(document.querySelector('[aria-label="Recovery preview"]')).not.toBeNull();
 
     await click(action("RECOVER"));
-    expect(document.querySelector('[aria-label="Recovery order preview"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Recovery preview"]')).not.toBeNull();
     await cancel("squad-1");
-    expect(document.querySelector('[aria-label="Recovery order preview"]')).toBeNull();
     await act(async () => root.unmount());
   });
 
   it("previews Logistics recovery gains, fatigue reduction, and the strength cap", async () => {
-    const campaign = { ...createNewCampaign(42024), researchLevels: { ...createNewCampaign(42024).researchLevels, Logistics: 2 }, squads: createNewCampaign(42024).squads.map((s, i) => i === 0 ? { ...s, strength: 8, fatigue: 5 } : s) };
-    const root = await mount(campaign); await select(0); await click(action("RECOVER"));
-    const preview = document.querySelector('[aria-label="Recovery order preview"]')?.textContent;
-    expect(preview).toContain("STR 8 → 12 · FTG 5 → 1"); await act(async () => root.unmount());
+    const base = createNewCampaign(42024);
+    const campaign = { ...base, researchLevels: { ...base.researchLevels, Logistics: 2 }, squads: base.squads.map((s, i) => i === 0 ? { ...s, strength: 13, fatigue: 1 } : s) };
+    const expected = resolveTurn(campaign, [{ squadId: campaign.squads[0].id, type: "recover" }]).nextState.squads[0];
+    const root = await mount(campaign); await select(0);
+    const preview = document.querySelector('[aria-label="Recovery preview"]')?.textContent;
+    expect(preview).toContain(`STR 13 → ${expected.strength}`);
+    expect(preview).toContain(`FTG 1 → ${expected.fatigue}`);
+    expect(expected.strength).toBe(14);
+    expect(expected.fatigue).toBe(0);
+    await act(async () => root.unmount());
+  });
+
+  it("shows unsupplied recovery as unavailable and disables RECOVER", async () => {
+    const base = createNewCampaign(42024);
+    const unsupplied = { ...base, squads: base.squads.map((s, i) => i === 0 ? { ...s, sector: "sector-6" as const } : s) };
+    const root = await mount(unsupplied); await select(0);
+    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("Unavailable outside supplied player territory");
+    expect((action("RECOVER") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => root.unmount());
   });
 
   it("keeps resolveTurn authoritative for unsupplied and no-benefit recovery", () => {
