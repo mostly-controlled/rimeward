@@ -62,6 +62,7 @@ const pos: Record<string, [number, number]> = {
 
 export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const loaded = initialGame ? null : readSave();
+  const storageEnabled = !initialGame;
   const [view, setView] = useState<"campaign" | "field">("field");
   const [game, setGame] = useState<GameState>(
     () => initialGame ?? loaded?.game ?? createNewCampaign(SEED),
@@ -74,6 +75,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>(() => loaded?.reports ?? []);
   const [error, setError] = useState(!initialGame ? (loaded ? "RESUMED SAVED CAMPAIGN — queued orders were not saved." : readSaveNotice()) : "");
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
+    if (!storageEnabled) return null;
     const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events: nextEvents, reports: nextReports });
     if (warning) setError(warning);
   };
@@ -149,9 +151,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       ) as RailEvent[];
       if (phaseReports.length) setReports(phaseReports);
       setEvents(nextEvents);
-      persist(enemy.nextState, nextEvents, nextReports);
+      const warning = persist(enemy.nextState, nextEvents, nextReports);
       setOrders([]);
-      setError("");
+      if (!warning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Orders rejected");
     }
@@ -160,8 +162,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     try {
       const nextGame = advanceResearch(game, branch);
       setGame(nextGame);
-      persist(nextGame);
-      setError("");
+      const warning = persist(nextGame);
+      if (!warning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Research rejected");
     }
@@ -174,7 +176,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setEvents([]);
     setReports([]);
     setError("");
-    persist(nextGame, [], []);
+    const warning = persist(nextGame, [], []);
+    if (warning) setError(warning);
   };
   if (!game.squads.length)
     return (

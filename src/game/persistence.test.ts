@@ -22,4 +22,14 @@ describe("campaign persistence", () => {
     storage.localStorage.setItem(SAVE_KEY, "not-json");
     expect(readSave()).toBeNull();
   });
+  it("accepts historical orders for a squad removed by casualties", () => {
+    const game = createNewCampaign(77);
+    const payload = { version: SAVE_VERSION, game: { ...game, squads: game.squads.slice(1), orderHistory: [[{ squadId: game.squads[0].id, type: "attack", target: "sector-1" as const }]] }, events: [], reports: [] };
+    expect(validateSave(payload)).toBe(true);
+  });
+  it("rejects malformed nested battle report data", () => {
+    const game = createNewCampaign(77);
+    const report = { target: "sector-1", terrain: "ice", attackers: [], defenders: [], classAdvantages: [42], defenderCounters: [], terrainMultiplier: 1, fatiguePenalty: 0, variance: 0, attackerPower: 1, defenderPower: 1, winner: "draw", casualties: [], playerCasualties: 0, enemyCasualties: 0, retreat: [], captured: false, relayControlled: false };
+    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [report] })).toBe(false);
+  });
 });
