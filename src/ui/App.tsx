@@ -19,6 +19,15 @@ import {
 
 type RailEvent = { turn: number; message: string };
 
+const queuedCost = (orders: Order[]) =>
+  orders.reduce(
+    (total, order) => ({
+      metal: total.metal + (order.type === "attack" ? 2 : order.type === "recover" ? 6 : 0),
+      energy: total.energy + (order.type === "attack" ? 3 : order.type === "recover" ? 2 : 0),
+    }),
+    { metal: 0, energy: 0 },
+  );
+
 const SEED = 42024;
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
@@ -63,6 +72,16 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>([]);
   const [error, setError] = useState("");
   const income = calculateIncome(game);
+  const plannedCost = queuedCost(orders);
+  const remaining = {
+    metal: game.resources.metal - plannedCost.metal,
+    energy: game.resources.energy - plannedCost.energy,
+  };
+  const shortfall = {
+    metal: Math.max(0, -remaining.metal),
+    energy: Math.max(0, -remaining.energy),
+  };
+  const affordable = shortfall.metal === 0 && shortfall.energy === 0;
   const expectedReports = useMemo(() => {
     if (!orders.some((order) => order.type === "attack")) return [];
     try {
@@ -647,9 +666,16 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     ! {error}
                   </p>
                 )}
+                <p className="budget" aria-label="queued resource budget">
+                  QUEUED {plannedCost.metal}M + {plannedCost.energy}E · REMAINING{" "}
+                  {remaining.metal}M + {remaining.energy}E BEFORE INCOME
+                  {!affordable && (
+                    <> · SHORT {shortfall.metal ? `${shortfall.metal}M` : ""}{shortfall.metal && shortfall.energy ? " + " : ""}{shortfall.energy ? `${shortfall.energy}E` : ""}</>
+                  )}
+                </p>
                 <button
                   className="execute"
-                  disabled={!orders.length || game.terminal !== "active"}
+                  disabled={!orders.length || !affordable || game.terminal !== "active"}
                   onClick={execute}
                 >
                   EXECUTE TURN <span>→</span>
