@@ -105,15 +105,22 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     [game, squad],
   );
   const orderFor = (id: string) => orders.find((o) => o.squadId === id);
+  const sectorName = (id?: SectorId) => id ? game.sectors.find((sector) => sector.id === id)?.name ?? id : "—";
   const setOrder = (type: OrderType, target?: SectorId) => {
-    if (!selectedId) return;
+    if (!selectedId || game.terminal !== "active") return;
     setError("");
     setOrders((previous) => [
       ...previous.filter((o) => o.squadId !== selectedId),
       { squadId: selectedId, type, target },
     ]);
   };
+  const cancelOrder = (squadId: string) => {
+    if (game.terminal !== "active") return;
+    setOrders((previous) => previous.filter((order) => order.squadId !== squadId));
+    setError("");
+  };
   const execute = () => {
+    if (!orders.length || !affordable || game.terminal !== "active") return;
     try {
       const turn = resolveTurn(game, orders);
       const combat = resolveCombat(turn.nextState, turn.events);
@@ -421,12 +428,14 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   );
                   const scouted = game.researchLevels.Signals > 0 && occupied;
                   const target =
+                    game.terminal === "active" &&
                     reachable.includes(s.id) &&
                     s.id !== squad.sector &&
                     (selectedAction === "attack"
                       ? s.owner !== "player"
                       : s.owner !== "enemy" && !occupied);
                   const chooseTarget = () => {
+                    if (game.terminal !== "active") return;
                     if (target) setOrder(selectedAction, s.id);
                     else if (
                       reachable.includes(s.id) &&
@@ -442,6 +451,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       key={s.id}
                       className={`sector ${s.owner} ${active ? "selected" : ""} ${target ? "reachable" : ""}`}
                       role="button"
+                      aria-disabled={game.terminal !== "active"}
                       tabIndex={target ? 0 : -1}
                       focusable="true"
                       aria-label={`${s.name}, ${s.owner} sector${scouted ? ", scouted enemy squad present" : ""}${target ? `, ${selectedAction} target` : ""}`}
@@ -666,6 +676,43 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     ! {error}
                   </p>
                 )}
+                <section className="queued-orders" aria-label="Queued orders">
+                  <h3>QUEUED ORDERS</h3>
+                  {game.terminal !== "active" ? (
+                    <p className="muted">Campaign complete. No orders can be queued.</p>
+                  ) : (
+                    <>
+                      {orders.length ? (
+                        <ul>
+                          {orders.map((order) => {
+                            const unit = game.squads.find((s) => s.id === order.squadId)!;
+                            const label = `${unit.class.toUpperCase()} ${unit.id} · ${order.type.toUpperCase()}${
+                              order.type === "move" || order.type === "attack"
+                                ? ` → ${sectorName(order.target)}`
+                                : ""
+                            }`;
+                            return (
+                              <li className="queued-order" key={order.squadId}>
+                                {label}{" "}
+                                <button
+                                  aria-label={`Cancel ${label}`}
+                                  onClick={() => cancelOrder(order.squadId)}
+                                >
+                                  CANCEL
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="muted">No orders queued. Choose a squad and an action to plan the turn.</p>
+                      )}
+                      <p className="muted">
+                        Cancel leaves a squad unassigned; it does not HOLD. Unassigned squads gain fatigue when the turn executes.
+                      </p>
+                    </>
+                  )}
+                </section>
                 <p className="budget" aria-label="queued resource budget">
                   QUEUED {plannedCost.metal}M + {plannedCost.energy}E · REMAINING{" "}
                   {remaining.metal}M + {remaining.energy}E BEFORE INCOME
