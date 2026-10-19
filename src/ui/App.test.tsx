@@ -770,22 +770,23 @@ describe("App interactions", () => {
       await act(async () => (document.querySelector(".order-buttons button:nth-child(2)") as HTMLButtonElement).click());
     };
     await recover(0);
-    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 6M + 2E");
+    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 6M + 2E · REMAINING 14M + 18E");
     expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(false);
     await act(async () => squads()[0].click());
     await act(async () => (document.querySelector(".order-buttons button:first-child") as HTMLButtonElement).click());
-    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 0M + 0E");
+    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 0M + 0E · REMAINING 20M + 20E");
     await recover(1);
     await recover(2);
     await recover(3);
     const logistics = [...document.querySelectorAll(".research button")].find((button) => button.textContent?.includes("Logistics")) as HTMLButtonElement;
     await act(async () => logistics.click());
+    expect(document.querySelector(".budget")?.textContent).toContain("REMAINING -6M + 13E");
     expect(document.querySelector(".budget")?.textContent).toContain("SHORT 6M");
     expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(true);
     await act(async () => root.unmount());
   });
 
-  it("displays exact affordable attack spending and keeps terminal execution disabled", async () => {
+  it("displays exact affordable attack spending and clears the queued budget after execution", async () => {
     const campaign = createNewCampaign(42024);
     const initialGame = { ...campaign, resources: { ...campaign.resources, metal: 2, energy: 3 } };
     document.body.innerHTML = '<div id="root"></div>';
@@ -794,6 +795,7 @@ describe("App interactions", () => {
     await act(async () => (document.querySelector(".order-buttons button:nth-child(4)") as HTMLButtonElement).click());
     await act(async () => (document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 2M + 3E");
+    expect(document.querySelector(".budget")?.textContent).toContain("REMAINING 0M + 0E BEFORE INCOME");
     await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
     expect(document.querySelector(".budget")?.textContent).toContain("REMAINING 2M + 2E");
     await act(async () => root.unmount());

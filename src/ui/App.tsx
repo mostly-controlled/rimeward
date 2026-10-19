@@ -73,9 +73,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [error, setError] = useState("");
   const income = calculateIncome(game);
   const plannedCost = queuedCost(orders);
+  const remaining = {
+    metal: game.resources.metal - plannedCost.metal,
+    energy: game.resources.energy - plannedCost.energy,
+  };
   const shortfall = {
-    metal: Math.max(0, plannedCost.metal - game.resources.metal),
-    energy: Math.max(0, plannedCost.energy - game.resources.energy),
+    metal: Math.max(0, -remaining.metal),
+    energy: Math.max(0, -remaining.energy),
   };
   const affordable = shortfall.metal === 0 && shortfall.energy === 0;
   const expectedReports = useMemo(() => {
@@ -664,7 +668,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 )}
                 <p className="budget" aria-label="queued resource budget">
                   QUEUED {plannedCost.metal}M + {plannedCost.energy}E · REMAINING{" "}
-                  {game.resources.metal}M + {game.resources.energy}E BEFORE INCOME
+                  {remaining.metal}M + {remaining.energy}E BEFORE INCOME
                   {!affordable && (
                     <> · SHORT {shortfall.metal ? `${shortfall.metal}M` : ""}{shortfall.metal && shortfall.energy ? " + " : ""}{shortfall.energy ? `${shortfall.energy}E` : ""}</>
                   )}
