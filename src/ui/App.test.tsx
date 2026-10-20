@@ -1192,4 +1192,23 @@ describe("Editable turn plan", () => {
       .not.toContain("PLAYABLE TURNS REMAINING");
     await act(async () => root.unmount());
   });
+
+  it("traces distinct queued plans, including shared targets, and clears them on replacement or cancel", async () => {
+    const root = await mount(createNewCampaign(42024));
+    const chooseMove = async (squadIndex: number) => {
+      await act(async () => (document.querySelectorAll(".squad-card")[squadIndex] as HTMLButtonElement).click());
+      await act(async () => (document.querySelector('[aria-label*="Whiteplain"]') as SVGGElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    };
+    await chooseMove(0);
+    await chooseMove(1);
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(2);
+    expect(document.querySelectorAll(".planned-route")).toHaveLength(2);
+    expect(document.querySelectorAll(".planned-label")[0].textContent).toContain("PLAN · MOVE");
+    expect(document.querySelectorAll(".planned-label")[0].textContent).not.toContain("RESOLVED");
+    await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(1);
+    await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
+    await act(async () => root.unmount());
+  });
 });

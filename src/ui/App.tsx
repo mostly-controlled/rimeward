@@ -501,6 +501,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 role="img"
                 aria-label="Tactical sector map"
               >
+                <defs>
+                  <marker id="planned-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                    <path d="M0,0 L7,3.5 L0,7 z" className="planned-arrow" />
+                  </marker>
+                </defs>
                 {game.sectors.flatMap((s) =>
                   s.links
                     .filter((l) => s.id < l)
@@ -515,6 +520,56 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       />
                     )),
                 )}
+                <g className="planned-orders" aria-label="Planned orders">
+                  {orders
+                    .filter(
+                      (order): order is Order & { target: SectorId } =>
+                        (order.type === "move" || order.type === "attack") &&
+                        Boolean(order.target),
+                    )
+                    .map((order) => {
+                      const unit = game.squads.find((s) => s.id === order.squadId);
+                      const target = order.target;
+                      if (!unit || !target) return null;
+                      const origin = pos[unit.sector];
+                      const destination = pos[target];
+                      const sharedOrders = orders.filter(
+                        (candidate) =>
+                          (candidate.type === "move" || candidate.type === "attack") &&
+                          candidate.target === target,
+                      );
+                      const sharedIndex = sharedOrders.findIndex(
+                        (candidate) => candidate.squadId === order.squadId,
+                      );
+                      const offset = sharedOrders.length > 1 ? (sharedIndex - (sharedOrders.length - 1) / 2) * 9 : 0;
+                      const dx = destination[0] - origin[0];
+                      const dy = destination[1] - origin[1];
+                      const length = Math.hypot(dx, dy) || 1;
+                      const nx = -dy / length;
+                      const ny = dx / length;
+                      const startX = origin[0] + nx * offset;
+                      const startY = origin[1] + ny * offset;
+                      const endX = destination[0] + nx * offset;
+                      const endY = destination[1] + ny * offset;
+                      const labelX = (startX + endX) / 2 + nx * 12;
+                      const labelY = (startY + endY) / 2 + ny * 12;
+                      return (
+                        <g className="planned-order" data-order-id={order.squadId} key={order.squadId}>
+                          <line
+                            className={`planned-route planned-${order.type}`}
+                            x1={startX}
+                            y1={startY}
+                            x2={endX}
+                            y2={endY}
+                            markerEnd="url(#planned-arrow)"
+                          />
+                          <text className="planned-label" x={labelX} y={labelY} textAnchor="middle">
+                            PLAN · {order.type.toUpperCase()} · {unit.id}
+                          </text>
+                        </g>
+                      );
+                    })}
+                </g>
                 {game.sectors.map((s) => {
                   const [x, y] = pos[s.id];
                   const active = s.id === squad.sector;
