@@ -824,6 +824,46 @@ describe("App interactions", () => {
     await act(async () => root.unmount());
   });
 
+  it("derives relay flips and dead-squad deltas from actual resolver snapshots", () => {
+    let relayFlip: { before: string; after: string } | undefined;
+    let deadSquad: { before: number; after: number } | undefined;
+    for (let seed = 1; seed < 5000 && (!relayFlip || !deadSquad); seed += 1) {
+      const campaign = createNewCampaign(seed);
+      const squad = campaign.squads[0];
+      if (!squad) continue;
+      const currentSector = campaign.sectors.find((sector) => sector.id === squad.sector);
+      const target = campaign.sectors.find((sector) => currentSector?.links.includes(sector.id));
+      if (!target) continue;
+      const before = {
+        ...campaign,
+        enemySquads: [],
+        objectives: campaign.objectives.map((item, index) => index === 0 ? { ...item, sector: target.id, controlled: false } : item),
+        sectors: campaign.sectors.map((sector) => sector.id === target.id ? { ...sector, owner: "enemy" as const } : sector),
+        squads: campaign.squads.map((item) => item.id === squad.id ? { ...item, strength: 1, fatigue: 3 } : item),
+      };
+      const turn = resolveTurn(before, [{ squadId: squad.id, type: "attack", target: target.id }]);
+      const combat = resolveCombat(turn.nextState, turn.events);
+      const after = resolveEnemyTurn(combat.nextState).nextState;
+      const beforeSector = before.sectors.find((sector) => sector.id === target.id);
+      const afterSector = after.sectors.find((sector) => sector.id === target.id);
+      if (beforeSector && afterSector && beforeSector.owner !== afterSector.owner) relayFlip = { before: beforeSector.owner, after: afterSector.owner };
+      const beforeSquad = before.squads.find((item) => item.id === squad.id);
+      const afterSquad = after.squads.find((item) => item.id === squad.id);
+      if (beforeSquad && afterSquad && afterSquad.strength <= 0) deadSquad = { before: beforeSquad.strength, after: afterSquad.strength };
+      if (!deadSquad && campaign.enemySquads[0]) {
+        const defended = { ...before, enemySquads: [{ ...campaign.enemySquads[0], sector: target.id, strength: 10 }] };
+        const defendedTurn = resolveTurn(defended, [{ squadId: squad.id, type: "attack", target: target.id }]);
+        const defendedCombat = resolveCombat(defendedTurn.nextState, defendedTurn.events);
+        const defendedAfter = resolveEnemyTurn(defendedCombat.nextState).nextState;
+        const deadAfter = defendedAfter.squads.find((item) => item.id === squad.id);
+        if (!deadAfter) deadSquad = { before: 1, after: 0 };
+      }
+    }
+    expect(relayFlip).toEqual({ before: "enemy", after: "player" });
+    expect(deadSquad?.before).toBe(1);
+    expect(deadSquad?.after).toBe(0);
+  });
+
   it("keeps reachable Signals2 forecast aligned with the actual HOLD event", async () => {
     let state = createNewCampaign(2244426087);
     const hold = () => {
