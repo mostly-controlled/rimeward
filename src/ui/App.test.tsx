@@ -2,7 +2,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { readSave, SAVE_KEY, SAVE_VERSION, writeSave } from "../game/persistence";
+import {
+  readSave,
+  SAVE_KEY,
+  SAVE_VERSION,
+  writeSave,
+} from "../game/persistence";
 import {
   advanceResearch,
   createNewCampaign,
@@ -12,7 +17,9 @@ import {
   decideEnemyIntent,
   terminalState,
 } from "../game/simulation";
-const storage = globalThis as typeof globalThis & { localStorage: { clear(): void } };
+const storage = globalThis as typeof globalThis & {
+  localStorage: { clear(): void };
+};
 
 describe("App interactions", () => {
   it("updates the turn guide from selection, queue, cancel, execute, and terminal state", async () => {
@@ -20,37 +27,77 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App initialGame={campaign} />));
-    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("GOAL");
-    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("SELECT SQUAD");
-    const target = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement;
-    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("QUEUED — NOT EXECUTED");
-    const cancel = [...document.querySelectorAll("button")].find((button) => button.textContent === "CANCEL") as HTMLButtonElement;
+    expect(
+      document.querySelector('[aria-label="Turn guide"]')?.textContent,
+    ).toContain("GOAL");
+    expect(
+      document.querySelector('[aria-label="Turn guide"]')?.textContent,
+    ).toContain("SELECT SQUAD");
+    const target = document.querySelector(
+      '[role="button"][aria-label*="Whiteplain"]',
+    ) as SVGGElement;
+    await act(async () =>
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    expect(
+      document.querySelector('[aria-label="Turn guide"]')?.textContent,
+    ).toContain("QUEUED — NOT EXECUTED");
+    const cancel = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "CANCEL",
+    ) as HTMLButtonElement;
     await act(async () => cancel.click());
-    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("NOT QUEUED");
-    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
-    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("TURN 2");
+    expect(
+      document.querySelector('[aria-label="Turn guide"]')?.textContent,
+    ).toContain("NOT QUEUED");
+    await act(async () =>
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    await act(async () =>
+      (document.querySelector(".execute") as HTMLButtonElement).click(),
+    );
+    expect(
+      document.querySelector('[aria-label="Turn guide"]')?.textContent,
+    ).toContain("TURN 2");
     await act(async () => root.unmount());
 
     document.body.innerHTML = '<div id="root"></div>';
-    const terminal = { ...campaign, terminal: "victory" as const, terminalReason: "secured" };
+    const terminal = {
+      ...campaign,
+      terminal: "victory" as const,
+      terminalReason: "secured",
+    };
     const terminalRoot = createRoot(document.getElementById("root")!);
     await act(async () => terminalRoot.render(<App initialGame={terminal} />));
-    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("Terminal state: VICTORY");
+    expect(
+      document.querySelector('[aria-label="Turn guide"]')?.textContent,
+    ).toContain("Terminal state: VICTORY");
     await act(async () => terminalRoot.unmount());
   });
 
   it("shows saved turn-5 state and global queue truth for another squad", async () => {
     const campaign = createNewCampaign(42024);
-    writeSave({ version: SAVE_VERSION, game: { ...campaign, turn: 5 }, events: [], reports: [] });
+    writeSave({
+      version: SAVE_VERSION,
+      game: { ...campaign, turn: 5 },
+      events: [],
+      reports: [],
+    });
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
-    const target = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement;
-    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    await act(async () => (document.querySelectorAll(".squad-card")[1] as HTMLButtonElement).click());
-    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    const target = document.querySelector(
+      '[role="button"][aria-label*="Whiteplain"]',
+    ) as SVGGElement;
+    await act(async () =>
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    await act(async () =>
+      (
+        document.querySelectorAll(".squad-card")[1] as HTMLButtonElement
+      ).click(),
+    );
+    const guide =
+      document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
     expect(guide).toContain("TURN 5");
     expect(guide).toContain("QUEUED — NOT EXECUTED");
     expect(guide).toContain("SENTINEL 1 · MOVE");
@@ -60,16 +107,117 @@ describe("App interactions", () => {
   it("gives a state-correct fallback when attack has zero legal targets", async () => {
     const campaign = createNewCampaign(42024);
     const firstSector = campaign.squads[0].sector;
-    const reachable = campaign.sectors.find((sector) => sector.id === firstSector)!.links;
-    const blocked = { ...campaign, sectors: campaign.sectors.map((sector) => reachable.includes(sector.id) ? { ...sector, owner: "player" as const } : sector) };
+    const reachable = campaign.sectors.find(
+      (sector) => sector.id === firstSector,
+    )!.links;
+    const blocked = {
+      ...campaign,
+      sectors: campaign.sectors.map((sector) =>
+        reachable.includes(sector.id)
+          ? { ...sector, owner: "player" as const }
+          : sector,
+      ),
+    };
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App initialGame={blocked} />));
-    await act(async () => (document.querySelector('button[aria-pressed="false"]') as HTMLButtonElement).click());
-    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    await act(async () =>
+      (
+        document.querySelector(
+          'button[aria-pressed="false"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    const guide =
+      document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
     expect(guide).toContain("NO LEGAL TARGETS");
     expect(guide).toContain("no enemy target is reachable");
     expect(guide).not.toContain("select ATTACK");
+    await act(async () => root.unmount());
+  });
+
+  it("keeps goal, guide, and tactical controls ahead of secondary telemetry", async () => {
+    const campaign = { ...createNewCampaign(42024), turn: 5 };
+    writeSave({
+      version: SAVE_VERSION,
+      game: campaign,
+      events: [],
+      reports: [],
+    });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    const objectives = document.querySelector(".campaign-objectives")!;
+    const guide = document.querySelector('[aria-label="Turn guide"]')!;
+    const map = document.querySelector(".battle-layout")!;
+    const telemetry = document.querySelector(".income")!;
+    expect(
+      objectives.compareDocumentPosition(guide) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      guide.compareDocumentPosition(map) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      map.compareDocumentPosition(telemetry) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(guide.textContent).toContain("TURN 5");
+    await act(async () => root.unmount());
+  });
+
+  it("guides an unsupplied squad toward HOLD or changing squad", async () => {
+    const campaign = createNewCampaign(42024);
+    const unsuppliedSquad = {
+      ...campaign.squads[0],
+      sector: "sector-6" as const,
+    };
+    const reachable = campaign.sectors.find(
+      (sector) => sector.id === unsuppliedSquad.sector,
+    )!.links;
+    const unsupplied = {
+      ...campaign,
+      sectors: campaign.sectors.map((sector) =>
+        reachable.includes(sector.id)
+          ? { ...sector, owner: "player" as const }
+          : sector,
+      ),
+      squads: campaign.squads.map((s, i) => (i === 0 ? unsuppliedSquad : s)),
+    };
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={unsupplied} />));
+    await act(async () =>
+      (
+        document.querySelector(
+          '.order-buttons button[aria-pressed="false"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    const guide =
+      document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).toContain("HOLD or change squad");
+    expect(guide).not.toContain("use HOLD or RECOVER");
+    await act(async () => root.unmount());
+  });
+
+  it("describes ATTACK as conditional on a legal target", async () => {
+    const campaign = createNewCampaign(42024);
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={campaign} />));
+    await act(async () =>
+      (
+        document.querySelector(
+          '.order-buttons button[aria-pressed="false"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    const guide =
+      document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).toContain(
+      "ATTACK is available only when a legal target exists",
+    );
+    expect(guide).not.toContain("objective is adjacent");
     await act(async () => root.unmount());
   });
 
@@ -103,15 +251,29 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App initialGame={campaign} />));
-    const moveTarget = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement;
-    await act(async () => moveTarget.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    const bulk = [...document.querySelectorAll("button")].find((button) => button.textContent === "HOLD UNASSIGNED") as HTMLButtonElement;
-    expect(document.querySelector(".unassigned-count")?.textContent).toContain("4");
+    const moveTarget = document.querySelector(
+      '[role="button"][aria-label*="Whiteplain"]',
+    ) as SVGGElement;
+    await act(async () =>
+      moveTarget.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    const bulk = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "HOLD UNASSIGNED",
+    ) as HTMLButtonElement;
+    expect(document.querySelector(".unassigned-count")?.textContent).toContain(
+      "4",
+    );
     await act(async () => bulk.click());
-    expect(document.querySelector(".unassigned-count")?.textContent).toContain("0");
+    expect(document.querySelector(".unassigned-count")?.textContent).toContain(
+      "0",
+    );
     expect(document.querySelectorAll(".queued-order")).toHaveLength(5);
-    expect(document.querySelector(".queued-orders")?.textContent).toContain("squad-1 · MOVE");
-    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 0M + 0E");
+    expect(document.querySelector(".queued-orders")?.textContent).toContain(
+      "squad-1 · MOVE",
+    );
+    expect(document.querySelector(".budget")?.textContent).toContain(
+      "QUEUED 0M + 0E",
+    );
     await act(async () => bulk.click());
     expect(document.querySelectorAll(".queued-order")).toHaveLength(5);
     await act(async () => root.unmount());
@@ -122,14 +284,22 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App initialGame={campaign} />));
-    const bulk = [...document.querySelectorAll("button")].find((button) => button.textContent === "HOLD UNASSIGNED") as HTMLButtonElement;
+    const bulk = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "HOLD UNASSIGNED",
+    ) as HTMLButtonElement;
     await act(async () => bulk.click());
-    const cancel = [...document.querySelectorAll("button")].find((button) => button.getAttribute("aria-label")?.includes("Cancel SENTINEL squad-1")) as HTMLButtonElement;
+    const cancel = [...document.querySelectorAll("button")].find((button) =>
+      button.getAttribute("aria-label")?.includes("Cancel SENTINEL squad-1"),
+    ) as HTMLButtonElement;
     await act(async () => cancel.click());
-    expect(document.querySelector(".unassigned-count")?.textContent).toContain("1");
+    expect(document.querySelector(".unassigned-count")?.textContent).toContain(
+      "1",
+    );
     expect(bulk.disabled).toBe(false);
     await act(async () => bulk.click());
-    expect(document.querySelector(".unassigned-count")?.textContent).toContain("0");
+    expect(document.querySelector(".unassigned-count")?.textContent).toContain(
+      "0",
+    );
     await act(async () => root.unmount());
   });
 
@@ -141,7 +311,9 @@ describe("App interactions", () => {
         index === 0 ? { ...squad, sector: "sector-5" as const } : squad,
       ),
       enemySquads: campaign.enemySquads.map((enemy, index) =>
-        index === 0 ? { ...enemy, sector: "sector-6" as const, strength: 8 } : enemy,
+        index === 0
+          ? { ...enemy, sector: "sector-6" as const, strength: 8 }
+          : enemy,
       ),
     };
     document.body.innerHTML = '<div id="root"></div>';
@@ -154,7 +326,9 @@ describe("App interactions", () => {
     const target = [...document.querySelectorAll('[role="button"]')].find(
       (node) => node.getAttribute("aria-label")?.includes("attack target"),
     ) as SVGGElement;
-    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () =>
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
     expect(document.body.textContent).toContain("EXPECTED ASSAULT LOSSES");
     expect(document.body.textContent).toMatch(/Ward −\d+ · hostile −\d+/);
     await act(async () => root.unmount());
@@ -504,16 +678,20 @@ describe("App interactions", () => {
     await executeTarget("Ashenfall");
     const battleTurn = entries();
     expect(battleTurn[0].message).toMatch(/^sector-6 .* casualty entries$/);
-    expect(battleTurn.slice(0, Math.min(4, battleTurn.length)).every((entry) => entry.turn === "03")).toBe(
-      true,
-    );
+    expect(
+      battleTurn
+        .slice(0, Math.min(4, battleTurn.length))
+        .every((entry) => entry.turn === "03"),
+    ).toBe(true);
     const retainedFirstTurnEnemies = battleTurn.filter(
       (entry) => entry.turn === "01" && entry.message?.startsWith("enemy-"),
     );
     expect(retainedFirstTurnEnemies.length).toBeGreaterThan(0);
-    expect(retainedFirstTurnEnemies.every((entry) =>
-      firstTurn.some((original) => original.message === entry.message),
-    )).toBe(true);
+    expect(
+      retainedFirstTurnEnemies.every((entry) =>
+        firstTurn.some((original) => original.message === entry.message),
+      ),
+    ).toBe(true);
 
     await act(async () =>
       (
@@ -812,16 +990,31 @@ describe("App interactions", () => {
     expect(document.querySelector(".research-effects")?.textContent).toContain(
       "routes",
     );
-    expect(document.querySelectorAll(".research button")[2].textContent).toContain("COMPLETE");
-    expect(document.querySelectorAll(".research button")[2].textContent).not.toMatch(/LVL 3|undefined|\{"/);
-    expect(document.querySelectorAll(".research button")[2]).toHaveProperty("disabled", true);
+    expect(
+      document.querySelectorAll(".research button")[2].textContent,
+    ).toContain("COMPLETE");
+    expect(
+      document.querySelectorAll(".research button")[2].textContent,
+    ).not.toMatch(/LVL 3|undefined|\{"/);
+    expect(document.querySelectorAll(".research button")[2]).toHaveProperty(
+      "disabled",
+      true,
+    );
     await act(async () => tier2Root.unmount());
   });
 
   it("renders readable next-tier costs and exact effects for every research branch", async () => {
-    const states = [createNewCampaign(42024),
-      { ...createNewCampaign(42024), researchLevels: { Logistics: 1, Warfare: 1, Signals: 1 } },
-      { ...createNewCampaign(42024), researchLevels: { Logistics: 2, Warfare: 2, Signals: 2 } }];
+    const states = [
+      createNewCampaign(42024),
+      {
+        ...createNewCampaign(42024),
+        researchLevels: { Logistics: 1, Warfare: 1, Signals: 1 },
+      },
+      {
+        ...createNewCampaign(42024),
+        researchLevels: { Logistics: 2, Warfare: 2, Signals: 2 },
+      },
+    ];
     for (const state of states) {
       document.body.innerHTML = '<div id="root"></div>';
       const root = createRoot(document.getElementById("root")!);
@@ -831,23 +1024,38 @@ describe("App interactions", () => {
       expect(text).not.toContain("undefined");
       if (state.researchLevels.Logistics < 2) expect(text).toContain("metal");
       if (state.researchLevels.Warfare < 2) expect(text).toContain("energy");
-      if (state.researchLevels.Signals < 2) expect(text).toContain("intelligence");
-      if (state.researchLevels.Logistics === 0) expect(text).toContain("Strength/supply cap 12 · recovery +1");
-      if (state.researchLevels.Logistics === 1) expect(text).toContain("Strength/supply cap 14 · recovery +2");
-      if (state.researchLevels.Warfare === 0) expect(text).toContain("Counter matchups +5% · fortification +5%");
-      if (state.researchLevels.Warfare === 1) expect(text).toContain("Counter matchups +10% · fortification +10%");
-      if (state.researchLevels.Signals === 0) expect(text).toContain("identities and sectors");
-      if (state.researchLevels.Signals === 1) expect(text).toContain("identities, sectors, and routes");
-      if (state.researchLevels.Logistics === 0) expect(text).toContain("8 metal + 1 energy");
-      if (state.researchLevels.Logistics === 1) expect(text).toContain("12 metal + 2 energy");
-      if (state.researchLevels.Warfare === 0) expect(text).toContain("1 metal + 8 energy");
-      if (state.researchLevels.Warfare === 1) expect(text).toContain("2 metal + 12 energy");
-      if (state.researchLevels.Signals === 0) expect(text).toContain("2 metal + 4 intelligence");
-      if (state.researchLevels.Signals === 1) expect(text).toContain("3 metal + 7 intelligence");
+      if (state.researchLevels.Signals < 2)
+        expect(text).toContain("intelligence");
+      if (state.researchLevels.Logistics === 0)
+        expect(text).toContain("Strength/supply cap 12 · recovery +1");
+      if (state.researchLevels.Logistics === 1)
+        expect(text).toContain("Strength/supply cap 14 · recovery +2");
+      if (state.researchLevels.Warfare === 0)
+        expect(text).toContain("Counter matchups +5% · fortification +5%");
+      if (state.researchLevels.Warfare === 1)
+        expect(text).toContain("Counter matchups +10% · fortification +10%");
+      if (state.researchLevels.Signals === 0)
+        expect(text).toContain("identities and sectors");
+      if (state.researchLevels.Signals === 1)
+        expect(text).toContain("identities, sectors, and routes");
+      if (state.researchLevels.Logistics === 0)
+        expect(text).toContain("8 metal + 1 energy");
+      if (state.researchLevels.Logistics === 1)
+        expect(text).toContain("12 metal + 2 energy");
+      if (state.researchLevels.Warfare === 0)
+        expect(text).toContain("1 metal + 8 energy");
+      if (state.researchLevels.Warfare === 1)
+        expect(text).toContain("2 metal + 12 energy");
+      if (state.researchLevels.Signals === 0)
+        expect(text).toContain("2 metal + 4 intelligence");
+      if (state.researchLevels.Signals === 1)
+        expect(text).toContain("3 metal + 7 intelligence");
       if (state.researchLevels.Logistics === 2) {
         expect(text).toContain("COMPLETE");
         for (const branch of ["Logistics", "Warfare", "Signals"]) {
-          const button = [...document.querySelectorAll(".research button")].find((item) => item.textContent?.startsWith(branch))!;
+          const button = [
+            ...document.querySelectorAll(".research button"),
+          ].find((item) => item.textContent?.startsWith(branch))!;
           expect(button.textContent).not.toMatch(/COST|NEXT|LVL3/);
         }
       }
@@ -900,40 +1108,90 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
-    const squads = () => [...document.querySelectorAll(".squad-card")] as HTMLButtonElement[];
+    const squads = () =>
+      [...document.querySelectorAll(".squad-card")] as HTMLButtonElement[];
     const recover = async (index: number) => {
       await act(async () => squads()[index].click());
-      await act(async () => (document.querySelector(".order-buttons button:nth-child(2)") as HTMLButtonElement).click());
+      await act(async () =>
+        (
+          document.querySelector(
+            ".order-buttons button:nth-child(2)",
+          ) as HTMLButtonElement
+        ).click(),
+      );
     };
     await recover(0);
-    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 6M + 2E · REMAINING 14M + 18E");
-    expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(false);
+    expect(document.querySelector(".budget")?.textContent).toContain(
+      "QUEUED 6M + 2E · REMAINING 14M + 18E",
+    );
+    expect(
+      (document.querySelector(".execute") as HTMLButtonElement).disabled,
+    ).toBe(false);
     await act(async () => squads()[0].click());
-    await act(async () => (document.querySelector(".order-buttons button:first-child") as HTMLButtonElement).click());
-    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 0M + 0E · REMAINING 20M + 20E");
+    await act(async () =>
+      (
+        document.querySelector(
+          ".order-buttons button:first-child",
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    expect(document.querySelector(".budget")?.textContent).toContain(
+      "QUEUED 0M + 0E · REMAINING 20M + 20E",
+    );
     await recover(1);
     await recover(2);
     await recover(3);
-    const logistics = [...document.querySelectorAll(".research button")].find((button) => button.textContent?.includes("Logistics")) as HTMLButtonElement;
+    const logistics = [...document.querySelectorAll(".research button")].find(
+      (button) => button.textContent?.includes("Logistics"),
+    ) as HTMLButtonElement;
     await act(async () => logistics.click());
-    expect(document.querySelector(".budget")?.textContent).toContain("REMAINING -6M + 13E");
-    expect(document.querySelector(".budget")?.textContent).toContain("SHORT 6M");
-    expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(true);
+    expect(document.querySelector(".budget")?.textContent).toContain(
+      "REMAINING -6M + 13E",
+    );
+    expect(document.querySelector(".budget")?.textContent).toContain(
+      "SHORT 6M",
+    );
+    expect(
+      (document.querySelector(".execute") as HTMLButtonElement).disabled,
+    ).toBe(true);
     await act(async () => root.unmount());
   });
 
   it("displays exact affordable attack spending and clears the queued budget after execution", async () => {
     const campaign = createNewCampaign(42024);
-    const initialGame = { ...campaign, resources: { ...campaign.resources, metal: 2, energy: 3 } };
+    const initialGame = {
+      ...campaign,
+      resources: { ...campaign.resources, metal: 2, energy: 3 },
+    };
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App initialGame={initialGame} />));
-    await act(async () => (document.querySelector(".order-buttons button:nth-child(4)") as HTMLButtonElement).click());
-    await act(async () => (document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 2M + 3E");
-    expect(document.querySelector(".budget")?.textContent).toContain("REMAINING 0M + 0E BEFORE INCOME");
-    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
-    expect(document.querySelector(".budget")?.textContent).toContain("REMAINING 2M + 2E");
+    await act(async () =>
+      (
+        document.querySelector(
+          ".order-buttons button:nth-child(4)",
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    await act(async () =>
+      (
+        document.querySelector(
+          '[role="button"][aria-label*="Whiteplain"]',
+        ) as SVGGElement
+      ).dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    expect(document.querySelector(".budget")?.textContent).toContain(
+      "QUEUED 2M + 3E",
+    );
+    expect(document.querySelector(".budget")?.textContent).toContain(
+      "REMAINING 0M + 0E BEFORE INCOME",
+    );
+    await act(async () =>
+      (document.querySelector(".execute") as HTMLButtonElement).click(),
+    );
+    expect(document.querySelector(".budget")?.textContent).toContain(
+      "REMAINING 2M + 2E",
+    );
     await act(async () => root.unmount());
   });
 
@@ -941,16 +1199,37 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
-    const squads = () => [...document.querySelectorAll(".squad-card")] as HTMLButtonElement[];
+    const squads = () =>
+      [...document.querySelectorAll(".squad-card")] as HTMLButtonElement[];
     await act(async () => squads()[0].click());
-    await act(async () => (document.querySelector(".order-buttons button:nth-child(2)") as HTMLButtonElement).click());
+    await act(async () =>
+      (
+        document.querySelector(
+          ".order-buttons button:nth-child(2)",
+        ) as HTMLButtonElement
+      ).click(),
+    );
     await act(async () => squads()[1].click());
-    await act(async () => (document.querySelector(".order-buttons button:nth-child(2)") as HTMLButtonElement).click());
+    await act(async () =>
+      (
+        document.querySelector(
+          ".order-buttons button:nth-child(2)",
+        ) as HTMLButtonElement
+      ).click(),
+    );
     expect(document.querySelectorAll(".queued-order")).toHaveLength(2);
-    expect(document.querySelector(".queued-orders")?.textContent).toContain("RECOVER");
-    await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
+    expect(document.querySelector(".queued-orders")?.textContent).toContain(
+      "RECOVER",
+    );
+    await act(async () =>
+      (
+        document.querySelector(".queued-order button") as HTMLButtonElement
+      ).click(),
+    );
     expect(document.querySelectorAll(".queued-order")).toHaveLength(1);
-    expect(document.querySelector(".queued-orders")?.textContent).toContain("RECOVER");
+    expect(document.querySelector(".queued-orders")?.textContent).toContain(
+      "RECOVER",
+    );
     await act(async () => root.unmount());
   });
 
@@ -966,11 +1245,18 @@ describe("Editable turn plan", () => {
       element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
   };
-  const action = (name: string) => [...document.querySelectorAll(".order-buttons button")]
-    .find((button) => button.textContent === name)!;
-  const select = async (index: number) => click(document.querySelectorAll(".squad-card")[index]);
-  const target = async (name: string) => click(document.querySelector(`[role="button"][aria-label^="${name},"]`)!);
-  const cancel = async (id: string) => click(queue().querySelector(`[aria-label^="Cancel "][aria-label*="${id}"]`)!);
+  const action = (name: string) =>
+    [...document.querySelectorAll(".order-buttons button")].find(
+      (button) => button.textContent === name,
+    )!;
+  const select = async (index: number) =>
+    click(document.querySelectorAll(".squad-card")[index]);
+  const target = async (name: string) =>
+    click(document.querySelector(`[role="button"][aria-label^="${name},"]`)!);
+  const cancel = async (id: string) =>
+    click(
+      queue().querySelector(`[aria-label^="Cancel "][aria-label*="${id}"]`)!,
+    );
   const mount = async (initialGame = createNewCampaign(42024)) => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
@@ -981,32 +1267,53 @@ describe("Editable turn plan", () => {
   it("lists distinct squad identities and named MOVE/ATTACK targets; cancelling preserves the other order", async () => {
     const root = await mount();
     expect(queue().textContent).toContain("No orders queued");
-    expect(queue().textContent).toContain("Unassigned squads gain fatigue when the turn executes");
+    expect(queue().textContent).toContain(
+      "Unassigned squads gain fatigue when the turn executes",
+    );
     expect(execute().disabled).toBe(true);
     await target("Whiteplain");
     await select(1);
     await click(action("ATTACK"));
     await target("Lastlight");
     expect(rows()).toHaveLength(2);
-    expect(rows()[0].textContent).toContain("SENTINEL squad-1 · MOVE → Whiteplain");
-    expect(rows()[1].textContent).toContain("RAIDER squad-2 · ATTACK → Lastlight");
-    expect(rows()[0].querySelector("button")?.getAttribute("aria-label"))
-      .toBe("Cancel SENTINEL squad-1 · MOVE → Whiteplain");
+    expect(rows()[0].textContent).toContain(
+      "SENTINEL squad-1 · MOVE → Whiteplain",
+    );
+    expect(rows()[1].textContent).toContain(
+      "RAIDER squad-2 · ATTACK → Lastlight",
+    );
+    expect(rows()[0].querySelector("button")?.getAttribute("aria-label")).toBe(
+      "Cancel SENTINEL squad-1 · MOVE → Whiteplain",
+    );
     const resources = document.querySelector(".resource-strip")!.textContent;
     await cancel("squad-1");
     expect(rows()).toHaveLength(1);
-    expect(rows()[0].textContent).toContain("RAIDER squad-2 · ATTACK → Lastlight");
+    expect(rows()[0].textContent).toContain(
+      "RAIDER squad-2 · ATTACK → Lastlight",
+    );
     expect(document.querySelectorAll(".squad-card em")).toHaveLength(1);
-    expect(document.querySelector(".squad-card em")?.textContent).toBe("attack");
-    expect(document.querySelector(".resource-strip")!.textContent).toBe(resources);
-    expect(document.querySelector(".turn-readout strong")?.textContent).toBe("01");
-    expect(document.querySelector(".event-rail")?.textContent).toContain("Awaiting first orders");
+    expect(document.querySelector(".squad-card em")?.textContent).toBe(
+      "attack",
+    );
+    expect(document.querySelector(".resource-strip")!.textContent).toBe(
+      resources,
+    );
+    expect(document.querySelector(".turn-readout strong")?.textContent).toBe(
+      "01",
+    );
+    expect(document.querySelector(".event-rail")?.textContent).toContain(
+      "Awaiting first orders",
+    );
     expect(budget()).toContain("QUEUED 2M + 3E");
     expect(execute().disabled).toBe(false);
     await click(execute());
     expect(rows()).toHaveLength(0);
-    expect(document.querySelectorAll(".squad-card")[0].textContent).toContain("FTG 1");
-    expect(document.querySelector(".event-rail")?.textContent).not.toContain("squad-1 hold");
+    expect(document.querySelectorAll(".squad-card")[0].textContent).toContain(
+      "FTG 1",
+    );
+    expect(document.querySelector(".event-rail")?.textContent).not.toContain(
+      "squad-1 hold",
+    );
     await act(async () => root.unmount());
   });
 
@@ -1016,11 +1323,15 @@ describe("Editable turn plan", () => {
       await select(index);
       await click(action("RECOVER"));
     }
-    await click([...document.querySelectorAll(".research button")]
-      .find((button) => button.textContent?.includes("Logistics"))!);
+    await click(
+      [...document.querySelectorAll(".research button")].find((button) =>
+        button.textContent?.includes("Logistics"),
+      )!,
+    );
     expect(budget()).toContain("QUEUED 18M + 6E · REMAINING -6M + 13E");
     expect(execute().disabled).toBe(true);
-    const spentResources = document.querySelector(".resource-strip")!.textContent;
+    const spentResources =
+      document.querySelector(".resource-strip")!.textContent;
     expect(spentResources).toContain("METAL 12");
     expect(spentResources).toContain("ENERGY 19");
     await cancel("squad-2");
@@ -1031,8 +1342,12 @@ describe("Editable turn plan", () => {
     await cancel("squad-1");
     await cancel("squad-3");
     expect(budget()).toContain("QUEUED 0M + 0E · REMAINING 12M + 19E");
-    expect(document.querySelector(".resource-strip")!.textContent).toBe(spentResources);
-    expect(document.querySelector(".turn-readout strong")?.textContent).toBe("01");
+    expect(document.querySelector(".resource-strip")!.textContent).toBe(
+      spentResources,
+    );
+    expect(document.querySelector(".turn-readout strong")?.textContent).toBe(
+      "01",
+    );
     expect(rows()).toHaveLength(0);
     expect(execute().disabled).toBe(true);
     await act(async () => root.unmount());
@@ -1041,28 +1356,53 @@ describe("Editable turn plan", () => {
   it("keeps the persistent recovery comparison while orders change", async () => {
     const root = await mount();
     await select(0);
-    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("costs 6 metal + 2 energy");
-    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("No benefit");
-    expect(document.querySelector('[aria-label="Hold preview"]')?.textContent).toContain("free");
+    expect(
+      document.querySelector('[aria-label="Recovery preview"]')?.textContent,
+    ).toContain("costs 6 metal + 2 energy");
+    expect(
+      document.querySelector('[aria-label="Recovery preview"]')?.textContent,
+    ).toContain("No benefit");
+    expect(
+      document.querySelector('[aria-label="Hold preview"]')?.textContent,
+    ).toContain("free");
     await click(action("RECOVER"));
-    expect(document.querySelectorAll('[aria-label="Recovery preview"]')).toHaveLength(1);
-    expect(document.querySelector('[aria-label="Recovery order preview"]')).toBeNull();
+    expect(
+      document.querySelectorAll('[aria-label="Recovery preview"]'),
+    ).toHaveLength(1);
+    expect(
+      document.querySelector('[aria-label="Recovery order preview"]'),
+    ).toBeNull();
 
     await click(action("HOLD"));
-    expect(document.querySelector('[aria-label="Recovery preview"]')).not.toBeNull();
+    expect(
+      document.querySelector('[aria-label="Recovery preview"]'),
+    ).not.toBeNull();
 
     await click(action("RECOVER"));
-    expect(document.querySelector('[aria-label="Recovery preview"]')).not.toBeNull();
+    expect(
+      document.querySelector('[aria-label="Recovery preview"]'),
+    ).not.toBeNull();
     await cancel("squad-1");
     await act(async () => root.unmount());
   });
 
   it("previews Logistics recovery gains, fatigue reduction, and the strength cap", async () => {
     const base = createNewCampaign(42024);
-    const campaign = { ...base, researchLevels: { ...base.researchLevels, Logistics: 2 }, squads: base.squads.map((s, i) => i === 0 ? { ...s, strength: 13, fatigue: 1 } : s) };
-    const expected = resolveTurn(campaign, [{ squadId: campaign.squads[0].id, type: "recover" }]).nextState.squads[0];
-    const root = await mount(campaign); await select(0);
-    const preview = document.querySelector('[aria-label="Recovery preview"]')?.textContent;
+    const campaign = {
+      ...base,
+      researchLevels: { ...base.researchLevels, Logistics: 2 },
+      squads: base.squads.map((s, i) =>
+        i === 0 ? { ...s, strength: 13, fatigue: 1 } : s,
+      ),
+    };
+    const expected = resolveTurn(campaign, [
+      { squadId: campaign.squads[0].id, type: "recover" },
+    ]).nextState.squads[0];
+    const root = await mount(campaign);
+    await select(0);
+    const preview = document.querySelector(
+      '[aria-label="Recovery preview"]',
+    )?.textContent;
     expect(preview).toContain(`STR 13 → ${expected.strength}`);
     expect(preview).toContain(`FTG 1 → ${expected.fatigue}`);
     expect(expected.strength).toBe(14);
@@ -1072,27 +1412,51 @@ describe("Editable turn plan", () => {
 
   it("shows unsupplied recovery as unavailable and disables RECOVER", async () => {
     const base = createNewCampaign(42024);
-    const unsupplied = { ...base, squads: base.squads.map((s, i) => i === 0 ? { ...s, sector: "sector-6" as const } : s) };
-    const root = await mount(unsupplied); await select(0);
-    expect(document.querySelector('[aria-label="Recovery preview"]')?.textContent).toContain("Unavailable outside supplied player territory");
+    const unsupplied = {
+      ...base,
+      squads: base.squads.map((s, i) =>
+        i === 0 ? { ...s, sector: "sector-6" as const } : s,
+      ),
+    };
+    const root = await mount(unsupplied);
+    await select(0);
+    expect(
+      document.querySelector('[aria-label="Recovery preview"]')?.textContent,
+    ).toContain("Unavailable outside supplied player territory");
     expect((action("RECOVER") as HTMLButtonElement).disabled).toBe(true);
     await act(async () => root.unmount());
   });
 
   it("keeps resolveTurn authoritative for unsupplied and no-benefit recovery", () => {
     const campaign = createNewCampaign(42024);
-    const unsupplied = { ...campaign, squads: [{ ...campaign.squads[0], sector: "sector-6" as const }] };
-    expect(() => resolveTurn(unsupplied, [{ squadId: unsupplied.squads[0].id, type: "recover" }])).toThrow("outside supplied territory");
-    const noBenefit = resolveTurn(campaign, [{ squadId: campaign.squads[0].id, type: "recover" }]);
-    expect(noBenefit.nextState.squads[0].strength).toBe(campaign.squads[0].strength);
-    expect(noBenefit.nextState.squads[0].fatigue).toBe(campaign.squads[0].fatigue);
+    const unsupplied = {
+      ...campaign,
+      squads: [{ ...campaign.squads[0], sector: "sector-6" as const }],
+    };
+    expect(() =>
+      resolveTurn(unsupplied, [
+        { squadId: unsupplied.squads[0].id, type: "recover" },
+      ]),
+    ).toThrow("outside supplied territory");
+    const noBenefit = resolveTurn(campaign, [
+      { squadId: campaign.squads[0].id, type: "recover" },
+    ]);
+    expect(noBenefit.nextState.squads[0].strength).toBe(
+      campaign.squads[0].strength,
+    );
+    expect(noBenefit.nextState.squads[0].fatigue).toBe(
+      campaign.squads[0].fatigue,
+    );
   });
 
   it("recomputes a grouped assault forecast on cancellation and clears it after the last order", async () => {
     const campaign = createNewCampaign(42024);
     const initialGame = {
       ...campaign,
-      squads: campaign.squads.map((squad) => ({ ...squad, sector: "sector-5" as const })),
+      squads: campaign.squads.map((squad) => ({
+        ...squad,
+        sector: "sector-5" as const,
+      })),
     };
     const root = await mount(initialGame);
     await click(action("ATTACK"));
@@ -1102,10 +1466,13 @@ describe("Editable turn plan", () => {
     expect(rows()).toHaveLength(2);
     expect(document.querySelector(".expected-losses")).not.toBeNull();
     await cancel("squad-1");
-    const planned = resolveTurn(initialGame, [{ squadId: "squad-2", type: "attack", target: "sector-6" }]);
+    const planned = resolveTurn(initialGame, [
+      { squadId: "squad-2", type: "attack", target: "sector-6" },
+    ]);
     const report = resolveCombat(planned.nextState, planned.events).reports[0];
-    expect(document.querySelector(".expected-losses")?.textContent)
-      .toContain(`sector-6: Ward −${report.playerCasualties} · hostile −${report.enemyCasualties}`);
+    expect(document.querySelector(".expected-losses")?.textContent).toContain(
+      `sector-6: Ward −${report.playerCasualties} · hostile −${report.enemyCasualties}`,
+    );
     expect(budget()).toContain("QUEUED 2M + 3E · REMAINING 18M + 17E");
     await cancel("squad-2");
     expect(document.querySelector(".expected-losses")).toBeNull();
@@ -1122,7 +1489,9 @@ describe("Editable turn plan", () => {
     await click(action("ATTACK"));
     await target("Lastlight");
     expect(rows()).toHaveLength(1);
-    expect(rows()[0].textContent).toContain("SENTINEL squad-1 · ATTACK → Lastlight");
+    expect(rows()[0].textContent).toContain(
+      "SENTINEL squad-1 · ATTACK → Lastlight",
+    );
     expect(queue().textContent).not.toContain("Whiteplain");
     await click(action("HOLD"));
     expect(rows()).toHaveLength(1);
@@ -1133,7 +1502,11 @@ describe("Editable turn plan", () => {
     expect(execute().disabled).toBe(true);
     await click(action("RECOVER"));
     expect(rows()).toHaveLength(1);
-    await click([...document.querySelectorAll("button")].find((button) => button.textContent === "NEW CAMPAIGN")!);
+    await click(
+      [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "NEW CAMPAIGN",
+      )!,
+    );
     expect(rows()).toHaveLength(0);
     expect(queue().textContent).toContain("No orders queued");
     expect(execute().disabled).toBe(true);
@@ -1141,31 +1514,50 @@ describe("Editable turn plan", () => {
     await act(async () => root.unmount());
   });
 
-  it.each(["victory", "defeat"] as const)("prevents map or action edits in a completed %s campaign", async (terminal) => {
-    const root = await mount({ ...createNewCampaign(42024), terminal });
-    expect(queue().textContent).toContain("Campaign complete");
-    await target("Whiteplain");
-    const mapTarget = document.querySelector('[role="button"][aria-label^="Whiteplain,"]')!;
-    await act(async () => {
-      mapTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
-    expect(mapTarget.getAttribute("aria-disabled")).toBe("true");
-    expect(mapTarget.getAttribute("tabindex")).toBe("-1");
-    expect([...document.querySelectorAll(".order-buttons button")]
-      .every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
-    expect(rows()).toHaveLength(0);
-    expect((queue().querySelector("button") as HTMLButtonElement).disabled).toBe(true);
-    expect(execute().disabled).toBe(true);
-    await act(async () => root.unmount());
-  });
+  it.each(["victory", "defeat"] as const)(
+    "prevents map or action edits in a completed %s campaign",
+    async (terminal) => {
+      const root = await mount({ ...createNewCampaign(42024), terminal });
+      expect(queue().textContent).toContain("Campaign complete");
+      await target("Whiteplain");
+      const mapTarget = document.querySelector(
+        '[role="button"][aria-label^="Whiteplain,"]',
+      )!;
+      await act(async () => {
+        mapTarget.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        );
+      });
+      expect(mapTarget.getAttribute("aria-disabled")).toBe("true");
+      expect(mapTarget.getAttribute("tabindex")).toBe("-1");
+      expect(
+        [...document.querySelectorAll(".order-buttons button")].every(
+          (button) => (button as HTMLButtonElement).disabled,
+        ),
+      ).toBe(true);
+      expect(rows()).toHaveLength(0);
+      expect(
+        (queue().querySelector("button") as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(execute().disabled).toBe(true);
+      await act(async () => root.unmount());
+    },
+  );
 
   it("autosaves research and resumes it after remount", async () => {
-    const game = { ...createNewCampaign(42024), resources: { ...createNewCampaign(42024).resources, intelligence: 20 } };
+    const game = {
+      ...createNewCampaign(42024),
+      resources: { ...createNewCampaign(42024).resources, intelligence: 20 },
+    };
     writeSave({ version: SAVE_VERSION, game, events: [], reports: [] });
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
-    await click([...document.querySelectorAll(".research button")].find((button) => button.textContent?.startsWith("Signals"))!);
+    await click(
+      [...document.querySelectorAll(".research button")].find((button) =>
+        button.textContent?.startsWith("Signals"),
+      )!,
+    );
     expect(readSave()?.game.researchLevels.Signals).toBe(1);
     await act(async () => root.unmount());
     document.body.innerHTML = '<div id="root"></div>';
@@ -1182,25 +1574,44 @@ describe("Editable turn plan", () => {
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
     const beforeSeed = readSave()?.game.seed;
-    await click([...document.querySelectorAll("button")].find((button) => button.textContent === "NEW CAMPAIGN")!);
+    await click(
+      [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "NEW CAMPAIGN",
+      )!,
+    );
     expect(readSave()?.game).toBeDefined();
     expect(readSave()?.game.terminal).toBe("active");
     expect(readSave()?.game.seed).toBe(42024);
     await act(async () => root.unmount());
 
-    const terminal = { ...createNewCampaign(42024), terminal: "defeat" as const, terminalReason: "Turn 18 reached without victory." };
-    writeSave({ version: SAVE_VERSION, game: terminal, events: [], reports: [] });
+    const terminal = {
+      ...createNewCampaign(42024),
+      terminal: "defeat" as const,
+      terminalReason: "Turn 18 reached without victory.",
+    };
+    writeSave({
+      version: SAVE_VERSION,
+      game: terminal,
+      events: [],
+      reports: [],
+    });
     document.body.innerHTML = '<div id="root"></div>';
     const resumed = createRoot(document.getElementById("root")!);
     await act(async () => resumed.render(<App />));
-    expect(document.body.textContent).toContain("Turn 18 reached without victory.");
+    expect(document.body.textContent).toContain(
+      "Turn 18 reached without victory.",
+    );
     await act(async () => resumed.unmount());
     expect(SAVE_KEY).toBe("rimeward:campaign");
   });
 
   it("keeps a failed save warning through queue/cancel and clears it after a successful save", async () => {
     storage.localStorage.clear();
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("blocked");
+      });
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
@@ -1212,8 +1623,14 @@ describe("Editable turn plan", () => {
     await cancel("squad-1");
     expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
     setItem.mockRestore();
-    await click([...document.querySelectorAll(".research button")].find((button) => button.textContent?.startsWith("Signals"))!);
-    expect(document.body.textContent).toContain("Completed turns and research saved; queued orders are not saved.");
+    await click(
+      [...document.querySelectorAll(".research button")].find((button) =>
+        button.textContent?.startsWith("Signals"),
+      )!,
+    );
+    expect(document.body.textContent).toContain(
+      "Completed turns and research saved; queued orders are not saved.",
+    );
     expect(document.body.textContent).not.toContain("SAVE UNAVAILABLE");
     await act(async () => root.unmount());
   });
@@ -1228,28 +1645,42 @@ describe("Editable turn plan", () => {
         controlled: index === 0,
       })),
       sectors: campaign.sectors.map((sector) =>
-        sector.id === campaign.hq.enemy ? { ...sector, owner: "player" as const } : sector,
+        sector.id === campaign.hq.enemy
+          ? { ...sector, owner: "player" as const }
+          : sector,
       ),
     });
-    const tracker = document.querySelector('[aria-label="Campaign objectives"]')!;
+    const tracker = document.querySelector(
+      '[aria-label="Campaign objectives"]',
+    )!;
     expect(tracker.textContent).toContain("Relay — Northstar · SECURED");
     expect(tracker.textContent).toContain("Relay — Vesper · REQUIRED");
     expect(tracker.textContent).toContain("Relay — Ashenfall · REQUIRED");
     expect(tracker.textContent).toContain("Enemy HQ — Ashenfall · CAPTURED");
-    expect(tracker.textContent).toContain("1 PLAYABLE TURN REMAINING INCLUDING THIS TURN");
-    expect(tracker.textContent).toContain(`Secure all relays and capture enemy HQ. Defend ${campaign.sectors.find((sector) => sector.id === campaign.hq.player)?.name}.`);
+    expect(tracker.textContent).toContain(
+      "1 PLAYABLE TURN REMAINING INCLUDING THIS TURN",
+    );
+    expect(tracker.textContent).toContain(
+      `Secure all relays and capture enemy HQ. Defend ${campaign.sectors.find((sector) => sector.id === campaign.hq.player)?.name}.`,
+    );
     expect(document.querySelectorAll(".objective")).toHaveLength(4);
     await act(async () => root.unmount());
   });
 
   it("removes the active countdown when the campaign is terminal", async () => {
     const campaign = createNewCampaign(42024);
-    const root = await mount({ ...campaign, terminal: "victory", terminalReason: "Campaign complete." });
+    const root = await mount({
+      ...campaign,
+      terminal: "victory",
+      terminalReason: "Campaign complete.",
+    });
     expect(document.body.textContent).toContain("Campaign complete.");
-    expect(document.querySelector('[aria-label="Campaign objectives"]')?.textContent)
-      .toContain("CAMPAIGN COMPLETE");
-    expect(document.querySelector('[aria-label="Campaign objectives"]')?.textContent)
-      .not.toContain("PLAYABLE TURNS REMAINING");
+    expect(
+      document.querySelector('[aria-label="Campaign objectives"]')?.textContent,
+    ).toContain("CAMPAIGN COMPLETE");
+    expect(
+      document.querySelector('[aria-label="Campaign objectives"]')?.textContent,
+    ).not.toContain("PLAYABLE TURNS REMAINING");
     await act(async () => root.unmount());
   });
 
