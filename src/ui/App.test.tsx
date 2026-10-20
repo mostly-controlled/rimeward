@@ -303,7 +303,7 @@ describe("App interactions", () => {
     await act(async () => root.unmount());
   });
 
-  it("shows deterministic expected losses before executing a queued assault", async () => {
+  it("keeps unseen defender outcomes uncertain before executing a queued assault", async () => {
     const campaign = createNewCampaign(42024);
     const initialGame = {
       ...campaign,
@@ -326,11 +326,39 @@ describe("App interactions", () => {
     const target = [...document.querySelectorAll('[role="button"]')].find(
       (node) => node.getAttribute("aria-label")?.includes("attack target"),
     ) as SVGGElement;
+    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(document.body.textContent).toContain("ASSAULT FORECAST");
+    expect(document.body.textContent).toContain("Outcome and losses are uncertain.");
+    expect(document.body.textContent).not.toContain("EXPECTED ASSAULT LOSSES");
+    expect(document.body.textContent).not.toMatch(/Ward −\d+ · hostile −\d+/);
+    await act(async () => root.unmount());
+  });
+
+  it("shows the deterministic debrief only after assault execution", async () => {
+    const campaign = createNewCampaign(42024);
+    const initialGame = {
+      ...campaign,
+      squads: campaign.squads.map((squad, index) =>
+        index === 0 ? { ...squad, sector: "sector-5" as const } : squad,
+      ),
+      enemySquads: campaign.enemySquads.map((enemy, index) =>
+        index === 0 ? { ...enemy, sector: "sector-6" as const, strength: 8 } : enemy,
+      ),
+    };
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={initialGame} />));
     await act(async () =>
-      target.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+      ([...document.querySelectorAll("button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement).click(),
     );
-    expect(document.body.textContent).toContain("EXPECTED ASSAULT LOSSES");
-    expect(document.body.textContent).toMatch(/Ward −\d+ · hostile −\d+/);
+    const target = [...document.querySelectorAll('[role="button"]')].find(
+      (node) => node.getAttribute("aria-label")?.includes("attack target"),
+    ) as SVGGElement;
+    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(document.body.textContent).not.toContain("BATTLE REPORT");
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    expect(document.body.textContent).toContain("BATTLE REPORT");
+    expect(document.body.textContent).toContain("RESOLVED");
     await act(async () => root.unmount());
   });
 
@@ -1589,13 +1617,9 @@ describe("Editable turn plan", () => {
     expect(rows()).toHaveLength(2);
     expect(document.querySelector(".expected-losses")).not.toBeNull();
     await cancel("squad-1");
-    const planned = resolveTurn(initialGame, [
-      { squadId: "squad-2", type: "attack", target: "sector-6" },
-    ]);
-    const report = resolveCombat(planned.nextState, planned.events).reports[0];
-    expect(document.querySelector(".expected-losses")?.textContent).toContain(
-      `sector-6: Ward −${report.playerCasualties} · hostile −${report.enemyCasualties}`,
-    );
+    const planned = resolveTurn(initialGame, [{ squadId: "squad-2", type: "attack", target: "sector-6" }]);
+    expect(document.querySelector(".expected-losses")?.textContent)
+      .toContain("outcome and losses are uncertain");
     expect(budget()).toContain("QUEUED 2M + 3E · REMAINING 18M + 17E");
     await cancel("squad-2");
     expect(document.querySelector(".expected-losses")).toBeNull();
