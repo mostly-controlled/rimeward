@@ -41,6 +41,38 @@ describe("App interactions", () => {
     await act(async () => terminalRoot.unmount());
   });
 
+  it("shows saved turn-5 state and global queue truth for another squad", async () => {
+    const campaign = createNewCampaign(42024);
+    writeSave({ version: SAVE_VERSION, game: { ...campaign, turn: 5 }, events: [], reports: [] });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    const target = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement;
+    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => (document.querySelectorAll(".squad-card")[1] as HTMLButtonElement).click());
+    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).toContain("TURN 5");
+    expect(guide).toContain("QUEUED — NOT EXECUTED");
+    expect(guide).toContain("SENTINEL 1 · MOVE");
+    await act(async () => root.unmount());
+  });
+
+  it("gives a state-correct fallback when attack has zero legal targets", async () => {
+    const campaign = createNewCampaign(42024);
+    const firstSector = campaign.squads[0].sector;
+    const reachable = campaign.sectors.find((sector) => sector.id === firstSector)!.links;
+    const blocked = { ...campaign, sectors: campaign.sectors.map((sector) => reachable.includes(sector.id) ? { ...sector, owner: "player" as const } : sector) };
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={blocked} />));
+    await act(async () => (document.querySelector('button[aria-pressed="false"]') as HTMLButtonElement).click());
+    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).toContain("NO LEGAL TARGETS");
+    expect(guide).toContain("no enemy target is reachable");
+    expect(guide).not.toContain("select ATTACK");
+    await act(async () => root.unmount());
+  });
+
   afterEach(() => {
     document.body.innerHTML = "";
     storage.localStorage.clear();

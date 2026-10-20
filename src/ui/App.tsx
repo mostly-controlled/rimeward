@@ -161,6 +161,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     (order): order is Order & { target: SectorId } =>
       (order.type === "move" || order.type === "attack") && Boolean(order.target),
   );
+  const guideQueue = orders.length
+    ? orders.map((order) => {
+        const owner = game.squads.find((unit) => unit.id === order.squadId);
+        return `${owner?.class.toUpperCase() ?? order.squadId} ${order.squadId.slice(-1)} · ${order.type.toUpperCase()}`;
+      }).join(", ")
+    : "";
   const unassignedSquads = game.squads.filter((unit) => unit.strength > 0 && !orderFor(unit.id));
   const canHoldUnassigned = game.terminal === "active" && unassignedSquads.length > 0;
   const holdUnassigned = () => {
@@ -803,8 +809,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     <ol>
                       <li><strong>SELECT SQUAD</strong> — {squad.class.toUpperCase()} {squad.id.slice(-1)} at {sectorName(squad.sector)} (STR {squad.strength}, FTG {squad.fatigue}).</li>
                       <li><strong>CHOOSE {selectedAction.toUpperCase()}</strong> — pick a highlighted legal destination below.</li>
-                      <li><strong>{legalTargets.length ? "HIGHLIGHTED LEGAL DESTINATION" : "NO LEGAL TARGETS"}</strong> — {legalTargets.length ? legalTargets.map((target) => target.name).join(", ") : "use HOLD or RECOVER; an enemy-held destination requires ATTACK."}</li>
-                      <li><strong>{orderFor(selectedId) ? "QUEUED — NOT EXECUTED" : "NOT QUEUED"}</strong> — {orderFor(selectedId) ? "cancel to revise, then EXECUTE TURN." : "select a highlighted destination to queue it."}</li>
+                      <li><strong>{legalTargets.length ? "HIGHLIGHTED LEGAL DESTINATION" : "NO LEGAL TARGETS"}</strong> — {legalTargets.length ? legalTargets.map((target) => target.name).join(", ") : selectedAction === "attack" ? "no enemy target is reachable; use HOLD or RECOVER, or select another squad." : "no unoccupied friendly destination is reachable; use HOLD or RECOVER, or select ATTACK for an enemy-held destination."}</li>
+                      <li><strong>{orders.length ? "QUEUED — NOT EXECUTED" : "NOT QUEUED"}</strong> — {orders.length ? `${guideQueue}. Cancel an order to revise, then EXECUTE TURN.` : "select a highlighted destination to queue it."}</li>
                     </ol>
                   ) : (
                     <p className="muted">Terminal state: {game.terminal.toUpperCase()}. Orders are disabled.</p>
