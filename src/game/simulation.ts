@@ -1310,14 +1310,16 @@ export const resolveCombat = (
               0.2),
       0,
     );
+    const undefended = defenders.length === 0;
     const attackerStrengthBefore = new Map(
       attackers.map((squad) => [squad.id, squad.strength]),
     );
     const defenderStrengthBefore = new Map(
       defenders.map((squad) => [squad.id, squad.strength]),
     );
-    const winner =
-      attackerPower > defenderPower
+    const winner = undefended
+      ? attackerFaction
+      : attackerPower > defenderPower
         ? attackerFaction
         : attackerPower < defenderPower
           ? defenderFaction
@@ -1325,7 +1327,7 @@ export const resolveCombat = (
     const casualties: BattleReport["casualties"] = [];
     const attackerWon = winner === attackerFaction;
     const defenderWon = winner === defenderFaction;
-    if (attackerWon || winner === "draw")
+    if (!undefended && (attackerWon || winner === "draw"))
       for (const squad of defenders)
         casualties.push({
           squadId: squad.id,
@@ -1345,7 +1347,7 @@ export const resolveCombat = (
         const loss = Math.min(3, Math.max(1, Math.ceil(ratio * 3) + terrainLoss));
         casualties.push({ squadId: squad.id, side: attackerFaction, strength: Math.min(squad.strength, loss) });
       }
-    } else if (defenderWon || winner === "draw") {
+    } else if (!undefended && (defenderWon || winner === "draw")) {
       const ratio = defenderPower / Math.max(1, attackerPower + defenderPower);
       for (const squad of attackers) {
         const loss = 2 + Math.min(2, Math.max(0, Math.ceil(ratio * 3) - 1));
@@ -1369,7 +1371,7 @@ export const resolveCombat = (
     );
     const retreat: BattleReport["retreat"] = [];
     if (
-      attackerWon &&
+      (attackerWon || undefended) &&
       !enemyAttack &&
       nextState.enemySquads.some(
         (squad) => squad.sector === target && squad.strength > 0,
@@ -1393,7 +1395,7 @@ export const resolveCombat = (
         if (live) live.fatigue = Math.min(10, live.fatigue + 1);
       }
     } else if (
-      attackerWon &&
+      (attackerWon || undefended) &&
       enemyAttack &&
       !nextState.squads.some(
         (squad) => squad.sector === target && squad.strength > 0,
@@ -1419,7 +1421,7 @@ export const resolveCombat = (
       (objective) => objective.sector === target && sector.owner === "player",
     );
     const captured =
-      attackerWon &&
+      (attackerWon || undefended) &&
       (enemyAttack
         ? !nextState.squads.some(
             (squad) => squad.sector === target && squad.strength > 0,
