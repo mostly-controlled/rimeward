@@ -260,6 +260,19 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit || !after) return null; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === after.sector); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + after.strength + ", FTG " + unit.fatigue + "→" + after.fatigue + control; }).filter(Boolean) as string[];
       const battleLines = phaseReports.map((report) => name(report.target) + ": " + (report.winner === "draw" ? "contested, no capture" : report.winner === "player" ? (report.captured ? "captured" : "held") : "lost") + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
       const enemyLines = enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
+      const relayLines = before.sectors.map((sector) => {
+        const after = enemy.nextState.sectors.find((candidate) => candidate.id === sector.id);
+        return after && after.owner !== sector.owner ? `${sector.name}: ${sector.owner} → ${after.owner}` : null;
+      }).filter(Boolean) as string[];
+      const unassignedFatigue = before.squads.map((unit) => {
+        if (orders.some((order) => order.squadId === unit.id) || unit.strength <= 0) return null;
+        const after = enemy.nextState.squads.find((candidate) => candidate.id === unit.id);
+        return after && after.fatigue !== unit.fatigue ? `${unit.class} at ${name(unit.sector)}: FTG ${unit.fatigue} → ${after.fatigue}` : null;
+      }).filter(Boolean) as string[];
+      const squadLosses = before.squads.map((unit) => {
+        const after = enemy.nextState.squads.find((candidate) => candidate.id === unit.id);
+        return after && after.strength < unit.strength ? `${unit.class}: STR ${unit.strength} → ${after.strength}${after.strength <= 0 ? " (DEAD)" : ""}` : null;
+      }).filter(Boolean) as string[];
       const survivingSquads = enemy.nextState.squads.filter((unit) => unit.strength > 0);
       const nextChoices = enemy.nextState.terminal !== "active"
         ? "campaign complete — no further orders are available"
@@ -267,7 +280,18 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
           ? "no surviving squads — restart the campaign"
           : "choose HOLD to reduce fatigue, RECOVER for strength, or ATTACK a legal target";
       const delta = `RESOURCES Δ metal ${resourceDelta("metal") >= 0 ? "+" : ""}${resourceDelta("metal")}, energy ${resourceDelta("energy") >= 0 ? "+" : ""}${resourceDelta("energy")}, intel ${resourceDelta("intelligence") >= 0 ? "+" : ""}${resourceDelta("intelligence")}`;
-      const debrief = "TURN " + before.turn + " DEBRIEF — " + (playerLines.length ? playerLines.join(" | ") : "no surviving ordered squads") + " | " + delta + (battleLines.length ? " | PLAYER RESULT: " + battleLines.join("; ") : " | PLAYER RESULT: no battle observed") + (enemyLines.length ? " | ENEMY PHASE OBSERVED: " + enemyLines.join("; ") : " | ENEMY PHASE OBSERVED: none") + " | NEXT: " + nextChoices;
+      const debrief = [
+        `TURN ${before.turn} DEBRIEF`,
+        `WHAT CHANGED: ${playerLines.length ? playerLines.join("; ") : "no surviving ordered squads"}`,
+        `RELAY CONTROL: ${relayLines.length ? relayLines.join("; ") : "no ownership change observed"}`,
+        `UNASSIGNED FATIGUE: ${unassignedFatigue.length ? unassignedFatigue.join("; ") : "no unassigned fatigue change"}`,
+        `SQUAD LOSSES: ${squadLosses.length ? squadLosses.join("; ") : "no squad strength loss observed"}`,
+        delta,
+        `PLAYER RESULT: ${battleLines.length ? battleLines.join("; ") : "no battle observed"}`,
+        `ENEMY PHASE OBSERVED: ${enemyLines.length ? enemyLines.join("; ") : "none"}`,
+        `WHY: observed state/events above determine the result`,
+        `NEXT: ${nextChoices}`,
+      ].join("\n");
       setGame(enemy.nextState);
       const nextReports = phaseReports.length ? phaseReports : reports;
         [
@@ -763,6 +787,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               </div>
             </section>
             <aside className="side-panel">
+              <section className="card debrief-panel" aria-label="Last turn debrief">
+                <div className="panel-heading">
+                  <h2>WHAT CHANGED / WHY</h2>
+                  <span className="muted">LAST TURN</span>
+                </div>
+                {latestDebrief ? <p style={{ whiteSpace: "pre-line" }}>{latestDebrief.message}</p> : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+              </section>
               {reports.length > 0 && (
                 <section className="reports card">
                   <div className="panel-heading">
@@ -1038,13 +1069,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 >
                   EXECUTE TURN <span>→</span>
                 </button>
-              </section>
-              <section className="card debrief-panel" aria-label="Last turn debrief">
-                  <div className="panel-heading">
-                    <h2>WHAT CHANGED / WHY</h2>
-                    <span className="muted">LAST TURN</span>
-                  </div>
-                  {latestDebrief ? <p>{latestDebrief.message}</p> : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
               </section>
               <section className="card event-rail">
                 <div className="panel-heading">
