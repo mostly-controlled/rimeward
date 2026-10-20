@@ -774,13 +774,25 @@ describe("App interactions", () => {
       if (state.researchLevels.Logistics < 2) expect(text).toContain("metal");
       if (state.researchLevels.Warfare < 2) expect(text).toContain("energy");
       if (state.researchLevels.Signals < 2) expect(text).toContain("intelligence");
-      if (state.researchLevels.Logistics === 0) expect(text).toContain("Supply capacity cap12 · recovery +1");
-      if (state.researchLevels.Logistics === 1) expect(text).toContain("Supply capacity cap14 · recovery +2");
+      if (state.researchLevels.Logistics === 0) expect(text).toContain("Strength/supply cap 12 · recovery +1");
+      if (state.researchLevels.Logistics === 1) expect(text).toContain("Strength/supply cap 14 · recovery +2");
       if (state.researchLevels.Warfare === 0) expect(text).toContain("Counter matchups +5% · fortification +5%");
       if (state.researchLevels.Warfare === 1) expect(text).toContain("Counter matchups +10% · fortification +10%");
       if (state.researchLevels.Signals === 0) expect(text).toContain("identities and sectors");
       if (state.researchLevels.Signals === 1) expect(text).toContain("identities, sectors, and routes");
-      if (state.researchLevels.Logistics === 2) expect(text).toContain("COMPLETE");
+      if (state.researchLevels.Logistics === 0) expect(text).toContain("8 metal + 1 energy");
+      if (state.researchLevels.Logistics === 1) expect(text).toContain("12 metal + 2 energy");
+      if (state.researchLevels.Warfare === 0) expect(text).toContain("1 metal + 8 energy");
+      if (state.researchLevels.Warfare === 1) expect(text).toContain("2 metal + 12 energy");
+      if (state.researchLevels.Signals === 0) expect(text).toContain("2 metal + 4 intelligence");
+      if (state.researchLevels.Signals === 1) expect(text).toContain("3 metal + 7 intelligence");
+      if (state.researchLevels.Logistics === 2) {
+        expect(text).toContain("COMPLETE");
+        for (const branch of ["Logistics", "Warfare", "Signals"]) {
+          const button = [...document.querySelectorAll(".research button")].find((item) => item.textContent?.startsWith(branch))!;
+          expect(button.textContent).not.toMatch(/COST|NEXT|LVL3/);
+        }
+      }
       await act(async () => root.unmount());
     }
   });

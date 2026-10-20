@@ -34,8 +34,8 @@ const SAVE_SUCCESS = "Completed turns and research saved; queued orders are not 
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
     Logistics: [
-      "Supply capacity cap12 · recovery +1",
-      "Supply capacity cap14 · recovery +2",
+      "Strength/supply cap 12 · recovery +1",
+      "Strength/supply cap 14 · recovery +2",
     ],
     Warfare: [
       "Counter matchups +5% · fortification +5%",
