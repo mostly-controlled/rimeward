@@ -503,7 +503,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               >
                 <defs>
                   <marker id="planned-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-                    <path d="M0,0 L7,3.5 L0,7 z" className="planned-arrow" />
+                    <path d="M0,0 L7,3.5 L0,7 z" className="planned-arrow" fill="#f0dda1" stroke="#071114" strokeWidth="0.8" />
                   </marker>
                 </defs>
                 {game.sectors.flatMap((s) =>
