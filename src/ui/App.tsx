@@ -157,6 +157,20 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     ]);
   };
   const sectorName = (id?: SectorId) => id ? game.sectors.find((sector) => sector.id === id)?.name ?? id : "—";
+  const enemyHq = game.sectors.find((sector) => sector.id === game.hq.enemy);
+  const playerHq = game.sectors.find((sector) => sector.id === game.hq.player);
+  const campaignObjectives = [
+    ...game.objectives.map((objective) => ({
+      key: objective.id,
+      label: sectorName(objective.sector),
+      status: objective.controlled ? "SECURED" : "REQUIRED",
+    })),
+    {
+      key: "enemy-hq",
+      label: enemyHq?.name ?? game.hq.enemy,
+      status: enemyHq?.owner === "player" ? "CAPTURED" : "REQUIRED",
+    },
+  ];
   const setOrder = (type: OrderType, target?: SectorId) => {
     if (!selectedId || game.terminal !== "active") return;
     setError("");
@@ -361,6 +375,26 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               <b>RELAYS</b> {game.objectives.filter((o) => o.controlled).length}
               /3
             </span>
+          </section>
+          <section className="campaign-objectives card" aria-label="Campaign objectives">
+            <div className="panel-heading">
+              <h2>CAMPAIGN OBJECTIVES</h2>
+              {game.terminal === "active" ? (
+                <span className="muted">
+                  {Math.max(0, 19 - game.turn)} {Math.max(0, 19 - game.turn) === 1 ? "PLAYABLE TURN" : "PLAYABLE TURNS"} REMAINING INCLUDING THIS TURN
+                </span>
+              ) : (
+                <span className="muted">CAMPAIGN COMPLETE</span>
+              )}
+            </div>
+            <p className="muted">Secure all relays and capture enemy HQ. Defend {playerHq?.name ?? game.hq.player}.</p>
+            <div className="objective-list">
+              {campaignObjectives.map((objective) => (
+                <div className="objective" key={objective.key}>
+                  <b>{objective.key === "enemy-hq" ? "Enemy HQ" : "Relay"} — {objective.label}</b> · {objective.status}
+                </div>
+              ))}
+            </div>
           </section>
           <section className="income card">
             <b>HQ-CONNECTED INCOME</b>
