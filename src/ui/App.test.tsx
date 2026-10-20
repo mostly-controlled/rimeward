@@ -356,7 +356,7 @@ describe("App interactions", () => {
     await act(async () =>
       (document.querySelector(".execute") as HTMLButtonElement).click(),
     );
-    expect(document.body.textContent).toContain("squad-1 move sector-1");
+    expect(document.body.textContent).toContain("squad-1 move Whiteplain");
     expect(document.querySelector(".turn-readout")?.textContent).toContain(
       "02",
     );
@@ -416,15 +416,15 @@ describe("App interactions", () => {
       (entry) => entry.textContent ?? "",
     );
     expect(
-      rail.filter((message) => message.includes("squad-1 move sector-1")),
+      rail.filter((message) => message.includes("squad-1 move Whiteplain")),
     ).toHaveLength(1);
     expect(
-      rail.filter((message) => message.includes("squad-2 move sector-1")),
+      rail.filter((message) => message.includes("squad-2 move Whiteplain")),
     ).toHaveLength(1);
-    const enemyEvents = rail.filter((message) => message.includes("enemy"));
+    const enemyEvents = rail.filter((message) => message.includes("enemy") && !message.includes("DEBRIEF"));
     expect(enemyEvents).toEqual(
       expectedEnemy.events.map((event) =>
-        expect.stringContaining(event.message),
+        expect.stringContaining(event.message.replace(/sector-\d+/g, (id) => ({ "sector-3": "Northstar", "sector-9": "Vesper", "sector-6": "Ashenfall" } as Record<string, string>)[id] ?? id)),
       ),
     );
     expect(enemyEvents).toHaveLength(expectedEnemy.events.length);
@@ -465,7 +465,7 @@ describe("App interactions", () => {
     );
     const emitted = [...document.querySelectorAll(".event-rail p")]
       .map((entry) => entry.textContent ?? "")
-      .filter((message) => message.includes("enemy-"));
+      .filter((message) => message.includes("enemy-") && !message.includes("DEBRIEF"));
     expect(emitted).toHaveLength(expected.events.length);
     for (const event of expected.events) {
       const emittedEvent = emitted.find((message) =>
@@ -482,10 +482,10 @@ describe("App interactions", () => {
       expect(forecast).toContain(action);
       expect(emittedEvent).toContain(
         event.type === "move"
-          ? event.to
+          ? state.sectors.find((sector) => sector.id === event.to)?.name
           : event.type === "attack"
-            ? event.target!
-            : event.from,
+            ? state.sectors.find((sector) => sector.id === event.target)?.name
+            : state.sectors.find((sector) => sector.id === event.from)?.name,
       );
     }
     await act(async () => root.unmount());
@@ -563,7 +563,7 @@ describe("App interactions", () => {
     await clickSector("Ashenfall");
 
     expect(document.querySelector(".event-rail")?.textContent).toContain(
-      "squad-1 attack sector-6",
+      "squad-1 attack Ashenfall",
     );
     const report = document.querySelector(".reports");
     expect(report?.textContent).toContain("BATTLE REPORT");
@@ -658,7 +658,7 @@ describe("App interactions", () => {
     );
     expect(firstTurn).toContainEqual({
       turn: "01",
-      message: "squad-1 move sector-1",
+      message: "squad-1 move Whiteplain",
     });
 
     await executeTarget("Glassway");
@@ -677,12 +677,10 @@ describe("App interactions", () => {
     );
     await executeTarget("Ashenfall");
     const battleTurn = entries();
-    expect(battleTurn[0].message).toMatch(/^sector-6 .* casualty entries$/);
-    expect(
-      battleTurn
-        .slice(0, Math.min(4, battleTurn.length))
-        .every((entry) => entry.turn === "03"),
-    ).toBe(true);
+    expect(battleTurn[0].message).toMatch(/^Ashenfall .* casualty entries$/);
+    expect(battleTurn.slice(0, Math.min(4, battleTurn.length)).every((entry) => entry.turn === "03")).toBe(
+      true,
+    );
     const retainedFirstTurnEnemies = battleTurn.filter(
       (entry) => entry.turn === "01" && entry.message?.startsWith("enemy-"),
     );
@@ -748,6 +746,50 @@ describe("App interactions", () => {
     );
     expect(document.body.textContent).toContain("NO SURVIVORS");
     expect(document.body.textContent).toContain("no active squads");
+    await act(async () => root.unmount());
+  });
+
+  it("selects, queues, resolves, and reloads a named-sector turn with its debrief and real tradeoffs", async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    const campaign = createNewCampaign(42024);
+    const initialGame = { ...campaign, squads: campaign.squads.map((squad, index) => index === 0 ? { ...squad, sector: "sector-5" as const } : squad) };
+    writeSave({ version: SAVE_VERSION, game: initialGame, events: [], reports: [] });
+    await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement).click());
+    const target = document.querySelector('[role="button"][aria-label*="Ashenfall"]') as SVGGElement;
+    expect(target.getAttribute("aria-label")).toContain("attack target");
+    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("ATTACK → Ashenfall");
+    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 2M + 3E");
+    expect(document.querySelector('[aria-label="Attack preview"]')?.textContent).toContain("costs 2 metal + 3 energy");
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    const rail = document.querySelector(".event-rail")?.textContent ?? "";
+    expect(rail).toContain("TURN 1 DEBRIEF");
+    expect(rail).toContain("Ashenfall");
+    expect(rail).not.toMatch(/sector-\d+/);
+    expect(rail).toMatch(/ATTACK \(cost 2 metal \+ 3 energy\)/);
+    expect(document.querySelector('[role="status"]')?.textContent).toContain("saved");
+    await act(async () => root.unmount());
+    document.body.innerHTML = '<div id="root"></div>';
+    const reloaded = createRoot(document.getElementById("root")!);
+    await act(async () => reloaded.render(<App />));
+    expect(document.querySelector(".turn-readout strong")?.textContent).toBe("02");
+    expect(document.querySelector(".event-rail")?.textContent).toContain("TURN 1 DEBRIEF");
+    expect(document.querySelector(".event-rail")?.textContent).toContain("Ashenfall");
+    await act(async () => reloaded.unmount());
+  });
+
+  it("makes terminal campaigns read-only and offers restart controls", async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    const campaign = createNewCampaign(42024);
+    await act(async () => root.render(<App initialGame={{ ...campaign, turn: 19, terminal: "defeat", terminalReason: "Turn 18 reached without victory." }} />));
+    expect(document.querySelector(".terminal")?.textContent).toContain("TURN 18 — DEFEAT");
+    expect(document.querySelector(".terminal")?.textContent).toContain("Turn 18 reached without victory.");
+    expect([...document.querySelectorAll(".order-buttons button")].every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(true);
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("No orders can be queued");
     await act(async () => root.unmount());
   });
 

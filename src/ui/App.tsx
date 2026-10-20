@@ -272,8 +272,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             ),
             ...enemy.events.map((e) => e.message),
             ...turn.events.map((e) => e.message),
-            debrief.replace(/enemy-\d+/g, "hostile"),
-          ].map((message) => ({ turn: game.turn, message })),
+            debrief
+          ].map((message) => ({
+            turn: game.turn,
+            message: message
+              .replace(/sector-\d+/g, (id) => name(id as SectorId))
+          })),
           ...events,
         ].slice(0, 20)
       ) as RailEvent[];
