@@ -1218,6 +1218,35 @@ describe("Editable turn plan", () => {
     await act(async () => root.unmount());
   });
 
+  it("routes a multi-queue to distinct targets, executes both plans, and clears the map trace", async () => {
+    const root = await mount();
+    await target("Whiteplain");
+    await select(1);
+    await click(action("MOVE"));
+    await target("Lastlight");
+
+    expect(rows()).toHaveLength(2);
+    expect(rows()[0].textContent).toContain("squad-1 · MOVE → Whiteplain");
+    expect(rows()[1].textContent).toContain("squad-2 · MOVE → Lastlight");
+    const endpoints = [...document.querySelectorAll(".planned-route")].map(
+      (route) => `${route.getAttribute("x2")},${route.getAttribute("y2")}`,
+    );
+    expect(new Set(endpoints).size).toBe(2);
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(2);
+
+    await click(execute());
+
+    expect(rows()).toHaveLength(0);
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
+    expect(document.querySelector(".event-rail")?.textContent).toContain(
+      "squad-1 move sector-1",
+    );
+    expect(document.querySelector(".event-rail")?.textContent).toContain(
+      "squad-2 move sector-11",
+    );
+    await act(async () => root.unmount());
+  });
+
   it("replaces one squad plan, executes the remaining queue, and does not restore queued orders on restart", async () => {
     window.localStorage.clear();
     const root = await mount();
