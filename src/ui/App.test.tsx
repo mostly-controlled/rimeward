@@ -756,6 +756,16 @@ describe("App interactions", () => {
     const initialGame = { ...campaign, squads: campaign.squads.map((squad, index) => index === 0 ? { ...squad, sector: "sector-5" as const, strength: 1, fatigue: 3 } : squad) };
     writeSave({ version: SAVE_VERSION, game: initialGame, events: [], reports: [] });
     await act(async () => root.render(<App />));
+    const objectives = document.querySelector(".campaign-objectives") as HTMLElement;
+    const debriefBefore = document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement;
+    const income = document.querySelector(".income") as HTMLElement;
+    expect(objectives.compareDocumentPosition(debriefBefore) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(debriefBefore.compareDocumentPosition(income) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const attackPreviewBeforeQueue = document.querySelector('[aria-label="Attack preview"]')?.textContent ?? "";
+    expect(attackPreviewBeforeQueue).toMatch(/STR 1, FTG 3/);
+    expect(attackPreviewBeforeQueue).toMatch(/HOLD is free.*FTG to 2/);
+    expect(attackPreviewBeforeQueue).toMatch(/RECOVER costs .*STR to .*FTG to/);
+    expect(attackPreviewBeforeQueue).toContain("available only against a legal target");
     await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement).click());
     const target = document.querySelector('[role="button"][aria-label*="Ashenfall"]') as SVGGElement;
     expect(target.getAttribute("aria-label")).toContain("attack target");
