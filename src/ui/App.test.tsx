@@ -752,9 +752,37 @@ describe("App interactions", () => {
       "advances to",
     );
     expect(document.querySelector(".research-effects")?.textContent).toContain(
-      "legal route intents",
+      "routes",
     );
+    expect(document.querySelectorAll(".research button")[2].textContent).toContain("COMPLETE");
+    expect(document.querySelectorAll(".research button")[2].textContent).not.toMatch(/LVL 3|undefined|\{"/);
+    expect(document.querySelectorAll(".research button")[2]).toHaveProperty("disabled", true);
     await act(async () => tier2Root.unmount());
+  });
+
+  it("renders readable next-tier costs and exact effects for every research branch", async () => {
+    const states = [createNewCampaign(42024),
+      { ...createNewCampaign(42024), researchLevels: { Logistics: 1, Warfare: 1, Signals: 1 } },
+      { ...createNewCampaign(42024), researchLevels: { Logistics: 2, Warfare: 2, Signals: 2 } }];
+    for (const state of states) {
+      document.body.innerHTML = '<div id="root"></div>';
+      const root = createRoot(document.getElementById("root")!);
+      await act(async () => root.render(<App initialGame={state} />));
+      const text = document.querySelector(".research")?.textContent ?? "";
+      expect(text).not.toContain("JSON");
+      expect(text).not.toContain("undefined");
+      if (state.researchLevels.Logistics < 2) expect(text).toContain("metal");
+      if (state.researchLevels.Warfare < 2) expect(text).toContain("energy");
+      if (state.researchLevels.Signals < 2) expect(text).toContain("intelligence");
+      if (state.researchLevels.Logistics === 0) expect(text).toContain("Supply capacity cap12 · recovery +1");
+      if (state.researchLevels.Logistics === 1) expect(text).toContain("Supply capacity cap14 · recovery +2");
+      if (state.researchLevels.Warfare === 0) expect(text).toContain("Counter matchups +5% · fortification +5%");
+      if (state.researchLevels.Warfare === 1) expect(text).toContain("Counter matchups +10% · fortification +10%");
+      if (state.researchLevels.Signals === 0) expect(text).toContain("identities and sectors");
+      if (state.researchLevels.Signals === 1) expect(text).toContain("identities, sectors, and routes");
+      if (state.researchLevels.Logistics === 2) expect(text).toContain("COMPLETE");
+      await act(async () => root.unmount());
+    }
   });
 
   it("blocks terminal orders and offers a restart", async () => {

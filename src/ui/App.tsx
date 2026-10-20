@@ -5,7 +5,6 @@ import {
   connectedOwnedSectors,
   createNewCampaign,
   researchCost,
-  researchCurrency,
   resolveCombat,
   resolveEnemyTurn,
   resolveTurn,
@@ -35,16 +34,16 @@ const SAVE_SUCCESS = "Completed turns and research saved; queued orders are not 
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
     Logistics: [
-      "Supply capacity +2 · recovery +1",
-      "Supply capacity +4 · recovery +2",
+      "Supply capacity cap12 · recovery +1",
+      "Supply capacity cap14 · recovery +2",
     ],
     Warfare: [
-      "Counter matchups +5% power · fortification +5%",
-      "Counter matchups +10% power · fortification +10%",
+      "Counter matchups +5% · fortification +5%",
+      "Counter matchups +10% · fortification +10%",
     ],
     Signals: [
       "Reveal hostile identities and sectors",
-      "Reveal identities, sectors, and legal route intents",
+      "Reveal hostile identities, sectors, and routes",
     ],
   })[branch][Math.max(0, Math.min(level - 1, 1))];
 const pos: Record<string, [number, number]> = {
@@ -758,23 +757,25 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   {(
                     ["Logistics", "Warfare", "Signals"] as ResearchBranch[]
                   ).map((branch) => (
-                    <button
-                      disabled={
-                        game.terminal !== "active" ||
-                        game.researchLevels[branch] >= 2
-                      }
+                    (() => {
+                      const level = game.researchLevels[branch];
+                      const complete = level >= 2;
+                      const cost = complete ? null : researchCost(branch, level);
+                      const price = cost
+                        ? Object.entries(cost)
+                            .filter(([, amount]) => amount > 0)
+                            .map(([resource, amount]) => `${amount} ${resource}`)
+                            .join(" + ")
+                        : "";
+                      return <button
+                      disabled={game.terminal !== "active" || complete}
                       key={branch}
                       onClick={() => research(branch)}
                     >
-                      {branch} <b>{game.researchLevels[branch]}/2</b>
-                      <small>
-                        LVL {game.researchLevels[branch] + 1} ·{" "}
-                        {researchCurrency(branch).toUpperCase()} ·{" "}
-                        {JSON.stringify(
-                          researchCost(branch, game.researchLevels[branch]),
-                        )}
-                      </small>
-                    </button>
+                      {branch} <b>{level}/2</b>
+                      <small>{complete ? "COMPLETE" : `NEXT: LVL ${level + 1} · ${researchEffect(branch, level + 1)} · COST: ${price}`}</small>
+                    </button>;
+                    })()
                   ))}
                 </section>
                 {expectedReports.length > 0 && (
