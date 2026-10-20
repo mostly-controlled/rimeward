@@ -1117,4 +1117,39 @@ describe("Editable turn plan", () => {
     expect(document.body.textContent).not.toContain("SAVE UNAVAILABLE");
     await act(async () => root.unmount());
   });
+
+  it("shows named relay and HQ objectives with authoritative states and countdown", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await mount({
+      ...campaign,
+      turn: 18,
+      objectives: campaign.objectives.map((objective, index) => ({
+        ...objective,
+        controlled: index === 0,
+      })),
+      sectors: campaign.sectors.map((sector) =>
+        sector.id === campaign.hq.enemy ? { ...sector, owner: "player" as const } : sector,
+      ),
+    });
+    const tracker = document.querySelector('[aria-label="Campaign objectives"]')!;
+    expect(tracker.textContent).toContain("Relay — Northstar · SECURED");
+    expect(tracker.textContent).toContain("Relay — Vesper · REQUIRED");
+    expect(tracker.textContent).toContain("Relay — Ashenfall · REQUIRED");
+    expect(tracker.textContent).toContain("Enemy HQ — Ashenfall · CAPTURED");
+    expect(tracker.textContent).toContain("1 PLAYABLE TURN REMAINING INCLUDING THIS TURN");
+    expect(tracker.textContent).toContain(`Secure all relays and capture enemy HQ. Defend ${campaign.sectors.find((sector) => sector.id === campaign.hq.player)?.name}.`);
+    expect(document.querySelectorAll(".objective")).toHaveLength(4);
+    await act(async () => root.unmount());
+  });
+
+  it("removes the active countdown when the campaign is terminal", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await mount({ ...campaign, terminal: "victory", terminalReason: "Campaign complete." });
+    expect(document.body.textContent).toContain("Campaign complete.");
+    expect(document.querySelector('[aria-label="Campaign objectives"]')?.textContent)
+      .toContain("CAMPAIGN COMPLETE");
+    expect(document.querySelector('[aria-label="Campaign objectives"]')?.textContent)
+      .not.toContain("PLAYABLE TURNS REMAINING");
+    await act(async () => root.unmount());
+  });
 });
