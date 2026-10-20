@@ -586,6 +586,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
           </section>
 
           <div className="battle-layout">
+            <section className="card debrief-panel" aria-label="Last turn debrief">
+              <div className="panel-heading">
+                <h2>WHAT CHANGED / WHY</h2>
+                <span className="muted">LAST TURN</span>
+              </div>
+              {latestDebrief ? latestDebrief.message.split("\n").map((line) => <p key={line.slice(0, 40)}>{line}</p>) : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+            </section>
             <section className="map-panel card">
               <div className="panel-heading">
                 <div>
@@ -787,13 +794,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               </div>
             </section>
             <aside className="side-panel">
-              <section className="card debrief-panel" aria-label="Last turn debrief">
-                <div className="panel-heading">
-                  <h2>WHAT CHANGED / WHY</h2>
-                  <span className="muted">LAST TURN</span>
-                </div>
-                {latestDebrief ? <p style={{ whiteSpace: "pre-line" }}>{latestDebrief.message}</p> : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
-              </section>
               {reports.length > 0 && (
                 <section className="reports card">
                   <div className="panel-heading">

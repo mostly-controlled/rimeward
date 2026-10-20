@@ -540,7 +540,6 @@ describe("App interactions", () => {
       ...document.querySelector(".side-panel")!.children,
     ].map((node) => node.className);
     expect(initialSidebar).toEqual([
-      "card debrief-panel",
       "card squad-panel",
       "card orders",
       "card event-rail",
@@ -594,7 +593,6 @@ describe("App interactions", () => {
     expect(
       [...report!.parentElement!.children].map((node) => node.className),
     ).toEqual([
-      "card debrief-panel",
       "reports card",
       "card squad-panel",
       "card orders",
@@ -782,6 +780,7 @@ describe("App interactions", () => {
     expect(debrief).toContain("RELAY CONTROL:");
     expect(debrief).toContain("UNASSIGNED FATIGUE:");
     expect(debrief).toContain("SQUAD LOSSES:");
+    expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".map-panel") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".orders") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(document.querySelector('[role="status"]')?.textContent).toContain("saved");
     await act(async () => root.unmount());
