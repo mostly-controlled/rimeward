@@ -502,9 +502,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 aria-label="Tactical sector map"
               >
                 <defs>
-                  <marker id="planned-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-                    <path d="M0,0 L7,3.5 L0,7 z" className="planned-arrow" fill="#f0dda1" stroke="#071114" strokeWidth="0.8" />
-                  </marker>
+                  {(["move", "attack"] as const).map((type) => (
+                    <marker id={`planned-arrow-${type}`} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" key={type}>
+                      <path d="M0,0 L7,3.5 L0,7 z" className={`planned-arrow planned-arrow-${type}`} fill="#f0dda1" stroke="#071114" strokeWidth="0.8" />
+                    </marker>
+                  ))}
                 </defs>
                 {game.sectors.flatMap((s) =>
                   s.links
@@ -554,14 +556,19 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       const labelX = (startX + endX) / 2 + nx * 12;
                       const labelY = (startY + endY) / 2 + ny * 12;
                       return (
-                        <g className="planned-order" data-order-id={order.squadId} key={order.squadId}>
+                        <g
+                          className="planned-order"
+                          data-order-id={order.squadId}
+                          data-target={target}
+                          key={`${order.squadId}-${order.type}-${target}`}
+                        >
                           <line
                             className={`planned-route planned-${order.type}`}
                             x1={startX}
                             y1={startY}
                             x2={endX}
                             y2={endY}
-                            markerEnd="url(#planned-arrow)"
+                            markerEnd={`url(#planned-arrow-${order.type})`}
                           />
                           <text className="planned-label" x={labelX} y={labelY} textAnchor="middle">
                             PLAN · {order.type.toUpperCase()} · {unit.id}
@@ -674,8 +681,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     <h2>BATTLE REPORT</h2>
                     <span className="muted">RESOLVED</span>
                   </div>
-                  {reports.map((report) => (
-                    <article key={report.target}>
+                  {reports.map((report, index) => (
+                    <article key={`${report.target}-${report.winner}-${index}`}>
                       <h3>
                         {game.sectors.find((s) => s.id === report.target)?.name}{" "}
                         · {report.winner.toUpperCase()}
