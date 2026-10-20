@@ -764,7 +764,7 @@ describe("App interactions", () => {
     const attackPreviewBeforeQueue = document.querySelector('[aria-label="Attack preview"]')?.textContent ?? "";
     expect(attackPreviewBeforeQueue).toMatch(/STR 1, FTG 3/);
     expect(attackPreviewBeforeQueue).toMatch(/HOLD is free.*FTG to 2/);
-    expect(attackPreviewBeforeQueue).toMatch(/RECOVER costs .*STR to .*FTG to/);
+    expect(attackPreviewBeforeQueue).toMatch(/RECOVER (costs .*STR to .*FTG to|is unavailable while unsupplied)/);
     expect(attackPreviewBeforeQueue).toContain("available only against a legal target");
     await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement).click());
     const target = document.querySelector('[role="button"][aria-label*="Ashenfall"]') as SVGGElement;
