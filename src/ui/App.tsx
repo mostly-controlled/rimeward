@@ -141,6 +141,21 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         : [],
     [game, squad],
   );
+  const legalTargets = useMemo(
+    () =>
+      squad
+        ? reachable
+            .map((id) => game.sectors.find((sector) => sector.id === id))
+            .filter((sector): sector is GameState["sectors"][number] => {
+              if (!sector || sector.id === squad.sector) return false;
+              const occupied = game.enemySquads.some((enemy) => enemy.sector === sector.id);
+              return selectedAction === "attack"
+                ? sector.owner !== "player"
+                : sector.owner !== "enemy" && !occupied;
+            })
+        : [],
+    [game, reachable, selectedAction, squad],
+  );
   const orderFor = (id: string) => orders.find((o) => o.squadId === id);
   const unassignedSquads = game.squads.filter((unit) => unit.strength > 0 && !orderFor(unit.id));
   const canHoldUnassigned = game.terminal === "active" && unassignedSquads.length > 0;
@@ -695,6 +710,28 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 ))}
               </section>
               <section className="card orders">
+                <section className="turn-guide" aria-label="Turn guide">
+                  <p className="eyebrow">TURN GUIDE · TURN {game.turn}</p>
+                  <h3>GOAL</h3>
+                  <p>
+                    {game.terminal === "active"
+                      ? `Secure ${campaignObjectives.find((objective) => objective.status === "REQUIRED")?.label ?? "the frontier"}.`
+                      : game.terminal === "victory"
+                        ? "The frontier is secure."
+                        : "The campaign has ended."}
+                  </p>
+                  {game.terminal === "active" ? (
+                    <ol>
+                      <li><strong>SELECT SQUAD</strong> — {squad.class.toUpperCase()} {squad.id.slice(-1)} at {sectorName(squad.sector)} (STR {squad.strength}, FTG {squad.fatigue}).</li>
+                      <li><strong>CHOOSE {selectedAction.toUpperCase()}</strong> — pick a highlighted legal destination below.</li>
+                      <li><strong>{legalTargets.length ? "HIGHLIGHTED LEGAL DESTINATION" : "NO LEGAL TARGETS"}</strong> — {legalTargets.length ? legalTargets.map((target) => target.name).join(", ") : "use HOLD or RECOVER; an enemy-held destination requires ATTACK."}</li>
+                      <li><strong>{orderFor(selectedId) ? "QUEUED — NOT EXECUTED" : "NOT QUEUED"}</strong> — {orderFor(selectedId) ? "cancel to revise, then EXECUTE TURN." : "select a highlighted destination to queue it."}</li>
+                    </ol>
+                  ) : (
+                    <p className="muted">Terminal state: {game.terminal.toUpperCase()}. Orders are disabled.</p>
+                  )}
+                  <p className="muted">STR = strength. FTG = fatigue. HOLD lowers FTG by 1. RECOVER restores STR and lowers FTG when supplied.</p>
+                </section>
                 <p className="eyebrow">
                   SELECTED: {squad.class.toUpperCase()} {squad.id.slice(-1)}
                 </p>
