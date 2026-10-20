@@ -143,6 +143,19 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     [game, squad],
   );
   const orderFor = (id: string) => orders.find((o) => o.squadId === id);
+  const unassignedSquads = game.squads.filter((unit) => unit.strength > 0 && !orderFor(unit.id));
+  const canHoldUnassigned = game.terminal === "active" && unassignedSquads.length > 0;
+  const holdUnassigned = () => {
+    if (!canHoldUnassigned) return;
+    setError("");
+    setOrders((previous) => [
+      ...previous,
+      ...game.squads
+        .filter((unit) => unit.strength > 0)
+        .filter((unit) => !previous.some((order) => order.squadId === unit.id))
+        .map((unit) => ({ squadId: unit.id, type: "hold" as const })),
+    ]);
+  };
   const sectorName = (id?: SectorId) => id ? game.sectors.find((sector) => sector.id === id)?.name ?? id : "—";
   const setOrder = (type: OrderType, target?: SectorId) => {
     if (!selectedId || game.terminal !== "active") return;
@@ -747,6 +760,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 )}
                 <section className="queued-orders" aria-label="Queued orders">
                   <h3>QUEUED ORDERS</h3>
+                  <p className="unassigned-count">
+                    UNASSIGNED LIVING SQUADS: {unassignedSquads.length}
+                  </p>
+                  <button disabled={!canHoldUnassigned} onClick={holdUnassigned}>
+                    HOLD UNASSIGNED
+                  </button>
                   {game.terminal !== "active" ? (
                     <p className="muted">Campaign complete. No orders can be queued.</p>
                   ) : (
