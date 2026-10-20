@@ -143,7 +143,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     [game, squad],
   );
   const orderFor = (id: string) => orders.find((o) => o.squadId === id);
-  const unassignedSquads = game.squads.filter((unit) => !orderFor(unit.id));
+  const unassignedSquads = game.squads.filter((unit) => unit.strength > 0 && !orderFor(unit.id));
   const canHoldUnassigned = game.terminal === "active" && unassignedSquads.length > 0;
   const holdUnassigned = () => {
     if (!canHoldUnassigned) return;
@@ -151,6 +151,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setOrders((previous) => [
       ...previous,
       ...game.squads
+        .filter((unit) => unit.strength > 0)
         .filter((unit) => !previous.some((order) => order.squadId === unit.id))
         .map((unit) => ({ squadId: unit.id, type: "hold" as const })),
     ]);
