@@ -76,6 +76,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>(() => loaded?.reports ?? []);
   const [saveStatus, setSaveStatus] = useState(!initialGame ? (loaded ? `RESUMED SAVED CAMPAIGN — ${SAVE_SUCCESS}` : readSaveNotice()) : "");
   const [error, setError] = useState("");
+  const latestDebrief = events.find((event) => event.message.startsWith("TURN ") && event.message.includes(" DEBRIEF"));
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
     if (!storageEnabled) return null;
     const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events: nextEvents, reports: nextReports });
@@ -195,7 +196,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit || !after) return null; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + after.strength + ", FTG " + unit.fatigue + "→" + after.fatigue; }).filter(Boolean) as string[];
       const battleLines = phaseReports.map((report) => name(report.target) + ": " + (report.winner === "draw" ? "contested, no capture" : report.winner === "player" ? (report.captured ? "captured" : "held") : "lost") + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
       const enemyLines = enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
-      const debrief = "TURN " + before.turn + " DEBRIEF — " + playerLines.join(" | ") + (battleLines.length ? " | OUTCOME: " + battleLines.join("; ") : "") + (enemyLines.length ? " | ENEMY PHASE OBSERVED: " + enemyLines.join("; ") : "") + " | NEXT: " + (before.terminal === "active" ? "choose HOLD to reduce fatigue, RECOVER for strength, or ATTACK a legal target" : "campaign complete");
+      const survivingSquads = enemy.nextState.squads.filter((unit) => unit.strength > 0);
+      const nextChoices = enemy.nextState.terminal !== "active"
+        ? "campaign complete — no further orders are available"
+        : survivingSquads.length === 0
+          ? "no surviving squads — restart the campaign"
+          : "choose HOLD to reduce fatigue, RECOVER for strength, or ATTACK a legal target";
+      const debrief = "TURN " + before.turn + " DEBRIEF — " + (playerLines.length ? playerLines.join(" | ") : "no surviving ordered squads") + (battleLines.length ? " | OUTCOME: " + battleLines.join("; ") : "") + (enemyLines.length ? " | ENEMY PHASE OBSERVED: " + enemyLines.join("; ") : "") + " | NEXT: " + nextChoices;
       setGame(enemy.nextState);
       const nextReports = phaseReports.length ? phaseReports : reports;
       const nextEvents = (
@@ -862,6 +869,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 >
                   EXECUTE TURN <span>→</span>
                 </button>
+              </section>
+              <section className="card debrief-panel" aria-label="Last turn debrief">
+                  <div className="panel-heading">
+                    <h2>WHAT CHANGED / WHY</h2>
+                    <span className="muted">LAST TURN</span>
+                  </div>
+                  {latestDebrief ? <p>{latestDebrief.message}</p> : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
               </section>
               <section className="card event-rail">
                 <div className="panel-heading">

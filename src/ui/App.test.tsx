@@ -310,6 +310,7 @@ describe("App interactions", () => {
     expect(initialSidebar).toEqual([
       "card squad-panel",
       "card orders",
+      "card debrief-panel",
       "card event-rail",
     ]);
     expect(document.querySelector(".seed-readout")?.textContent).toBe(
@@ -355,6 +356,11 @@ describe("App interactions", () => {
     ).toBe(true);
     expect(
       report?.nextElementSibling?.nextElementSibling?.nextElementSibling?.classList.contains(
+        "debrief-panel",
+      ),
+    ).toBe(true);
+    expect(
+      report?.nextElementSibling?.nextElementSibling?.nextElementSibling?.nextElementSibling?.classList.contains(
         "event-rail",
       ),
     ).toBe(true);
@@ -364,6 +370,7 @@ describe("App interactions", () => {
       "reports card",
       "card squad-panel",
       "card orders",
+      "card debrief-panel",
       "card event-rail",
     ]);
 
@@ -535,6 +542,10 @@ describe("App interactions", () => {
     expect(rail).toContain("Ashenfall");
     expect(rail).not.toMatch(/sector-\d+/);
     expect(rail).toMatch(/ATTACK \(cost 2 metal \+ 3 energy\)/);
+    const debrief = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    expect(debrief).toContain("WHAT CHANGED / WHY");
+    expect(debrief).toContain("Ashenfall");
+    expect(debrief).toContain("NEXT:");
     expect(document.querySelector('[role="status"]')?.textContent).toContain("saved");
     await act(async () => root.unmount());
     document.body.innerHTML = '<div id="root"></div>';
@@ -556,6 +567,18 @@ describe("App interactions", () => {
     expect([...document.querySelectorAll(".order-buttons button")].every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
     expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(true);
     expect(document.querySelector(".queued-orders")?.textContent).toContain("No orders can be queued");
+    await act(async () => root.unmount());
+  });
+
+  it("does not offer impossible next choices when the last squad is dead", async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    const campaign = createNewCampaign(42024);
+    const dead = { ...campaign, squads: campaign.squads.map((squad) => ({ ...squad, strength: 0 })) };
+    await act(async () => root.render(<App initialGame={dead} />));
+    expect(document.querySelector('[aria-label="Last turn debrief"]')?.textContent).toContain("Execute a turn");
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("No orders queued");
+    expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(true);
     await act(async () => root.unmount());
   });
 
