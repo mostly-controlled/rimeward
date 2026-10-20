@@ -132,6 +132,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       (recoveryStrengthAfter > squad.strength ||
         recoveryFatigueAfter < squad.fatigue),
   );
+  const attackRiskRationale = squad
+    ? `ATTACK RISK · STR ${squad.strength}, FTG ${squad.fatigue}: HOLD is free and changes FTG to ${Math.max(0, squad.fatigue - 1)}; ${recoverySupplied ? `RECOVER costs ${recoveryMetalCost(game)} metal + 2 energy and changes STR to ${recoveryStrengthAfter}, FTG to ${recoveryFatigueAfter}` : "RECOVER is unavailable while unsupplied"}. ATTACK costs 2 metal + 3 energy and is available only against a legal target.`
+    : "ATTACK RISK · select a squad to compare HOLD and RECOVER.";
   useEffect(() => {
     if (selectedSquad !== selectedId) setSelectedSquad(selectedId);
   }, [selectedId, selectedSquad]);
@@ -450,6 +453,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               ))}
             </div>
           </section>
+          <section className="card debrief-panel" aria-label="Last turn debrief">
+            <div className="panel-heading">
+              <h2>WHAT CHANGED / WHY</h2>
+              <span className="muted">LAST TURN</span>
+            </div>
+            {latestDebrief ? latestDebrief.message.split("\n").map((line) => <p key={line.slice(0, 40)}>{line}</p>) : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+          </section>
           <section className="income card">
             <b>HQ-CONNECTED INCOME</b>
             {game.sectors
@@ -540,13 +550,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 </span>
               ),
             )}
-          </section>
-          <section className="card debrief-panel" aria-label="Last turn debrief">
-            <div className="panel-heading">
-              <h2>WHAT CHANGED / WHY</h2>
-              <span className="muted">LAST TURN</span>
-            </div>
-            {latestDebrief ? latestDebrief.message.split("\n").map((line) => <p key={line.slice(0, 40)}>{line}</p>) : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
           </section>
           <div className="battle-layout">
             <section className="map-panel card">
@@ -814,7 +817,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     FTG {squad.fatigue} → {Math.max(0, squad.fatigue - 1)}
                   </p>
                 </section>
-                <section className="recovery-preview" aria-label="Attack preview"><h3>ATTACK RISK</h3><p>costs 2 metal + 3 energy · only legal adjacent targets are selectable; outcome depends on observed defenders and terrain.{expectedReports.length > 0 ? " " + expectedReports.map((report) => sectorName(report.target) + ": Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties).join(" · ") : " Choose a legal target to preview the real battle."}</p></section>
+                <section className="recovery-preview" aria-label="Attack preview"><h3>ATTACK RISK</h3><p>{attackRiskRationale}{expectedReports.length > 0 ? " " + expectedReports.map((report) => sectorName(report.target) + ": Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties).join(" · ") : " Choose a legal target to preview the real battle."}</p></section>
                 <section className="research">
                   <h3>RESEARCH</h3>
                   {(
