@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App } from "./App";
+import { App, battleOutcomeLabel } from "./App";
 import {
   readSave,
   SAVE_KEY,
@@ -22,6 +22,11 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("reports a winning attack without capture truthfully", () => {
+    expect(battleOutcomeLabel({ winner: "player", captured: false })).toBe("won; not captured");
+    expect(battleOutcomeLabel({ winner: "player", captured: true })).toBe("captured");
+  });
+
   it("updates the turn guide from selection, queue, cancel, execute, and terminal state", async () => {
     const campaign = createNewCampaign(42024);
     document.body.innerHTML = '<div id="root"></div>';

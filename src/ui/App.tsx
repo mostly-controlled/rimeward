@@ -60,6 +60,14 @@ const researchEffect = (branch: ResearchBranch, level: number) =>
       "Reveal hostile identities, sectors, and routes",
     ],
   })[branch][Math.max(0, Math.min(level - 1, 1))];
+export const battleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captured">) =>
+  report.winner === "draw"
+    ? "contested, no capture"
+    : report.winner === "player"
+      ? report.captured
+        ? "captured"
+        : "won; not captured"
+      : "lost";
 const pos: Record<string, [number, number]> = {
   "sector-0": [95, 170],
   "sector-1": [180, 95],
@@ -267,7 +275,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const name = (id?: SectorId) => id ? before.sectors.find((sector) => sector.id === id)?.name ?? id : "unknown sector";
       const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
       const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const afterStrength = after?.strength ?? 0; const afterFatigue = after?.fatigue ?? unit.fatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
-      const battleLines = phaseReports.map((report) => name(report.target) + ": " + (report.winner === "draw" ? "contested, no capture" : report.winner === "player" ? (report.captured ? "captured" : "held") : "lost") + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
+      const battleLines = phaseReports.map((report) => name(report.target) + ": " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
       const enemyLines = enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
       const relayLines = before.objectives.map((objective) => {
         const sector = before.sectors.find((candidate) => candidate.id === objective.sector);
