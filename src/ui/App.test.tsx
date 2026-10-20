@@ -40,6 +40,41 @@ describe("App interactions", () => {
     await act(async () => root.unmount());
   });
 
+  it("holds each currently unassigned living squad exactly once and preserves explicit orders", async () => {
+    const campaign = createNewCampaign(42024);
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={campaign} />));
+    const moveTarget = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement;
+    await act(async () => moveTarget.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const bulk = [...document.querySelectorAll("button")].find((button) => button.textContent === "HOLD UNASSIGNED") as HTMLButtonElement;
+    expect(document.querySelector(".unassigned-count")?.textContent).toContain("4");
+    await act(async () => bulk.click());
+    expect(document.querySelector(".unassigned-count")?.textContent).toContain("0");
+    expect(document.querySelectorAll(".queued-order")).toHaveLength(5);
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("squad-1 · MOVE");
+    expect(document.querySelector(".budget")?.textContent).toContain("QUEUED 0M + 0E");
+    await act(async () => bulk.click());
+    expect(document.querySelectorAll(".queued-order")).toHaveLength(5);
+    await act(async () => root.unmount());
+  });
+
+  it("cancels a bulk hold so the squad can be refilled", async () => {
+    const campaign = createNewCampaign(42024);
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={campaign} />));
+    const bulk = [...document.querySelectorAll("button")].find((button) => button.textContent === "HOLD UNASSIGNED") as HTMLButtonElement;
+    await act(async () => bulk.click());
+    const cancel = [...document.querySelectorAll("button")].find((button) => button.getAttribute("aria-label")?.includes("Cancel SENTINEL squad-1")) as HTMLButtonElement;
+    await act(async () => cancel.click());
+    expect(document.querySelector(".unassigned-count")?.textContent).toContain("1");
+    expect(bulk.disabled).toBe(false);
+    await act(async () => bulk.click());
+    expect(document.querySelector(".unassigned-count")?.textContent).toContain("0");
+    await act(async () => root.unmount());
+  });
+
   it("shows deterministic expected losses before executing a queued assault", async () => {
     const campaign = createNewCampaign(42024);
     const initialGame = {
@@ -1020,7 +1055,7 @@ describe("Editable turn plan", () => {
     expect([...document.querySelectorAll(".order-buttons button")]
       .every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
     expect(rows()).toHaveLength(0);
-    expect(queue().querySelector("button")).toBeNull();
+    expect((queue().querySelector("button") as HTMLButtonElement).disabled).toBe(true);
     expect(execute().disabled).toBe(true);
     await act(async () => root.unmount());
   });
