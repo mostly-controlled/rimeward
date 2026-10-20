@@ -1318,7 +1318,7 @@ export const resolveCombat = (
       defenders.map((squad) => [squad.id, squad.strength]),
     );
     const winner = undefended
-      ? "draw"
+      ? attackerFaction
       : attackerPower > defenderPower
         ? attackerFaction
         : attackerPower < defenderPower

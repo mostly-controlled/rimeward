@@ -610,7 +610,7 @@ describe("campaign simulation", () => {
       target: "sector-1",
     });
   });
-  it("deals no combat damage on an undefended attack", () => {
+  it("captures an undefended sector for a player attacker without damage", () => {
     const game = createNewCampaign(8);
     const prepared = {
       ...game,
@@ -621,10 +621,10 @@ describe("campaign simulation", () => {
       { squadId: "squad-1", type: "attack", target: "sector-6" },
     ]);
     const result = resolveCombat(turn.nextState, turn.events);
-    expect(result.reports[0].playerCasualties).toBe(0);
-    expect(result.reports[0].enemyCasualties).toBe(0);
+    expect(result.reports[0]).toMatchObject({ winner: "player", captured: true, playerCasualties: 0, enemyCasualties: 0 });
+    expect(result.nextState.sectors.find((sector) => sector.id === "sector-6")?.owner).toBe("player");
   });
-  it("does not turn a fatigued, negatively varying undefended player attack into combat", () => {
+  it("captures an undefended player attack despite fatigue without damage", () => {
     const game = createNewCampaign(8);
     const prepared = {
       ...game,
@@ -634,16 +634,17 @@ describe("campaign simulation", () => {
     const result = resolveCombat(prepared, [{
       type: "attack", faction: "player", squadId: "squad-1", from: "sector-6", to: "sector-6", target: "sector-6", message: "attack",
     }]);
-    expect(result.reports[0]).toMatchObject({ winner: "draw", playerCasualties: 0, enemyCasualties: 0, retreat: [] });
+    expect(result.reports[0]).toMatchObject({ winner: "player", captured: true, playerCasualties: 0, enemyCasualties: 0, retreat: [] });
     expect(result.nextState.squads[0]).toMatchObject({ strength: 6, sector: "sector-6" });
   });
-  it("does not turn an undefended enemy attack into a player win or damage", () => {
+  it("captures an undefended sector for an enemy attacker without damage", () => {
     const game = createNewCampaign(8);
     const prepared = { ...game, squads: [], enemySquads: [{ ...game.enemySquads[0], sector: "sector-1" as const, strength: 6 }] };
     const result = resolveCombat(prepared, [{
       type: "attack", faction: "enemy", squadId: "enemy-1", from: "sector-1", to: "sector-1", target: "sector-1", message: "attack",
     }]);
-    expect(result.reports[0]).toMatchObject({ winner: "draw", playerCasualties: 0, enemyCasualties: 0, retreat: [] });
+    expect(result.reports[0]).toMatchObject({ winner: "enemy", captured: true, playerCasualties: 0, enemyCasualties: 0, retreat: [] });
+    expect(result.nextState.sectors.find((sector) => sector.id === "sector-1")?.owner).toBe("enemy");
     expect(result.nextState.enemySquads[0]).toMatchObject({ strength: 6, sector: "sector-1" });
   });
   it("rejects multiple recoveries when their total metal cost is unaffordable", () => {
