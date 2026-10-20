@@ -257,12 +257,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const phaseReports = [...combat.reports, ...enemy.reports];
       const name = (id?: SectorId) => id ? before.sectors.find((sector) => sector.id === id)?.name ?? id : "unknown sector";
       const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
-      const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit || !after) return null; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === after.sector); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + after.strength + ", FTG " + unit.fatigue + "→" + after.fatigue + control; }).filter(Boolean) as string[];
+      const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const afterStrength = after?.strength ?? 0; const afterFatigue = after?.fatigue ?? unit.fatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
       const battleLines = phaseReports.map((report) => name(report.target) + ": " + (report.winner === "draw" ? "contested, no capture" : report.winner === "player" ? (report.captured ? "captured" : "held") : "lost") + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
       const enemyLines = enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
-      const relayLines = before.sectors.map((sector) => {
-        const after = enemy.nextState.sectors.find((candidate) => candidate.id === sector.id);
-        return after && after.owner !== sector.owner ? `${sector.name}: ${sector.owner} → ${after.owner}` : null;
+      const relayLines = before.objectives.map((objective) => {
+        const sector = before.sectors.find((candidate) => candidate.id === objective.sector);
+        const after = sector && enemy.nextState.sectors.find((candidate) => candidate.id === sector.id);
+        return sector && after && after.owner !== sector.owner ? `${sector.name}: ${sector.owner} → ${after.owner}` : null;
       }).filter(Boolean) as string[];
       const unassignedFatigue = before.squads.map((unit) => {
         if (orders.some((order) => order.squadId === unit.id) || unit.strength <= 0) return null;
@@ -271,7 +272,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       }).filter(Boolean) as string[];
       const squadLosses = before.squads.map((unit) => {
         const after = enemy.nextState.squads.find((candidate) => candidate.id === unit.id);
-        return after && after.strength < unit.strength ? `${unit.class}: STR ${unit.strength} → ${after.strength}${after.strength <= 0 ? " (DEAD)" : ""}` : null;
+        const afterStrength = after?.strength ?? 0;
+        return afterStrength < unit.strength ? `${unit.class}: STR ${unit.strength} → ${afterStrength}${afterStrength <= 0 ? " (DEAD)" : ""}` : null;
       }).filter(Boolean) as string[];
       const survivingSquads = enemy.nextState.squads.filter((unit) => unit.strength > 0);
       const nextChoices = enemy.nextState.terminal !== "active"
@@ -280,6 +282,15 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
           ? "no surviving squads — restart the campaign"
           : "choose HOLD to reduce fatigue, RECOVER for strength, or ATTACK a legal target";
       const delta = `RESOURCES Δ metal ${resourceDelta("metal") >= 0 ? "+" : ""}${resourceDelta("metal")}, energy ${resourceDelta("energy") >= 0 ? "+" : ""}${resourceDelta("energy")}, intel ${resourceDelta("intelligence") >= 0 ? "+" : ""}${resourceDelta("intelligence")}`;
+      const attackChoices = orders.map((order) => {
+        if (order.type !== "attack") return null;
+        const unit = before.squads.find((candidate) => candidate.id === order.squadId);
+        if (!unit) return null;
+        if (unit.strength <= 1 || unit.fatigue >= 3) {
+          return `${unit.class} at ${name(unit.sector)} attacked at STR ${unit.strength}, FTG ${unit.fatigue}: ATTACK risks losing this squad; HOLD reduces fatigue by 1, while RECOVER costs 6 metal + 2 energy for strength/fatigue recovery when available`;
+        }
+        return `${unit.class} at ${name(unit.sector)} attacked at STR ${unit.strength}, FTG ${unit.fatigue}: weigh ATTACK's 2 metal + 3 energy cost against HOLD fatigue reduction or RECOVER's strength recovery`;
+      }).filter(Boolean) as string[];
       const debrief = [
         `TURN ${before.turn} DEBRIEF`,
         `WHAT CHANGED: ${playerLines.length ? playerLines.join("; ") : "no surviving ordered squads"}`,
@@ -289,7 +300,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         delta,
         `PLAYER RESULT: ${battleLines.length ? battleLines.join("; ") : "no battle observed"}`,
         `ENEMY PHASE OBSERVED: ${enemyLines.length ? enemyLines.join("; ") : "none"}`,
-        `WHY: observed state/events above determine the result`,
+        `WHY: ${attackChoices.length ? attackChoices.join("; ") : "observed state/events above determine the result"}`,
         `NEXT: ${nextChoices}`,
       ].join("\n");
       setGame(enemy.nextState);
