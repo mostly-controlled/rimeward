@@ -1380,7 +1380,7 @@ describe("Editable turn plan", () => {
     click(
       queue().querySelector(`[aria-label^="Cancel "][aria-label*="${id}"]`)!,
     );
-  const mount = async (initialGame = createNewCampaign(42024)) => {
+  const mount = async (initialGame?: ReturnType<typeof createNewCampaign>) => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App initialGame={initialGame} />));
@@ -1871,12 +1871,35 @@ describe("Editable turn plan", () => {
     expect(rows()).toHaveLength(0);
     expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
     expect(document.querySelector(".event-rail")?.textContent).toContain(
-      "squad-1 move sector-1",
+      "squad-1 move Whiteplain",
     );
     expect(document.querySelector(".event-rail")?.textContent).toContain(
-      "squad-2 move sector-11",
+      "squad-2 move Lastlight",
     );
     await act(async () => root.unmount());
+  });
+
+  it("persists one actual destination through execute and reload", async () => {
+    window.localStorage.clear();
+    const root = await mount();
+    await target("Whiteplain");
+    expect(rows()).toHaveLength(1);
+    await click(execute());
+    expect(document.querySelector(".event-rail")?.textContent).toContain(
+      "squad-1 move Whiteplain",
+    );
+    expect(document.querySelector(".event-rail")?.textContent).not.toContain(
+      "squad-1 move sector-11",
+    );
+    await act(async () => root.unmount());
+
+    const reloaded = await mount();
+    expect(document.querySelector(".event-rail")?.textContent).toContain(
+      "squad-1 move Whiteplain",
+    );
+    expect(rows()).toHaveLength(0);
+    await act(async () => reloaded.unmount());
+    window.localStorage.clear();
   });
 
   it("replaces one squad plan, executes the remaining queue, and does not restore queued orders on restart", async () => {
