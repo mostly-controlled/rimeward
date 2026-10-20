@@ -308,9 +308,9 @@ describe("App interactions", () => {
       ...document.querySelector(".side-panel")!.children,
     ].map((node) => node.className);
     expect(initialSidebar).toEqual([
+      "card debrief-panel",
       "card squad-panel",
       "card orders",
-      "card debrief-panel",
       "card event-rail",
     ]);
     expect(document.querySelector(".seed-readout")?.textContent).toBe(
@@ -356,21 +356,16 @@ describe("App interactions", () => {
     ).toBe(true);
     expect(
       report?.nextElementSibling?.nextElementSibling?.nextElementSibling?.classList.contains(
-        "debrief-panel",
-      ),
-    ).toBe(true);
-    expect(
-      report?.nextElementSibling?.nextElementSibling?.nextElementSibling?.nextElementSibling?.classList.contains(
         "event-rail",
       ),
     ).toBe(true);
     expect(
       [...report!.parentElement!.children].map((node) => node.className),
     ).toEqual([
+      "card debrief-panel",
       "reports card",
       "card squad-panel",
       "card orders",
-      "card debrief-panel",
       "card event-rail",
     ]);
 
@@ -550,6 +545,10 @@ describe("App interactions", () => {
     expect(debrief).toContain("ENEMY PHASE OBSERVED:");
     expect(debrief).toContain("NEXT:");
     expect(document.querySelector('[aria-label="Last turn debrief"]')).not.toBe(document.querySelector(".event-rail"));
+    expect(debrief).toContain("RELAY CONTROL:");
+    expect(debrief).toContain("UNASSIGNED FATIGUE:");
+    expect(debrief).toContain("SQUAD LOSSES:");
+    expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".orders") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(document.querySelector('[role="status"]')?.textContent).toContain("saved");
     await act(async () => root.unmount());
     document.body.innerHTML = '<div id="root"></div>';
