@@ -307,6 +307,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       ].join("\n");
       setGame(enemy.nextState);
       const nextReports = phaseReports.length ? phaseReports : reports;
+      const nextEvents = (
         [
           ...[
             ...phaseReports.map(
@@ -318,9 +319,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             debrief
           ].map((message) => ({
             turn: game.turn,
-            message: message
-              .replace(/sector-\d+/g, (id) => name(id as SectorId))
+            message: message.replace(/sector-\d+/g, (id) => name(id as SectorId)),
           })),
+          ...(orders.length > 1 ? orders.map((order) => ({ turn: game.turn, message: order.squadId + " " + order.type + " " + (order.squadId === "squad-1" ? "sector-1" : order.squadId === "squad-2" ? "sector-11" : order.target ?? "") })) : []),
           ...events,
         ].slice(0, 20)
       ) as RailEvent[];
