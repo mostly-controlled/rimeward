@@ -519,7 +519,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     const campaign = createNewCampaign(42024);
-    const initialGame = { ...campaign, squads: campaign.squads.map((squad, index) => index === 0 ? { ...squad, sector: "sector-5" as const } : squad) };
+    const initialGame = { ...campaign, squads: campaign.squads.map((squad, index) => index === 0 ? { ...squad, sector: "sector-5" as const, strength: 1, fatigue: 3 } : squad) };
     writeSave({ version: SAVE_VERSION, game: initialGame, events: [], reports: [] });
     await act(async () => root.render(<App />));
     await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement).click());
@@ -546,6 +546,7 @@ describe("App interactions", () => {
     expect(debrief).toContain("RELAY CONTROL:");
     expect(debrief).toContain("UNASSIGNED FATIGUE:");
     expect(debrief).toContain("SQUAD LOSSES:");
+    expect(debrief).toMatch(/WHY: .*STR 1, FTG 3.*ATTACK risks losing this squad.*HOLD.*RECOVER/);
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".map-panel") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".orders") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(document.querySelector('[role="status"]')?.textContent).toContain("saved");
