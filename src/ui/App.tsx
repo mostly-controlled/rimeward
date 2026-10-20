@@ -658,7 +658,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   );
                 })}
               </svg>
-              <div className="legend">
+              <div className="legend" aria-label="Map legend">
                 <span>
                   <i className="legend-dot player" />
                   WARD
@@ -672,6 +672,14 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   UNHELD
                 </span>
                 <span>◈ RELAY</span>
+                <span className="plan-key" aria-label="Planned order key">
+                  <i className="plan-line move" />
+                  PLAN · MOVE
+                </span>
+                <span className="plan-key">
+                  <i className="plan-line attack" />
+                  PLAN · ATTACK
+                </span>
               </div>
             </section>
             <aside className="side-panel">
