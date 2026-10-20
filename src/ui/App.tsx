@@ -98,7 +98,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       : "",
   );
   const [error, setError] = useState("");
-=======
   const latestDebrief = events.find((event) => event.message.startsWith("TURN ") && event.message.includes(" DEBRIEF"));
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
     if (!storageEnabled) return null;
@@ -596,14 +595,14 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             </p>
           </section>
 
+          <section className="card debrief-panel" aria-label="Last turn debrief">
+            <div className="panel-heading">
+              <h2>WHAT CHANGED / WHY</h2>
+              <span className="muted">LAST TURN</span>
+            </div>
+            {latestDebrief ? latestDebrief.message.split("\n").map((line) => <p key={line.slice(0, 40)}>{line}</p>) : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+          </section>
           <div className="battle-layout">
-            <section className="card debrief-panel" aria-label="Last turn debrief">
-              <div className="panel-heading">
-                <h2>WHAT CHANGED / WHY</h2>
-                <span className="muted">LAST TURN</span>
-              </div>
-              {latestDebrief ? latestDebrief.message.split("\n").map((line) => <p key={line.slice(0, 40)}>{line}</p>) : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
-            </section>
             <section className="map-panel card">
               <div className="panel-heading">
                 <div>

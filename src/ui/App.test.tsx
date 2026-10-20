@@ -783,6 +783,11 @@ describe("App interactions", () => {
     expect(debrief).toMatch(/WHY: .*STR 1, FTG 3.*ATTACK risks losing this squad.*HOLD.*RECOVER/);
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".map-panel") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".orders") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const debriefElement = document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement;
+    const battleLayout = document.querySelector(".battle-layout") as HTMLElement;
+    expect(debriefElement.parentElement).toBe(battleLayout.parentElement);
+    expect(debriefElement.compareDocumentPosition(battleLayout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect([...battleLayout.children].map((child) => child.className)).toEqual(["map-panel card", "side-panel"]);
     expect(document.querySelector('[role="status"]')?.textContent).toContain("saved");
     await act(async () => root.unmount());
     document.body.innerHTML = '<div id="root"></div>';
