@@ -142,6 +142,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     [game, squad],
   );
   const orderFor = (id: string) => orders.find((o) => o.squadId === id);
+  const routeOrders = orders.filter(
+    (order): order is Order & { target: SectorId } =>
+      (order.type === "move" || order.type === "attack") && Boolean(order.target),
+  );
   const unassignedSquads = game.squads.filter((unit) => unit.strength > 0 && !orderFor(unit.id));
   const canHoldUnassigned = game.terminal === "active" && unassignedSquads.length > 0;
   const holdUnassigned = () => {
@@ -523,13 +527,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     )),
                 )}
                 <g className="planned-orders" aria-label="Planned orders">
-                  {orders
-                    .filter(
-                      (order): order is Order & { target: SectorId } =>
-                        (order.type === "move" || order.type === "attack") &&
-                        Boolean(order.target),
-                    )
-                    .map((order) => {
+                  {routeOrders.map((order) => {
                       const unit = game.squads.find((s) => s.id === order.squadId);
                       const target = order.target;
                       if (!unit || !target) return null;
@@ -680,6 +678,17 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   <i className="plan-line attack" />
                   PLAN · ATTACK
                 </span>
+                {routeOrders.map((order) => (
+                  <span
+                    className="plan-key plan-entry"
+                    key={order.squadId + "-" + order.type + "-" + order.target}
+                    aria-label={"Queued order " + order.squadId + " " + order.type + " " + sectorName(order.target)}
+                  >
+                    <i className={"plan-line " + order.type} />
+                    {order.squadId} · {order.type.toUpperCase()} →{" "}
+                    {sectorName(order.target)}
+                  </span>
+                ))}
               </div>
             </section>
             <aside className="side-panel">
