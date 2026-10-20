@@ -97,15 +97,22 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     energy: Math.max(0, -remaining.energy),
   };
   const affordable = shortfall.metal === 0 && shortfall.energy === 0;
-  const expectedReports = useMemo(() => {
-    if (!orders.some((order) => order.type === "attack")) return [];
-    try {
-      const planned = resolveTurn(game, orders);
-      return resolveCombat(planned.nextState, planned.events).reports;
-    } catch {
-      return [];
-    }
-  }, [game, orders]);
+  const assaultForecasts = useMemo(
+    () =>
+      orders
+        .filter((order): order is Order & { type: "attack" } => order.type === "attack" && Boolean(order.target))
+        .map((order) => {
+          const target = order.target!;
+          const knownDefenders = game.enemySquads.filter(
+            (enemy) => enemy.sector === target && game.revealedEnemySquads.includes(enemy.id),
+          );
+          const hiddenDefenders = game.enemySquads.some(
+            (enemy) => enemy.sector === target && !game.revealedEnemySquads.includes(enemy.id),
+          );
+          return { target, knownDefenders, hiddenDefenders };
+        }),
+    [game, orders],
+  );
   const squad =
     game.squads.find((s) => s.id === selectedSquad) ?? game.squads[0];
   const selectedId = squad?.id ?? "";
@@ -778,12 +785,16 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     })()
                   ))}
                 </section>
-                {expectedReports.length > 0 && (
+                {assaultForecasts.length > 0 && (
                   <section className="expected-losses" aria-label="Expected assault losses">
-                    <h3>EXPECTED ASSAULT LOSSES</h3>
-                    {expectedReports.map((report) => (
-                      <p key={report.target}>
-                        {report.target}: Ward −{report.playerCasualties} · hostile −{report.enemyCasualties}
+                    <h3>ASSAULT FORECAST</h3>
+                    {assaultForecasts.map(({ target, knownDefenders, hiddenDefenders }) => (
+                      <p key={target}>
+                        {sectorName(target)}: {hiddenDefenders
+                          ? "Defenders unknown; outcome and losses are uncertain."
+                          : knownDefenders.length
+                            ? `Known hostile presence (${knownDefenders.map((enemy) => enemy.class.toUpperCase()).join(", ")}); outcome and losses are uncertain.`
+                            : "No known defenders; hidden defenders may be present. Outcome and losses are uncertain."}
                       </p>
                     ))}
                   </section>
