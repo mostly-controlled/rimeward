@@ -1218,6 +1218,18 @@ describe("Editable turn plan", () => {
     await act(async () => root.unmount());
   });
 
+  it("shows a readable key for planned map routes", async () => {
+    const root = await mount();
+
+    const legend = document.querySelector('[aria-label="Map legend"]');
+    expect(legend?.textContent).toContain("PLAN · MOVE");
+    expect(legend?.textContent).toContain("PLAN · ATTACK");
+    expect(legend?.querySelector(".plan-line.move")).toBeTruthy();
+    expect(legend?.querySelector(".plan-line.attack")).toBeTruthy();
+
+    await act(async () => root.unmount());
+  });
+
   it("routes a multi-queue to distinct targets, executes both plans, and clears the map trace", async () => {
     const root = await mount();
     await target("Whiteplain");
