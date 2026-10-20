@@ -16,21 +16,35 @@ import {
   type ResearchBranch,
   type SectorId,
 } from "../game/simulation";
-import { readSave, readSaveNotice, SAVE_VERSION, writeSave } from "../game/persistence";
+import {
+  readSave,
+  readSaveNotice,
+  SAVE_VERSION,
+  writeSave,
+} from "../game/persistence";
 
 type RailEvent = { turn: number; message: string };
 
 const queuedCost = (orders: Order[], state: GameState) =>
   orders.reduce(
     (total, order) => ({
-      metal: total.metal + (order.type === "attack" ? 2 : order.type === "recover" ? recoveryMetalCost(state) : 0),
-      energy: total.energy + (order.type === "attack" ? 3 : order.type === "recover" ? 2 : 0),
+      metal:
+        total.metal +
+        (order.type === "attack"
+          ? 2
+          : order.type === "recover"
+            ? recoveryMetalCost(state)
+            : 0),
+      energy:
+        total.energy +
+        (order.type === "attack" ? 3 : order.type === "recover" ? 2 : 0),
     }),
     { metal: 0, energy: 0 },
   );
 
 const SEED = 42024;
-const SAVE_SUCCESS = "Completed turns and research saved; queued orders are not saved.";
+const SAVE_SUCCESS =
+  "Completed turns and research saved; queued orders are not saved.";
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
     Logistics: [
@@ -46,6 +60,14 @@ const researchEffect = (branch: ResearchBranch, level: number) =>
       "Reveal hostile identities, sectors, and routes",
     ],
   })[branch][Math.max(0, Math.min(level - 1, 1))];
+export const battleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captured">) =>
+  report.winner === "draw"
+    ? "contested, no capture"
+    : report.winner === "player"
+      ? report.captured
+        ? "captured"
+        : "won; not captured"
+      : "lost";
 const pos: Record<string, [number, number]> = {
   "sector-0": [95, 170],
   "sector-1": [180, 95],
@@ -73,12 +95,26 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     useState<Extract<OrderType, "move" | "attack">>("move");
   const [orders, setOrders] = useState<Order[]>([]);
   const [events, setEvents] = useState<RailEvent[]>(() => loaded?.events ?? []);
-  const [reports, setReports] = useState<BattleReport[]>(() => loaded?.reports ?? []);
-  const [saveStatus, setSaveStatus] = useState(!initialGame ? (loaded ? `RESUMED SAVED CAMPAIGN — ${SAVE_SUCCESS}` : readSaveNotice()) : "");
+  const [reports, setReports] = useState<BattleReport[]>(
+    () => loaded?.reports ?? [],
+  );
+  const [saveStatus, setSaveStatus] = useState(
+    !initialGame
+      ? loaded
+        ? `RESUMED SAVED CAMPAIGN — ${SAVE_SUCCESS}`
+        : readSaveNotice()
+      : "",
+  );
   const [error, setError] = useState("");
+  const latestDebrief = events.find((event) => event.message.startsWith("TURN ") && event.message.includes(" DEBRIEF"));
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
     if (!storageEnabled) return null;
-    const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events: nextEvents, reports: nextReports });
+    const warning = writeSave({
+      version: SAVE_VERSION,
+      game: nextGame,
+      events: nextEvents,
+      reports: nextReports,
+    });
     if (warning) {
       setSaveStatus(warning);
     } else {
@@ -97,15 +133,22 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     energy: Math.max(0, -remaining.energy),
   };
   const affordable = shortfall.metal === 0 && shortfall.energy === 0;
-  const expectedReports = useMemo(() => {
-    if (!orders.some((order) => order.type === "attack")) return [];
-    try {
-      const planned = resolveTurn(game, orders);
-      return resolveCombat(planned.nextState, planned.events).reports;
-    } catch {
-      return [];
-    }
-  }, [game, orders]);
+  const assaultForecasts = useMemo(
+    () =>
+      orders
+        .filter((order): order is Order & { type: "attack" } => order.type === "attack" && Boolean(order.target))
+        .map((order) => {
+          const target = order.target!;
+          const knownDefenders = game.enemySquads.filter(
+            (enemy) => enemy.sector === target && game.revealedEnemySquads.includes(enemy.id),
+          );
+          const hiddenDefenders = game.enemySquads.some(
+            (enemy) => enemy.sector === target && !game.revealedEnemySquads.includes(enemy.id),
+          );
+          return { target, knownDefenders, hiddenDefenders };
+        }),
+    [game, orders],
+  );
   const squad =
     game.squads.find((s) => s.id === selectedSquad) ?? game.squads[0];
   const selectedId = squad?.id ?? "";
@@ -122,15 +165,18 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     : 0;
   const recoverySupplied = Boolean(
     squad &&
-      connectedIds.has(squad.sector) &&
-      game.sectors.find((sector) => sector.id === squad.sector)?.owner ===
-        "player",
+    connectedIds.has(squad.sector) &&
+    game.sectors.find((sector) => sector.id === squad.sector)?.owner ===
+      "player",
   );
   const recoveryHasBenefit = Boolean(
     squad &&
-      (recoveryStrengthAfter > squad.strength ||
-        recoveryFatigueAfter < squad.fatigue),
+    (recoveryStrengthAfter > squad.strength ||
+      recoveryFatigueAfter < squad.fatigue),
   );
+  const attackRiskRationale = squad
+    ? `ATTACK RISK · STR ${squad.strength}, FTG ${squad.fatigue}: HOLD is free and changes FTG to ${Math.max(0, squad.fatigue - 1)}; ${recoverySupplied ? `RECOVER costs ${recoveryMetalCost(game)} metal + 2 energy and changes STR to ${recoveryStrengthAfter}, FTG to ${recoveryFatigueAfter}` : "RECOVER is unavailable while unsupplied"}. ATTACK costs 2 metal + 3 energy and is available only against a legal target.`
+    : "ATTACK RISK · select a squad to compare HOLD and RECOVER.";
   useEffect(() => {
     if (selectedSquad !== selectedId) setSelectedSquad(selectedId);
   }, [selectedId, selectedSquad]);
@@ -141,9 +187,41 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         : [],
     [game, squad],
   );
+  const legalTargets = useMemo(
+    () =>
+      squad
+        ? reachable
+            .map((id) => game.sectors.find((sector) => sector.id === id))
+            .filter((sector): sector is GameState["sectors"][number] => {
+              if (!sector || sector.id === squad.sector) return false;
+              const occupied = game.enemySquads.some(
+                (enemy) => enemy.sector === sector.id,
+              );
+              return selectedAction === "attack"
+                ? sector.owner !== "player"
+                : sector.owner !== "enemy" && !occupied;
+            })
+        : [],
+    [game, reachable, selectedAction, squad],
+  );
   const orderFor = (id: string) => orders.find((o) => o.squadId === id);
-  const unassignedSquads = game.squads.filter((unit) => unit.strength > 0 && !orderFor(unit.id));
-  const canHoldUnassigned = game.terminal === "active" && unassignedSquads.length > 0;
+  const routeOrders = orders.filter(
+    (order): order is Order & { target: SectorId } =>
+      (order.type === "move" || order.type === "attack") && Boolean(order.target),
+  );
+  const guideQueue = orders.length
+    ? orders
+        .map((order) => {
+          const owner = game.squads.find((unit) => unit.id === order.squadId);
+          return `${owner?.class.toUpperCase() ?? order.squadId} ${order.squadId.slice(-1)} · ${order.type.toUpperCase()}`;
+        })
+        .join(", ")
+    : "";
+  const unassignedSquads = game.squads.filter(
+    (unit) => unit.strength > 0 && !orderFor(unit.id),
+  );
+  const canHoldUnassigned =
+    game.terminal === "active" && unassignedSquads.length > 0;
   const holdUnassigned = () => {
     if (!canHoldUnassigned) return;
     setError("");
@@ -155,7 +233,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         .map((unit) => ({ squadId: unit.id, type: "hold" as const })),
     ]);
   };
-  const sectorName = (id?: SectorId) => id ? game.sectors.find((sector) => sector.id === id)?.name ?? id : "—";
+  const sectorName = (id?: SectorId) =>
+    id ? (game.sectors.find((sector) => sector.id === id)?.name ?? id) : "—";
   const enemyHq = game.sectors.find((sector) => sector.id === game.hq.enemy);
   const playerHq = game.sectors.find((sector) => sector.id === game.hq.player);
   const campaignObjectives = [
@@ -180,16 +259,67 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   };
   const cancelOrder = (squadId: string) => {
     if (game.terminal !== "active") return;
-    setOrders((previous) => previous.filter((order) => order.squadId !== squadId));
+    setOrders((previous) =>
+      previous.filter((order) => order.squadId !== squadId),
+    );
     setError("");
   };
   const execute = () => {
     if (!orders.length || !affordable || game.terminal !== "active") return;
     try {
+      const before = game;
       const turn = resolveTurn(game, orders);
       const combat = resolveCombat(turn.nextState, turn.events);
       const enemy = resolveEnemyTurn(combat.nextState);
       const phaseReports = [...combat.reports, ...enemy.reports];
+      const name = (id?: SectorId) => id ? before.sectors.find((sector) => sector.id === id)?.name ?? id : "unknown sector";
+      const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
+      const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const afterStrength = after?.strength ?? 0; const afterFatigue = after?.fatigue ?? unit.fatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
+      const battleLines = phaseReports.map((report) => name(report.target) + ": " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
+      const enemyLines = enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
+      const relayLines = before.objectives.map((objective) => {
+        const sector = before.sectors.find((candidate) => candidate.id === objective.sector);
+        const after = sector && enemy.nextState.sectors.find((candidate) => candidate.id === sector.id);
+        return sector && after && after.owner !== sector.owner ? `${sector.name}: ${sector.owner} → ${after.owner}` : null;
+      }).filter(Boolean) as string[];
+      const unassignedFatigue = before.squads.map((unit) => {
+        if (orders.some((order) => order.squadId === unit.id) || unit.strength <= 0) return null;
+        const after = enemy.nextState.squads.find((candidate) => candidate.id === unit.id);
+        return after && after.fatigue !== unit.fatigue ? `${unit.class} at ${name(unit.sector)}: FTG ${unit.fatigue} → ${after.fatigue}` : null;
+      }).filter(Boolean) as string[];
+      const squadLosses = before.squads.map((unit) => {
+        const after = enemy.nextState.squads.find((candidate) => candidate.id === unit.id);
+        const afterStrength = after?.strength ?? 0;
+        return afterStrength < unit.strength ? `${unit.class}: STR ${unit.strength} → ${afterStrength}${afterStrength <= 0 ? " (DEAD)" : ""}` : null;
+      }).filter(Boolean) as string[];
+      const survivingSquads = enemy.nextState.squads.filter((unit) => unit.strength > 0);
+      const nextChoices = enemy.nextState.terminal !== "active"
+        ? "campaign complete — no further orders are available"
+        : survivingSquads.length === 0
+          ? "no surviving squads — restart the campaign"
+          : "choose HOLD to reduce fatigue, RECOVER for strength, or ATTACK a legal target";
+      const delta = `RESOURCES Δ metal ${resourceDelta("metal") >= 0 ? "+" : ""}${resourceDelta("metal")}, energy ${resourceDelta("energy") >= 0 ? "+" : ""}${resourceDelta("energy")}, intel ${resourceDelta("intelligence") >= 0 ? "+" : ""}${resourceDelta("intelligence")}`;
+      const attackChoices = orders.map((order) => {
+        if (order.type !== "attack") return null;
+        const unit = before.squads.find((candidate) => candidate.id === order.squadId);
+        if (!unit) return null;
+        if (unit.strength <= 1 || unit.fatigue >= 3) {
+          return `${unit.class} at ${name(unit.sector)} attacked at STR ${unit.strength}, FTG ${unit.fatigue}: ATTACK risks losing this squad; HOLD reduces fatigue by 1, while RECOVER costs 6 metal + 2 energy for strength/fatigue recovery when available`;
+        }
+        return `${unit.class} at ${name(unit.sector)} attacked at STR ${unit.strength}, FTG ${unit.fatigue}: weigh ATTACK's 2 metal + 3 energy cost against HOLD fatigue reduction or RECOVER's strength recovery`;
+      }).filter(Boolean) as string[];
+      const debrief = [
+        `TURN ${before.turn} DEBRIEF`,
+        `WHAT CHANGED: ${playerLines.length ? playerLines.join("; ") : "no surviving ordered squads"}`,
+        `RELAY CONTROL: ${relayLines.length ? relayLines.join("; ") : "no ownership change observed"}`,
+        `UNASSIGNED FATIGUE: ${unassignedFatigue.length ? unassignedFatigue.join("; ") : "no unassigned fatigue change"}`,
+        `SQUAD LOSSES: ${squadLosses.length ? squadLosses.join("; ") : "no squad strength loss observed"}`,
+        delta,
+        `PLAYER RESULT: ${battleLines.length ? battleLines.join("; ") : "no battle observed"}`,
+        `ENEMY PHASE OBSERVED: ${enemyLines.length ? enemyLines.join("; ") : "none"}`,
+        `WHY: ${attackChoices.length ? attackChoices.join("; ") : "observed state/events above determine the result"}`,
+        `NEXT: ${nextChoices}`,
+      ].join("\n");
       setGame(enemy.nextState);
       const nextReports = phaseReports.length ? phaseReports : reports;
       const nextEvents = (
@@ -201,9 +331,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             ),
             ...enemy.events.map((e) => e.message),
             ...turn.events.map((e) => e.message),
-          ].map((message) => ({ turn: game.turn, message })),
+            debrief
+          ].map((message) => ({
+            turn: game.turn,
+            message: message.replace(/sector-\d+/g, (id) => name(id as SectorId)),
+          })),
           ...events,
-        ].slice(0, 12)
+        ].slice(0, 20)
       ) as RailEvent[];
       if (phaseReports.length) setReports(phaseReports);
       setEvents(nextEvents);
@@ -242,7 +376,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
           <h1>THE WHITE LINE</h1>
           <h2>NO SURVIVORS</h2>
           <p>The Ward has no active squads. The campaign is over.</p>
-          {saveStatus && <p className="save-status" role="status">{saveStatus}</p>}
+          {saveStatus && (
+            <p className="save-status" role="status">
+              {saveStatus}
+            </p>
+          )}
           <button className="primary" onClick={reset}>
             NEW CAMPAIGN · SEED {game.seed}
           </button>
@@ -325,7 +463,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         </section>
       ) : (
         <>
-          {saveStatus && <p className="save-status" role="status">{saveStatus}</p>}
+          {saveStatus && (
+            <p className="save-status" role="status">
+              {saveStatus}
+            </p>
+          )}
           {game.terminal !== "active" && (
             <section className="terminal card">
               <p className="eyebrow">CAMPAIGN TERMINAL</p>
@@ -375,116 +517,108 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               /3
             </span>
           </section>
-          <section className="campaign-objectives card" aria-label="Campaign objectives">
+          <section
+            className="campaign-objectives card"
+            aria-label="Campaign objectives"
+          >
             <div className="panel-heading">
               <h2>CAMPAIGN OBJECTIVES</h2>
               {game.terminal === "active" ? (
                 <span className="muted">
-                  {Math.max(0, 19 - game.turn)} {Math.max(0, 19 - game.turn) === 1 ? "PLAYABLE TURN" : "PLAYABLE TURNS"} REMAINING INCLUDING THIS TURN
+                  {Math.max(0, 19 - game.turn)}{" "}
+                  {Math.max(0, 19 - game.turn) === 1
+                    ? "PLAYABLE TURN"
+                    : "PLAYABLE TURNS"}{" "}
+                  REMAINING INCLUDING THIS TURN
                 </span>
               ) : (
                 <span className="muted">CAMPAIGN COMPLETE</span>
               )}
             </div>
-            <p className="muted">Secure all relays and capture enemy HQ. Defend {playerHq?.name ?? game.hq.player}.</p>
+            <p className="muted">
+              Secure all relays and capture enemy HQ. Defend{" "}
+              {playerHq?.name ?? game.hq.player}.
+            </p>
             <div className="objective-list">
               {campaignObjectives.map((objective) => (
                 <div className="objective" key={objective.key}>
-                  <b>{objective.key === "enemy-hq" ? "Enemy HQ" : "Relay"} — {objective.label}</b> · {objective.status}
+                  <b>
+                    {objective.key === "enemy-hq" ? "Enemy HQ" : "Relay"} —{" "}
+                    {objective.label}
+                  </b>{" "}
+                  · {objective.status}
                 </div>
               ))}
             </div>
           </section>
-          <section className="income card">
-            <b>HQ-CONNECTED INCOME</b>
-            {game.sectors
-              .filter((s) => s.owner === "player")
-              .map((s) => (
-                <span key={s.id}>
-                  {s.name}:{" "}
-                  {(() => {
-                    const connected = connectedOwnedSectors(game).some(
-                      (x) => x.id === s.id,
-                    );
-                    const interrupted = game.enemySquads.some(
-                      (enemy) => enemy.strength > 0 && enemy.sector === s.id,
-                    );
-                    const site =
-                      s.id === game.hq.player
-                        ? "HQ"
-                        : s.id === "sector-2" || s.id === "sector-10"
-                          ? "DEPOT"
-                          : s.id === "sector-3" || s.id === "sector-9"
-                            ? "RELAY"
-                            : "LAND";
-                    if (!connected) return `${site} DISCONNECTED · +0M +0E +0I`;
-                    if (interrupted) return `${site} INTERRUPTED · +0M +0E +0I`;
-                    const metal = site === "HQ" ? 2 : site === "LAND" ? 0 : 1;
-                    const energy = site === "HQ" ? 2 : site === "LAND" ? 0 : 1;
-                    const intel = site === "HQ" ? 1 : 0;
-                    return `${site} CONNECTED · +${metal}M +${energy}E +${intel}I`;
-                  })()}
-                </span>
-              ))}
-            <strong>
-              TOTAL +{income.metal}M +{income.energy}E +{income.intelligence}I /
-              TURN
-            </strong>
-          </section>
-          <section className="intel card" aria-label="Signals intelligence">
-            <b>SIGNALS INTELLIGENCE</b>{" "}
-            {game.researchLevels.Signals === 0 ? (
-              "POSITIONS OBSCURED"
+          <section className="turn-guide" aria-label="Turn guide">
+            <p className="eyebrow">TURN GUIDE · TURN {game.turn}</p>
+            <h3>GOAL</h3>
+            <p>
+              {game.terminal === "active"
+                ? `Secure ${campaignObjectives.find((objective) => objective.status === "REQUIRED")?.label ?? "the frontier"}.`
+                : game.terminal === "victory"
+                  ? "The frontier is secure."
+                  : "The campaign has ended."}
+            </p>
+            {game.terminal === "active" ? (
+              <ol>
+                <li>
+                  <strong>SELECT SQUAD</strong> — {squad.class.toUpperCase()}{" "}
+                  {squad.id.slice(-1)} at {sectorName(squad.sector)} (STR{" "}
+                  {squad.strength}, FTG {squad.fatigue}).
+                </li>
+                <li>
+                  <strong>CHOOSE {selectedAction.toUpperCase()}</strong> —{" "}
+                  {selectedAction === "attack"
+                    ? "ATTACK is available only when a legal target exists; choose one below."
+                    : "pick a highlighted legal destination below."}
+                </li>
+                <li>
+                  <strong>
+                    {legalTargets.length
+                      ? "HIGHLIGHTED LEGAL DESTINATION"
+                      : "NO LEGAL TARGETS"}
+                  </strong>{" "}
+                  —{" "}
+                  {legalTargets.length
+                    ? legalTargets.map((target) => target.name).join(", ")
+                    : selectedAction === "attack"
+                      ? recoverySupplied
+                        ? "no enemy target is reachable; use HOLD or select another squad."
+                        : "no enemy target is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."
+                      : recoverySupplied
+                        ? "no unoccupied friendly destination is reachable; use HOLD or RECOVER, or select ATTACK when an enemy-held destination is legal."
+                        : "no unoccupied friendly destination is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."}
+                </li>
+                <li>
+                  <strong>
+                    {orders.length ? "QUEUED — NOT EXECUTED" : "NOT QUEUED"}
+                  </strong>{" "}
+                  —{" "}
+                  {orders.length
+                    ? `${guideQueue}. Cancel an order to revise, then EXECUTE TURN.`
+                    : "select a highlighted destination to queue it."}
+                </li>
+              </ol>
             ) : (
-              <>
-                {game.enemySquads
-                  .filter((enemy) =>
-                    game.revealedEnemySquads.includes(enemy.id),
-                  )
-                  .map((enemy) => (
-                    <span key={enemy.id}>
-                      {" "}
-                      {enemy.class.toUpperCase()} {enemy.id} @{" "}
-                      {
-                        game.sectors.find(
-                          (sector) => sector.id === enemy.sector,
-                        )?.name
-                      }
-                    </span>
-                  ))}{" "}
-                · TIER {game.researchLevels.Signals}
-              </>
+              <p className="muted">
+                Terminal state: {game.terminal.toUpperCase()}. Orders are
+                disabled.
+              </p>
             )}
-            {game.scoutedEnemyRoutes.length > 0 && (
-              <small>
-                {" "}
-                · ROUTE INTENTS:{" "}
-                {game.scoutedEnemyRoutes
-                  .map(
-                    (route, index) =>
-                      `${game.enemySquads[index]?.id ?? "enemy"} ${route}`,
-                  )
-                  .join(" · ")}
-              </small>
-            )}
+            <p className="muted">
+              STR = strength. FTG = fatigue. HOLD lowers FTG by 1. RECOVER
+              restores STR and lowers FTG when supplied.
+            </p>
           </section>
-          <section
-            className="research-effects card"
-            aria-label="Research effects"
-          >
-            {(["Logistics", "Warfare", "Signals"] as ResearchBranch[]).map(
-              (branch) => (
-                <span key={branch}>
-                  <b>
-                    {branch} TIER {game.researchLevels[branch]}
-                  </b>{" "}
-                  ·{" "}
-                  {game.researchLevels[branch]
-                    ? researchEffect(branch, game.researchLevels[branch])
-                    : `NEXT: ${researchEffect(branch, 0)}`}
-                </span>
-              ),
-            )}
+
+          <section className="card debrief-panel" aria-label="Last turn debrief">
+            <div className="panel-heading">
+              <h2>WHAT CHANGED / WHY</h2>
+              <span className="muted">LAST TURN</span>
+            </div>
+            {latestDebrief ? latestDebrief.message.split("\n").map((line) => <p key={line.slice(0, 40)}>{line}</p>) : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
           </section>
           <div className="battle-layout">
             <section className="map-panel card">
@@ -501,6 +635,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 role="img"
                 aria-label="Tactical sector map"
               >
+                <defs>
+                  {(["move", "attack"] as const).map((type) => (
+                    <marker id={`planned-arrow-${type}`} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" key={type}>
+                      <path d="M0,0 L7,3.5 L0,7 z" className={`planned-arrow planned-arrow-${type}`} fill="#f0dda1" stroke="#071114" strokeWidth="0.8" />
+                    </marker>
+                  ))}
+                </defs>
                 {game.sectors.flatMap((s) =>
                   s.links
                     .filter((l) => s.id < l)
@@ -515,6 +656,55 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       />
                     )),
                 )}
+                <g className="planned-orders" aria-label="Planned orders">
+                  {routeOrders.map((order) => {
+                      const unit = game.squads.find((s) => s.id === order.squadId);
+                      const target = order.target;
+                      if (!unit || !target) return null;
+                      const origin = pos[unit.sector];
+                      const destination = pos[target];
+                      const sharedOrders = orders.filter(
+                        (candidate) =>
+                          (candidate.type === "move" || candidate.type === "attack") &&
+                          candidate.target === target,
+                      );
+                      const sharedIndex = sharedOrders.findIndex(
+                        (candidate) => candidate.squadId === order.squadId,
+                      );
+                      const offset = sharedOrders.length > 1 ? (sharedIndex - (sharedOrders.length - 1) / 2) * 9 : 0;
+                      const dx = destination[0] - origin[0];
+                      const dy = destination[1] - origin[1];
+                      const length = Math.hypot(dx, dy) || 1;
+                      const nx = -dy / length;
+                      const ny = dx / length;
+                      const startX = origin[0] + nx * offset;
+                      const startY = origin[1] + ny * offset;
+                      const endX = destination[0] + nx * offset;
+                      const endY = destination[1] + ny * offset;
+                      const labelX = (startX + endX) / 2 + nx * 12;
+                      const labelY = (startY + endY) / 2 + ny * 12;
+                      return (
+                        <g
+                          className="planned-order"
+                          data-order-id={order.squadId}
+                          data-target={target}
+                          key={`${order.squadId}-${order.type}-${target}`}
+                        >
+                          <line
+                            className={`planned-route planned-${order.type}`}
+                            x1={startX}
+                            y1={startY}
+                            x2={endX}
+                            y2={endY}
+                            markerEnd={`url(#planned-arrow-${order.type})`}
+                          />
+                          <text className="planned-label" x={labelX} y={labelY} textAnchor="middle">
+                            PLAN · {order.type.toUpperCase()} · {unit.id}
+                          </text>
+                        </g>
+                      );
+                    })}
+                </g>
                 {game.sectors.map((s) => {
                   const [x, y] = pos[s.id];
                   const active = s.id === squad.sector;
@@ -596,7 +786,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   );
                 })}
               </svg>
-              <div className="legend">
+              <div className="legend" aria-label="Map legend">
                 <span>
                   <i className="legend-dot player" />
                   WARD
@@ -610,6 +800,25 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   UNHELD
                 </span>
                 <span>◈ RELAY</span>
+                <span className="plan-key" aria-label="Planned order key">
+                  <i className="plan-line move" />
+                  PLAN · MOVE
+                </span>
+                <span className="plan-key">
+                  <i className="plan-line attack" />
+                  PLAN · ATTACK
+                </span>
+                {routeOrders.map((order) => (
+                  <span
+                    className="plan-key plan-entry"
+                    key={order.squadId + "-" + order.type + "-" + order.target}
+                    aria-label={"Queued order " + order.squadId + " " + order.type + " " + sectorName(order.target)}
+                  >
+                    <i className={"plan-line " + order.type} />
+                    {order.squadId} · {order.type.toUpperCase()} →{" "}
+                    {sectorName(order.target)}
+                  </span>
+                ))}
               </div>
             </section>
             <aside className="side-panel">
@@ -619,8 +828,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     <h2>BATTLE REPORT</h2>
                     <span className="muted">RESOLVED</span>
                   </div>
-                  {reports.map((report) => (
-                    <article key={report.target}>
+                  {reports.map((report, index) => (
+                    <article key={`${report.target}-${report.winner}-${index}`}>
                       <h3>
                         {game.sectors.find((s) => s.id === report.target)?.name}{" "}
                         · {report.winner.toUpperCase()}
@@ -735,7 +944,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     ),
                   )}
                 </div>
-                <section className="recovery-preview" aria-label="Recovery preview">
+                <section
+                  className="recovery-preview"
+                  aria-label="Recovery preview"
+                >
                   <h3>RECOVER</h3>
                   <p>
                     {recoverySupplied
@@ -748,42 +960,58 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 <section className="recovery-preview" aria-label="Hold preview">
                   <h3>HOLD</h3>
                   <p>
-                    BEFORE ENEMY PHASE · free · STR {squad.strength} → {squad.strength} ·
-                    FTG {squad.fatigue} → {Math.max(0, squad.fatigue - 1)}
+                    BEFORE ENEMY PHASE · free · STR {squad.strength} →{" "}
+                    {squad.strength} · FTG {squad.fatigue} →{" "}
+                    {Math.max(0, squad.fatigue - 1)}
                   </p>
                 </section>
+                <section className="recovery-preview" aria-label="Attack preview"><h3>ATTACK RISK</h3><p>{attackRiskRationale}{assaultForecasts.length > 0 ? " " + assaultForecasts.map(({ target }) => `${sectorName(target)}: outcome and losses are uncertain.`).join(" · ") : " Choose a legal target to preview the assault forecast."}</p></section>
                 <section className="research">
                   <h3>RESEARCH</h3>
                   {(
                     ["Logistics", "Warfare", "Signals"] as ResearchBranch[]
-                  ).map((branch) => (
+                  ).map((branch) =>
                     (() => {
                       const level = game.researchLevels[branch];
                       const complete = level >= 2;
-                      const cost = complete ? null : researchCost(branch, level);
+                      const cost = complete
+                        ? null
+                        : researchCost(branch, level);
                       const price = cost
                         ? Object.entries(cost)
                             .filter(([, amount]) => amount > 0)
-                            .map(([resource, amount]) => `${amount} ${resource}`)
+                            .map(
+                              ([resource, amount]) => `${amount} ${resource}`,
+                            )
                             .join(" + ")
                         : "";
-                      return <button
-                      disabled={game.terminal !== "active" || complete}
-                      key={branch}
-                      onClick={() => research(branch)}
-                    >
-                      {branch} <b>{level}/2</b>
-                      <small>{complete ? "COMPLETE" : `NEXT: LVL ${level + 1} · ${researchEffect(branch, level + 1)} · COST: ${price}`}</small>
-                    </button>;
-                    })()
-                  ))}
+                      return (
+                        <button
+                          disabled={game.terminal !== "active" || complete}
+                          key={branch}
+                          onClick={() => research(branch)}
+                        >
+                          {branch} <b>{level}/2</b>
+                          <small>
+                            {complete
+                              ? "COMPLETE"
+                              : `NEXT: LVL ${level + 1} · ${researchEffect(branch, level + 1)} · COST: ${price}`}
+                          </small>
+                        </button>
+                      );
+                    })(),
+                  )}
                 </section>
-                {expectedReports.length > 0 && (
+                {assaultForecasts.length > 0 && (
                   <section className="expected-losses" aria-label="Expected assault losses">
-                    <h3>EXPECTED ASSAULT LOSSES</h3>
-                    {expectedReports.map((report) => (
-                      <p key={report.target}>
-                        {report.target}: Ward −{report.playerCasualties} · hostile −{report.enemyCasualties}
+                    <h3>ASSAULT FORECAST</h3>
+                    {assaultForecasts.map(({ target, knownDefenders, hiddenDefenders }) => (
+                      <p key={target}>
+                        {sectorName(target)}: {hiddenDefenders
+                          ? "Defenders unknown; outcome and losses are uncertain."
+                          : knownDefenders.length
+                            ? `Known hostile presence (${knownDefenders.map((enemy) => enemy.class.toUpperCase()).join(", ")}); outcome and losses are uncertain.`
+                            : "No known defenders; hidden defenders may be present. Outcome and losses are uncertain."}
                       </p>
                     ))}
                   </section>
@@ -798,17 +1026,24 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   <p className="unassigned-count">
                     UNASSIGNED LIVING SQUADS: {unassignedSquads.length}
                   </p>
-                  <button disabled={!canHoldUnassigned} onClick={holdUnassigned}>
+                  <button
+                    disabled={!canHoldUnassigned}
+                    onClick={holdUnassigned}
+                  >
                     HOLD UNASSIGNED
                   </button>
                   {game.terminal !== "active" ? (
-                    <p className="muted">Campaign complete. No orders can be queued.</p>
+                    <p className="muted">
+                      Campaign complete. No orders can be queued.
+                    </p>
                   ) : (
                     <>
                       {orders.length ? (
                         <ul>
                           {orders.map((order) => {
-                            const unit = game.squads.find((s) => s.id === order.squadId)!;
+                            const unit = game.squads.find(
+                              (s) => s.id === order.squadId,
+                            )!;
                             const label = `${unit.class.toUpperCase()} ${unit.id} · ${order.type.toUpperCase()}${
                               order.type === "move" || order.type === "attack"
                                 ? ` → ${sectorName(order.target)}`
@@ -828,24 +1063,36 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                           })}
                         </ul>
                       ) : (
-                        <p className="muted">No orders queued. Choose a squad and an action to plan the turn.</p>
+                        <p className="muted">
+                          No orders queued. Choose a squad and an action to plan
+                          the turn.
+                        </p>
                       )}
                       <p className="muted">
-                        Cancel leaves a squad unassigned; it does not HOLD. Unassigned squads gain fatigue when the turn executes.
+                        Cancel leaves a squad unassigned; it does not HOLD.
+                        Unassigned squads gain fatigue when the turn executes.
                       </p>
                     </>
                   )}
                 </section>
                 <p className="budget" aria-label="queued resource budget">
-                  QUEUED {plannedCost.metal}M + {plannedCost.energy}E · REMAINING{" "}
-                  {remaining.metal}M + {remaining.energy}E BEFORE INCOME
+                  QUEUED {plannedCost.metal}M + {plannedCost.energy}E ·
+                  REMAINING {remaining.metal}M + {remaining.energy}E BEFORE
+                  INCOME
                   {!affordable && (
-                    <> · SHORT {shortfall.metal ? `${shortfall.metal}M` : ""}{shortfall.metal && shortfall.energy ? " + " : ""}{shortfall.energy ? `${shortfall.energy}E` : ""}</>
+                    <>
+                      {" "}
+                      · SHORT {shortfall.metal ? `${shortfall.metal}M` : ""}
+                      {shortfall.metal && shortfall.energy ? " + " : ""}
+                      {shortfall.energy ? `${shortfall.energy}E` : ""}
+                    </>
                   )}
                 </p>
                 <button
                   className="execute"
-                  disabled={!orders.length || !affordable || game.terminal !== "active"}
+                  disabled={
+                    !orders.length || !affordable || game.terminal !== "active"
+                  }
                   onClick={execute}
                 >
                   EXECUTE TURN <span>→</span>
@@ -869,6 +1116,97 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               </section>
             </aside>
           </div>
+          <section className="income card">
+            <b>HQ-CONNECTED INCOME</b>
+            {game.sectors
+              .filter((s) => s.owner === "player")
+              .map((s) => (
+                <span key={s.id}>
+                  {s.name}:{" "}
+                  {(() => {
+                    const connected = connectedOwnedSectors(game).some(
+                      (x) => x.id === s.id,
+                    );
+                    const interrupted = game.enemySquads.some(
+                      (enemy) => enemy.strength > 0 && enemy.sector === s.id,
+                    );
+                    const site =
+                      s.id === game.hq.player
+                        ? "HQ"
+                        : s.id === "sector-2" || s.id === "sector-10"
+                          ? "DEPOT"
+                          : s.id === "sector-3" || s.id === "sector-9"
+                            ? "RELAY"
+                            : "LAND";
+                    if (!connected) return `${site} DISCONNECTED · +0M +0E +0I`;
+                    if (interrupted) return `${site} INTERRUPTED · +0M +0E +0I`;
+                    const metal = site === "HQ" ? 2 : site === "LAND" ? 0 : 1;
+                    const energy = site === "HQ" ? 2 : site === "LAND" ? 0 : 1;
+                    const intel = site === "HQ" ? 1 : 0;
+                    return `${site} CONNECTED · +${metal}M +${energy}E +${intel}I`;
+                  })()}
+                </span>
+              ))}
+            <strong>
+              TOTAL +{income.metal}M +{income.energy}E +{income.intelligence}I /
+              TURN
+            </strong>
+          </section>
+          <section className="intel card" aria-label="Signals intelligence">
+            <b>SIGNALS INTELLIGENCE</b>{" "}
+            {game.researchLevels.Signals === 0 ? (
+              "POSITIONS OBSCURED"
+            ) : (
+              <>
+                {game.enemySquads
+                  .filter((enemy) =>
+                    game.revealedEnemySquads.includes(enemy.id),
+                  )
+                  .map((enemy) => (
+                    <span key={enemy.id}>
+                      {" "}
+                      {enemy.class.toUpperCase()} {enemy.id} @{" "}
+                      {
+                        game.sectors.find(
+                          (sector) => sector.id === enemy.sector,
+                        )?.name
+                      }
+                    </span>
+                  ))}{" "}
+                · TIER {game.researchLevels.Signals}
+              </>
+            )}
+            {game.scoutedEnemyRoutes.length > 0 && (
+              <small>
+                {" "}
+                · ROUTE INTENTS:{" "}
+                {game.scoutedEnemyRoutes
+                  .map(
+                    (route, index) =>
+                      `${game.enemySquads[index]?.id ?? "enemy"} ${route}`,
+                  )
+                  .join(" · ")}
+              </small>
+            )}
+          </section>
+          <section
+            className="research-effects card"
+            aria-label="Research effects"
+          >
+            {(["Logistics", "Warfare", "Signals"] as ResearchBranch[]).map(
+              (branch) => (
+                <span key={branch}>
+                  <b>
+                    {branch} TIER {game.researchLevels[branch]}
+                  </b>{" "}
+                  ·{" "}
+                  {game.researchLevels[branch]
+                    ? researchEffect(branch, game.researchLevels[branch])
+                    : `NEXT: ${researchEffect(branch, 0)}`}
+                </span>
+              ),
+            )}
+          </section>
         </>
       )}
     </main>
