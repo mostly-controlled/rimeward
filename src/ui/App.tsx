@@ -256,7 +256,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const enemy = resolveEnemyTurn(combat.nextState);
       const phaseReports = [...combat.reports, ...enemy.reports];
       const name = (id?: SectorId) => id ? before.sectors.find((sector) => sector.id === id)?.name ?? id : "unknown sector";
-      const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit || !after) return null; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + after.strength + ", FTG " + unit.fatigue + "→" + after.fatigue; }).filter(Boolean) as string[];
+      const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
+      const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit || !after) return null; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === after.sector); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + after.strength + ", FTG " + unit.fatigue + "→" + after.fatigue + control; }).filter(Boolean) as string[];
       const battleLines = phaseReports.map((report) => name(report.target) + ": " + (report.winner === "draw" ? "contested, no capture" : report.winner === "player" ? (report.captured ? "captured" : "held") : "lost") + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
       const enemyLines = enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
       const survivingSquads = enemy.nextState.squads.filter((unit) => unit.strength > 0);
@@ -265,7 +266,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         : survivingSquads.length === 0
           ? "no surviving squads — restart the campaign"
           : "choose HOLD to reduce fatigue, RECOVER for strength, or ATTACK a legal target";
-      const debrief = "TURN " + before.turn + " DEBRIEF — " + (playerLines.length ? playerLines.join(" | ") : "no surviving ordered squads") + (battleLines.length ? " | OUTCOME: " + battleLines.join("; ") : "") + (enemyLines.length ? " | ENEMY PHASE OBSERVED: " + enemyLines.join("; ") : "") + " | NEXT: " + nextChoices;
+      const delta = `RESOURCES Δ metal ${resourceDelta("metal") >= 0 ? "+" : ""}${resourceDelta("metal")}, energy ${resourceDelta("energy") >= 0 ? "+" : ""}${resourceDelta("energy")}, intel ${resourceDelta("intelligence") >= 0 ? "+" : ""}${resourceDelta("intelligence")}`;
+      const debrief = "TURN " + before.turn + " DEBRIEF — " + (playerLines.length ? playerLines.join(" | ") : "no surviving ordered squads") + " | " + delta + (battleLines.length ? " | PLAYER RESULT: " + battleLines.join("; ") : " | PLAYER RESULT: no battle observed") + (enemyLines.length ? " | ENEMY PHASE OBSERVED: " + enemyLines.join("; ") : " | ENEMY PHASE OBSERVED: none") + " | NEXT: " + nextChoices;
       setGame(enemy.nextState);
       const nextReports = phaseReports.length ? phaseReports : reports;
         [

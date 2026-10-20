@@ -779,7 +779,11 @@ describe("App interactions", () => {
     const debrief = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
     expect(debrief).toContain("WHAT CHANGED / WHY");
     expect(debrief).toContain("Ashenfall");
+    expect(debrief).toContain("RESOURCES Δ");
+    expect(debrief).toContain("PLAYER RESULT:");
+    expect(debrief).toContain("ENEMY PHASE OBSERVED:");
     expect(debrief).toContain("NEXT:");
+    expect(document.querySelector('[aria-label="Last turn debrief"]')).not.toBe(document.querySelector(".event-rail"));
     expect(document.querySelector('[role="status"]')?.textContent).toContain("saved");
     await act(async () => root.unmount());
     document.body.innerHTML = '<div id="root"></div>';
