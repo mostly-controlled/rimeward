@@ -159,6 +159,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     (recoveryStrengthAfter > squad.strength ||
       recoveryFatigueAfter < squad.fatigue),
   );
+  const attackRiskRationale = squad
+    ? `ATTACK RISK · STR ${squad.strength}, FTG ${squad.fatigue}: HOLD is free and changes FTG to ${Math.max(0, squad.fatigue - 1)}; ${recoverySupplied ? `RECOVER costs ${recoveryMetalCost(game)} metal + 2 energy and changes STR to ${recoveryStrengthAfter}, FTG to ${recoveryFatigueAfter}` : "RECOVER is unavailable while unsupplied"}. ATTACK costs 2 metal + 3 energy and is available only against a legal target.`
+    : "ATTACK RISK · select a squad to compare HOLD and RECOVER.";
   useEffect(() => {
     if (selectedSquad !== selectedId) setSelectedSquad(selectedId);
   }, [selectedId, selectedSquad]);
@@ -947,7 +950,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     {Math.max(0, squad.fatigue - 1)}
                   </p>
                 </section>
-                <section className="recovery-preview" aria-label="Attack preview"><h3>ATTACK RISK</h3><p>costs 2 metal + 3 energy · only legal adjacent targets are selectable; outcome depends on observed defenders and terrain.{expectedReports.length > 0 ? " " + expectedReports.map((report) => sectorName(report.target) + ": Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties).join(" · ") : " Choose a legal target to preview the real battle."}</p></section>
+                <section className="recovery-preview" aria-label="Attack preview"><h3>ATTACK RISK</h3><p>{attackRiskRationale}{expectedReports.length > 0 ? " " + expectedReports.map((report) => sectorName(report.target) + ": Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties).join(" · ") : " Choose a legal target to preview the real battle."}</p></section>
                 <section className="research">
                   <h3>RESEARCH</h3>
                   {(
