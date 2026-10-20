@@ -624,6 +624,28 @@ describe("campaign simulation", () => {
     expect(result.reports[0].playerCasualties).toBe(0);
     expect(result.reports[0].enemyCasualties).toBe(0);
   });
+  it("does not turn a fatigued, negatively varying undefended player attack into combat", () => {
+    const game = createNewCampaign(8);
+    const prepared = {
+      ...game,
+      squads: [{ ...game.squads[0], sector: "sector-6" as const, fatigue: 10, strength: 6 }, ...game.squads.slice(1)],
+      enemySquads: [],
+    };
+    const result = resolveCombat(prepared, [{
+      type: "attack", faction: "player", squadId: "squad-1", from: "sector-6", to: "sector-6", target: "sector-6", message: "attack",
+    }]);
+    expect(result.reports[0]).toMatchObject({ winner: "draw", playerCasualties: 0, enemyCasualties: 0, retreat: [] });
+    expect(result.nextState.squads[0]).toMatchObject({ strength: 6, sector: "sector-6" });
+  });
+  it("does not turn an undefended enemy attack into a player win or damage", () => {
+    const game = createNewCampaign(8);
+    const prepared = { ...game, squads: [], enemySquads: [{ ...game.enemySquads[0], sector: "sector-1" as const, strength: 6 }] };
+    const result = resolveCombat(prepared, [{
+      type: "attack", faction: "enemy", squadId: "enemy-1", from: "sector-1", to: "sector-1", target: "sector-1", message: "attack",
+    }]);
+    expect(result.reports[0]).toMatchObject({ winner: "draw", playerCasualties: 0, enemyCasualties: 0, retreat: [] });
+    expect(result.nextState.enemySquads[0]).toMatchObject({ strength: 6, sector: "sector-1" });
+  });
   it("rejects multiple recoveries when their total metal cost is unaffordable", () => {
     const game = createNewCampaign(4);
     const lowMetal = { ...game, resources: { ...game.resources, metal: 3 } };
