@@ -15,6 +15,32 @@ import {
 const storage = globalThis as typeof globalThis & { localStorage: { clear(): void } };
 
 describe("App interactions", () => {
+  it("updates the turn guide from selection, queue, cancel, execute, and terminal state", async () => {
+    const campaign = createNewCampaign(42024);
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={campaign} />));
+    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("GOAL");
+    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("SELECT SQUAD");
+    const target = document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement;
+    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("QUEUED — NOT EXECUTED");
+    const cancel = [...document.querySelectorAll("button")].find((button) => button.textContent === "CANCEL") as HTMLButtonElement;
+    await act(async () => cancel.click());
+    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("NOT QUEUED");
+    await act(async () => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("TURN 2");
+    await act(async () => root.unmount());
+
+    document.body.innerHTML = '<div id="root"></div>';
+    const terminal = { ...campaign, terminal: "victory" as const, terminalReason: "secured" };
+    const terminalRoot = createRoot(document.getElementById("root")!);
+    await act(async () => terminalRoot.render(<App initialGame={terminal} />));
+    expect(document.querySelector('[aria-label="Turn guide"]')?.textContent).toContain("Terminal state: VICTORY");
+    await act(async () => terminalRoot.unmount());
+  });
+
   afterEach(() => {
     document.body.innerHTML = "";
     storage.localStorage.clear();
