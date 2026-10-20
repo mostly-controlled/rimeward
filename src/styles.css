@@ -8,3 +8,5 @@
 .plan-key{display:inline-flex;align-items:center;gap:6px;color:#c8c0a0;white-space:nowrap}
 .plan-line{display:inline-block;width:20px;border-top:3px dashed #f0dda1}
 .plan-line.attack{border-color:#e39b88}
+.plan-entry{color:#d7e3dd}
+@media(max-width:560px){.plan-entry{flex-basis:100%}}

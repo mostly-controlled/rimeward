@@ -1221,11 +1221,19 @@ describe("Editable turn plan", () => {
   it("shows a readable key for planned map routes", async () => {
     const root = await mount();
 
+    await target("Whiteplain");
+    await select(1);
+    await click(action("ATTACK"));
+    await target("Lastlight");
+
     const legend = document.querySelector('[aria-label="Map legend"]');
     expect(legend?.textContent).toContain("PLAN · MOVE");
     expect(legend?.textContent).toContain("PLAN · ATTACK");
     expect(legend?.querySelector(".plan-line.move")).toBeTruthy();
     expect(legend?.querySelector(".plan-line.attack")).toBeTruthy();
+    expect(legend?.querySelectorAll(".plan-entry")).toHaveLength(2);
+    expect(legend?.textContent).toContain("squad-1 · MOVE → Whiteplain");
+    expect(legend?.textContent).toContain("squad-2 · ATTACK → Lastlight");
 
     await act(async () => root.unmount());
   });
