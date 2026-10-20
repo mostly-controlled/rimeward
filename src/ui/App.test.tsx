@@ -895,7 +895,8 @@ describe("App interactions", () => {
     expect(document.querySelector(".queued-orders")?.textContent).toContain("RECOVER");
     await act(async () => root.unmount());
   });
-});
+
+
 
 describe("Editable turn plan", () => {
   const queue = () => document.querySelector('[aria-label="Queued orders"]')!;
@@ -1118,6 +1119,7 @@ describe("Editable turn plan", () => {
   });
 
   it("resets the campaign and persists terminal reason after remount", async () => {
+    storage.localStorage.clear();
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
@@ -1125,7 +1127,7 @@ describe("Editable turn plan", () => {
     await click([...document.querySelectorAll("button")].find((button) => button.textContent === "NEW CAMPAIGN")!);
     expect(readSave()?.game).toBeDefined();
     expect(readSave()?.game.terminal).toBe("active");
-    expect(readSave()?.game.seed).toBe(beforeSeed);
+    expect(readSave()?.game.seed).toBe(42024);
     await act(async () => root.unmount());
 
     const terminal = { ...createNewCampaign(42024), terminal: "defeat" as const, terminalReason: "Turn 18 reached without victory." };
@@ -1203,14 +1205,51 @@ describe("Editable turn plan", () => {
     await chooseMove(1);
     expect(document.querySelectorAll(".planned-order")).toHaveLength(2);
     expect(document.querySelectorAll(".planned-route")).toHaveLength(2);
-    expect(document.querySelector(".planned-arrow")?.getAttribute("fill")).toBe("#f0dda1");
-    expect(document.querySelector(".planned-arrow")?.getAttribute("stroke")).toBe("#071114");
+    expect(new Set([...document.querySelectorAll(".planned-order")].map((item) => item.getAttribute("data-order-id"))).size).toBe(2);
+    expect(new Set([...document.querySelectorAll(".planned-route")].map((item) => `${item.getAttribute("x1")},${item.getAttribute("y1")},${item.getAttribute("x2")},${item.getAttribute("y2")}`))).toHaveLength(2);
+    expect(document.querySelector(".planned-arrow-move")?.getAttribute("fill")).toBe("#f0dda1");
+    expect(document.querySelector(".planned-arrow-move")?.getAttribute("stroke")).toBe("#071114");
     expect(document.querySelectorAll(".planned-label")[0].textContent).toContain("PLAN · MOVE");
     expect(document.querySelectorAll(".planned-label")[0].textContent).not.toContain("RESOLVED");
     await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
     expect(document.querySelectorAll(".planned-order")).toHaveLength(1);
     await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
     expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
+    await act(async () => root.unmount());
+  });
+
+  it("replaces one squad plan, executes the remaining queue, and does not restore queued orders on restart", async () => {
+    window.localStorage.clear();
+    const root = await mount();
+    await select(0);
+    await click(action("MOVE"));
+    await target("Whiteplain");
+    expect(rows()).toHaveLength(1);
+    await click(action("ATTACK"));
+    await target("Lastlight");
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].textContent).toContain("ATTACK");
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(1);
+    await select(1);
+    await click(action("MOVE"));
+    await target("Whiteplain");
+    expect(rows()).toHaveLength(2);
+    await click(execute());
+    expect(rows()).toHaveLength(0);
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
+    await act(async () => root.unmount());
+
+    const restarted = await mount();
+    expect(rows()).toHaveLength(0);
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
+    await act(async () => restarted.unmount());
+    window.localStorage.clear();
+  });
+
+  it("removes queued map plans when the campaign is already terminal", async () => {
+    const root = await mount({ ...createNewCampaign(42024), terminal: "victory", terminalReason: "Campaign complete." });
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
+    expect(execute().disabled).toBe(true);
     await act(async () => root.unmount());
   });
 });
