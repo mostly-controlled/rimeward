@@ -252,23 +252,31 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const execute = () => {
     if (!orders.length || !affordable || game.terminal !== "active") return;
     try {
+      const before = game;
       const turn = resolveTurn(game, orders);
       const combat = resolveCombat(turn.nextState, turn.events);
       const enemy = resolveEnemyTurn(combat.nextState);
       const phaseReports = [...combat.reports, ...enemy.reports];
+      const name = (id?: SectorId) => id ? before.sectors.find((sector) => sector.id === id)?.name ?? id : "unknown sector";
+      const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit || !after) return null; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + after.strength + ", FTG " + unit.fatigue + "→" + after.fatigue; }).filter(Boolean) as string[];
+      const battleLines = phaseReports.map((report) => name(report.target) + ": " + (report.winner === "draw" ? "contested, no capture" : report.winner === "player" ? (report.captured ? "captured" : "held") : "lost") + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
+      const enemyLines = enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
+      const debrief = "TURN " + before.turn + " DEBRIEF — " + playerLines.join(" | ") + (battleLines.length ? " | OUTCOME: " + battleLines.join("; ") : "") + (enemyLines.length ? " | ENEMY PHASE OBSERVED: " + enemyLines.join("; ") : "") + " | NEXT: " + (before.terminal === "active" ? "choose HOLD to reduce fatigue, RECOVER for strength, or ATTACK a legal target" : "campaign complete");
       setGame(enemy.nextState);
       const nextReports = phaseReports.length ? phaseReports : reports;
-      const nextEvents = [
-        ...[
-          ...phaseReports.map(
-            (report) =>
-              `${report.target} ${report.winner} — ${report.playerCasualties} Ward casualties · ${report.enemyCasualties} hostile casualties ${report.casualties.length} casualty entries`,
-          ),
-          ...enemy.events.map((e) => e.message),
-          ...turn.events.map((e) => e.message),
-        ].map((message) => ({ turn: game.turn, message })),
-        ...events,
-      ].slice(0, 12) as RailEvent[];
+        [
+          ...[
+            ...phaseReports.map(
+              (report) =>
+                `${report.target} ${report.winner} — ${report.playerCasualties} Ward casualties · ${report.enemyCasualties} hostile casualties ${report.casualties.length} casualty entries`,
+            ),
+            ...enemy.events.map((e) => e.message),
+            ...turn.events.map((e) => e.message),
+            debrief.replace(/enemy-\d+/g, "hostile"),
+          ].map((message) => ({ turn: game.turn, message })),
+          ...events,
+        ].slice(0, 20)
+      ) as RailEvent[];
       if (phaseReports.length) setReports(phaseReports);
       setEvents(nextEvents);
       const warning = persist(enemy.nextState, nextEvents, nextReports);
@@ -888,6 +896,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     {Math.max(0, squad.fatigue - 1)}
                   </p>
                 </section>
+                <section className="recovery-preview" aria-label="Attack preview"><h3>ATTACK RISK</h3><p>costs 2 metal + 3 energy · only legal adjacent targets are selectable; outcome depends on observed defenders and terrain.{expectedReports.length > 0 ? " " + expectedReports.map((report) => sectorName(report.target) + ": Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties).join(" · ") : " Choose a legal target to preview the real battle."}</p></section>
                 <section className="research">
                   <h3>RESEARCH</h3>
                   {(
