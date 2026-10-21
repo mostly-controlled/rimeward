@@ -186,12 +186,32 @@ describe("campaign simulation", () => {
     const feintIntents = decideEnemyIntents(feint);
     const repeatPhase = resolveEnemyTurn(repeat);
     const feintPhase = resolveEnemyTurn(feint);
+    const sortedIntentActions = (intents: ReturnType<typeof decideEnemyIntents>) =>
+      intents
+        .map(({ squadId, kind, from, to, target }) => ({
+          squadId,
+          kind,
+          from,
+          to: to ?? from,
+          target,
+        }))
+        .sort((a, b) => a.squadId.localeCompare(b.squadId));
+    const sortedEventActions = (events: typeof repeatPhase.events) =>
+      events
+        .map(({ squadId, type, from, to, target }) => ({
+          squadId,
+          type,
+          from,
+          to,
+          target,
+        }))
+        .sort((a, b) => a.squadId.localeCompare(b.squadId));
     expect(repeatIntents).not.toEqual([]);
     expect(feintIntents).not.toEqual([]);
-    expect(repeatIntents).not.toEqual(feintIntents);
+    expect(sortedIntentActions(repeatIntents)).not.toEqual(sortedIntentActions(feintIntents));
     expect(repeatPhase.events).not.toEqual([]);
     expect(feintPhase.events).not.toEqual([]);
-    expect(repeatPhase.events).not.toEqual(feintPhase.events);
+    expect(sortedEventActions(repeatPhase.events)).not.toEqual(sortedEventActions(feintPhase.events));
     expect([...repeatIntents, ...feintIntents].every((intent) => /^enemy-/.test(intent.squadId))).toBe(true);
     expect([...repeatPhase.events, ...feintPhase.events].every((event) => event.from !== undefined)).toBe(true);
     const quiet = { ...repeat, turn: 4 };
