@@ -531,6 +531,20 @@ describe("App interactions", () => {
     await act(async () => root.render(<App initialGame={initialGame} />));
     await issueMove(0);
     await issueMove(1);
+
+    const plannedOrders = [...document.querySelectorAll(".planned-order")];
+    expect(plannedOrders).toHaveLength(2);
+    expect(plannedOrders.map((order) => order.getAttribute("aria-label"))).toEqual([
+      "PLAN · MOVE · SENTINEL M1 to Whiteplain",
+      "PLAN · MOVE · RAIDER M2 to Whiteplain",
+    ]);
+    expect(document.querySelectorAll(".planned-marker")).toHaveLength(2);
+    expect(document.querySelector('[aria-label="Planned orders legend"]')?.textContent).toContain(
+      "PLAN = queued order",
+    );
+    expect(document.querySelector('[aria-label="Queued order squad-1 move Whiteplain"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Queued order squad-2 move Whiteplain"]')).not.toBeNull();
+
     await act(async () =>
       (document.querySelector(".execute") as HTMLButtonElement).click(),
     );
@@ -1528,12 +1542,16 @@ describe("Editable turn plan", () => {
     expect(rows()[1].textContent).toContain(
       "RAIDER squad-2 · ATTACK → Lastlight",
     );
+    expect([...document.querySelectorAll(".planned-marker text")].map((item) => item.textContent)).toEqual(["M1", "A2"]);
+    expect(document.querySelector('[aria-label="PLAN · MOVE · SENTINEL M1 to Whiteplain"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="PLAN · ATTACK · RAIDER A2 to Lastlight"]')).not.toBeNull();
     expect(rows()[0].querySelector("button")?.getAttribute("aria-label")).toBe(
       "Cancel SENTINEL squad-1 · MOVE → Whiteplain",
     );
     const resources = document.querySelector(".resource-strip")!.textContent;
     await cancel("squad-1");
     expect(rows()).toHaveLength(1);
+    expect([...document.querySelectorAll(".planned-marker text")].map((item) => item.textContent)).toEqual(["A2"]);
     expect(rows()[0].textContent).toContain(
       "RAIDER squad-2 · ATTACK → Lastlight",
     );
@@ -1930,7 +1948,7 @@ describe("Editable turn plan", () => {
     const root = await mount(createNewCampaign(42024));
     const chooseMove = async (squadIndex: number) => {
       await act(async () => (document.querySelectorAll(".squad-card")[squadIndex] as HTMLButtonElement).click());
-      await act(async () => (document.querySelector('[aria-label*="Whiteplain"]') as SVGGElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      await act(async () => (document.querySelector('[role="button"][aria-label*="Whiteplain"]') as SVGGElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
     };
     await chooseMove(0);
     await chooseMove(1);
@@ -1940,8 +1958,8 @@ describe("Editable turn plan", () => {
     expect(new Set([...document.querySelectorAll(".planned-route")].map((item) => `${item.getAttribute("x1")},${item.getAttribute("y1")},${item.getAttribute("x2")},${item.getAttribute("y2")}`))).toHaveLength(2);
     expect(document.querySelector(".planned-arrow-move")?.getAttribute("fill")).toBe("#f0dda1");
     expect(document.querySelector(".planned-arrow-move")?.getAttribute("stroke")).toBe("#071114");
-    expect(document.querySelectorAll(".planned-label")[0].textContent).toContain("PLAN · MOVE");
-    expect(document.querySelectorAll(".planned-label")[0].textContent).not.toContain("RESOLVED");
+    expect(document.querySelectorAll(".planned-label")).toHaveLength(0);
+    expect(document.querySelectorAll(".planned-marker text")[0].textContent).toMatch(/^M\d+$/);
     await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
     expect(document.querySelectorAll(".planned-order")).toHaveLength(1);
     await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
@@ -1995,6 +2013,33 @@ describe("Editable turn plan", () => {
     expect(document.querySelector(".event-rail")?.textContent).toContain(
       "squad-2 move Lastlight",
     );
+    await act(async () => root.unmount());
+  });
+
+  it("numbers two through five shared MOVE routes with accessible per-order details", async () => {
+    const campaign = createNewCampaign(42024);
+    const origin = campaign.squads[0].sector;
+    const shared = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) =>
+        index < 5 ? { ...unit, sector: origin } : { ...unit, strength: 0 },
+      ),
+    };
+    const root = await mount(shared);
+    const choose = async (index: number) => {
+      await act(async () => (document.querySelectorAll(".squad-card")[index] as HTMLButtonElement).click());
+      await act(async () => (document.querySelector('[role="button"][aria-label*="move target"]') as SVGGElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    };
+    for (let index = 0; index < 5; index += 1) await choose(index);
+    expect(document.querySelectorAll(".planned-marker")).toHaveLength(5);
+    expect([...document.querySelectorAll(".planned-marker text")].map((item) => item.textContent)).toEqual(["M1", "M2", "M3", "M4", "M5"]);
+    expect(document.querySelector(".plan-legend")?.textContent).toContain("PLAN = queued order");
+    expect(document.querySelectorAll('.planned-marker[role="img"]')).toHaveLength(5);
+    expect(document.querySelectorAll(".plan-entry")).toHaveLength(5);
+    expect(document.body.textContent).toContain("RECON squad-3 · MOVE → Whiteplain");
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
+    expect(document.querySelectorAll(".planned-marker")).toHaveLength(0);
     await act(async () => root.unmount());
   });
 
