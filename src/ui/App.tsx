@@ -708,13 +708,18 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       const endY = destination[1] + ny * offset;
                       const labelX = (startX + endX) / 2 + nx * 12;
                       const labelY = (startY + endY) / 2 + ny * 12;
+                      const markerNumber = sharedOrders.length > 1 ? sharedIndex + 1 : undefined;
+                      const orderLabel = `PLAN · ${order.type.toUpperCase()} · ${unit.class.toUpperCase()}`;
+                      const conciseLabel = orderLabel;
                       return (
                         <g
                           className="planned-order"
                           data-order-id={order.squadId}
                           data-target={target}
+                          aria-label={`${conciseLabel} to ${sectorName(target)}${markerNumber ? `, marker ${markerNumber} of ${sharedOrders.length}` : ""}`}
                           key={`${order.squadId}-${order.type}-${target}`}
                         >
+                          <title>{`${conciseLabel} → ${sectorName(target)}${markerNumber ? ` · shared target marker ${markerNumber} of ${sharedOrders.length}` : ""}`}</title>
                           <line
                             className={`planned-route planned-${order.type}`}
                             x1={startX}
@@ -724,8 +729,18 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                             markerEnd={`url(#planned-arrow-${order.type})`}
                           />
                           <text className="planned-label" x={labelX} y={labelY} textAnchor="middle">
-                            PLAN · {order.type.toUpperCase()} · {unit.id}
+                            {conciseLabel}
                           </text>
+                          {markerNumber && (
+                            <g
+                              className={`planned-marker planned-marker-${markerNumber}`}
+                              role="img"
+                              aria-label={`${conciseLabel} to ${sectorName(target)}`}
+                            >
+                              <circle cx={endX} cy={endY} r="9" />
+                              <text x={endX} y={endY + 3} textAnchor="middle">{markerNumber}</text>
+                            </g>
+                          )}
                         </g>
                       );
                     })}
@@ -833,7 +848,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 </span>
                 <span>◈ RELAY</span>
                 <span className="ward-legend" aria-label="Ward squad badge legend">Ward squads</span>
-                <span className="plan-key" aria-label="Planned order key">
+                <span className="plan-key plan-legend" aria-label="Planned orders legend">
+                  PLAN = queued order; numbered markers share one destination
+                </span>
+                <span className="plan-key" aria-label="Planned move key">
                   <i className="plan-line move" />
                   PLAN · MOVE
                 </span>
