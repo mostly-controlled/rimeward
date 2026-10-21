@@ -168,7 +168,8 @@ describe("campaign simulation", () => {
       ],
     };
     expect(adaptiveStyle(repeat)).toBe("DEFENSIVE");
-    expect(adaptiveStyleCue(repeat)).toContain("DEFENSIVE");
+    expect(adaptiveStyleCue(repeat)).toContain("Defensive planner");
+    expect(adaptiveStyleCue(repeat)).toContain("response uncertain");
     const feint = {
       ...board,
       turn: 3,
@@ -231,7 +232,8 @@ describe("campaign simulation", () => {
       })),
     };
     expect(adaptiveStyle(state)).toBe("DEFENSIVE");
-    expect(adaptiveStyleCue(state)).toContain("near Rimefield");
+    expect(adaptiveStyleCue(state)).toContain("Defensive planner");
+    expect(adaptiveStyleCue(state)).toContain("response uncertain");
   });
 
   it("resets class and corridor confidence independently when either pattern switches", () => {

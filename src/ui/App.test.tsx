@@ -64,7 +64,7 @@ describe("App interactions", () => {
     return root;
   };
 
-  it("shows a named local style cue in a synthetic board fixture", async () => {
+  it("shows the seeded human style and no-pattern cue before commitment", async () => {
     // Synthetic fixture: this does not claim normal-campaign browser coverage.
     const campaign = createNewCampaign(42024);
     const state = {
@@ -77,12 +77,26 @@ describe("App interactions", () => {
       ),
     };
     const root = await renderApp(state);
-    await act(async () => (document.querySelector('.order-buttons button') as HTMLButtonElement).click());
-    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
     const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
     expect(cue).toContain("ENEMY STYLE CUE");
-    expect(cue).toContain("UNSET");
-    expect(cue).toContain("no local enemy pattern observed");
+    expect(cue).toMatch(/Aggressive raider|Defensive planner/);
+    expect(cue).toContain("no pattern yet");
+    expect(cue).not.toMatch(/UNSET|enemy pattern|enemy order/i);
+    await act(async () => root.unmount());
+  });
+
+  it("keeps human style names while showing partial adaptive states", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      turn: 2,
+      adaptiveHistory: [{ turn: 1, observations: [{ kind: "move" as const, class: "Raider" as const, from: "sector-1" as const, to: "sector-2" as const }] }],
+    };
+    const root = await renderApp(state);
+    const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
+    expect(cue).toMatch(/Aggressive raider|Defensive planner/);
+    expect(cue).toContain("pressure noticed");
+    expect(cue).not.toContain("UNSET");
     await act(async () => root.unmount());
   });
 

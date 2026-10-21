@@ -271,15 +271,13 @@ export const adaptiveStyleCue = (state: GameState): string => {
   const buckets = recentAdaptiveBuckets(state);
   const observed = buckets.filter((bucket) => bucket.observations.length > 0);
   const latest = observed.at(-1) ? committedObservation(observed.at(-1)!) : undefined;
-  const style = adaptiveStyle(state);
-  if (!latest) return "UNSET · no local enemy pattern observed";
-  const sector = state.sectors.find(
-    (item) => item.id === observationDestination(latest),
-  );
-  const near = sector?.name ?? "the nearby line";
-  if (style === "AGGRESSIVE") return `AGGRESSIVE · repeat assault near ${near}`;
-  if (style === "DEFENSIVE") return `DEFENSIVE · repeat advance near ${near}`;
-  return `UNSET · new ${latest.class} ${latest.kind} near ${near}`;
+  const styleName = pressureHash(state, "adaptive-style", 0) % 2 === 0
+    ? "Aggressive raider"
+    : "Defensive planner";
+  if (!latest) return `${styleName} · no pattern yet`;
+  if (adaptiveStyle(state) === "UNSET")
+    return `${styleName} · ${observed.length === 1 ? "pressure noticed" : "response uncertain"}`;
+  return `${styleName} · ${adaptiveStyle(state) === "AGGRESSIVE" ? "pressure noticed" : "response uncertain"}`;
 };
 const appendAdaptiveBucket = (
   state: GameState,
