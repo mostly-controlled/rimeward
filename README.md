@@ -17,14 +17,14 @@ npm test -- --run
 npm run build
 ```
 
-This issue intentionally excludes backend services, authentication, persistence, remote assets, desktop packaging, and browser automation. Gameplay systems arrive in later issues.
+This remains a local browser run only; no hosted URL or post-AI campaign acceptance is claimed here.
 
 ## Short delivery guide
 
-1. Install and run: `npm ci`, then `npm run dev`. Open the local Vite URL and choose `NEW CAMPAIGN · NEW SEED` (or enter a known seed in the terminal screen).
-2. Each turn assigns at most one action to each living Ward squad. Orders are validated as a batch; an invalid batch spends nothing. `HOLD` is free, `ATTACK` costs `2 metal + 3 energy`, and supplied `RECOVER` costs the displayed metal amount plus `2 energy`.
+1. Install and run locally: `npm ci`, then `npm run dev`. Open the local Vite URL and use the normal new-campaign chooser; there is no seed-entry field.
+2. Each turn assigns at most one action to each living Ward squad. Orders are validated as a batch; an invalid batch spends nothing. `HOLD` is free, `ATTACK` costs `2 metal + 3 energy`, and `RECOVER` costs `6 metal + 2 energy` (with Logistics affecting recovery amount/cap, not this base cost).
 3. Income is paid only by Ward-owned sectors connected to HQ. The turn rail reports connected income/supply, order costs, enemy response, and the resulting resource deltas. Research is paid from the shown branch cost and threshold.
-4. Use `SAVE CAMPAIGN` after completed turns or research. Queued orders are not saved. On reload choose `CONTINUE SAVED CAMPAIGN`; `VERIFY REPLAY` replays the saved ordered journal for the same seed. `RESET SAME SEED` starts that seed over; `NEW CAMPAIGN · NEW SEED` derives a new seed.
-5. Terminal campaigns cannot accept more orders. A campaign can lose through HQ capture, destruction of all Ward squads, or reaching the turn limit without all relays.
+4. Completed turns and research are autosaved locally. On reload choose `CONTINUE`; queued orders are not saved. `VERIFY REPLAY` replays the saved ordered journal when its rules and journal versions are supported. If a saved campaign uses incompatible replay rules, replay is unavailable but the campaign can still continue and save.
+5. Victory requires all three relays and enemy HQ capture. A campaign can lose through enemy HQ capture, destruction of all Ward squads, or reaching the turn limit without victory.
 
 Validation: `npm run check`, `npm test -- --run`, and `npm run build`.
