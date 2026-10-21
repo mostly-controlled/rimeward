@@ -26,6 +26,8 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App initialGame={initialGame} />));
+    const continueButton = [...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE"));
+    if (continueButton) await act(async () => (continueButton as HTMLButtonElement).click());
     return root;
   };
 
@@ -74,6 +76,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement | null)?.click());
     const details = document.querySelector("details summary") as HTMLElement;
     await act(async () => details.click());
     const firstRender = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
@@ -83,6 +86,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const reloaded = createRoot(document.getElementById("root")!);
     await act(async () => reloaded.render(<App />));
+    await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE")) as HTMLButtonElement).click());
     const reloadDetails = document.querySelector("details summary") as HTMLElement;
     await act(async () => reloadDetails.click());
     const secondRender = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
@@ -269,6 +273,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement | null)?.click());
     const target = document.querySelector(
       '[role="button"][aria-label*="Whiteplain"]',
     ) as SVGGElement;
@@ -331,6 +336,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE")) as HTMLButtonElement).click());
     const objectives = document.querySelector(".campaign-objectives")!;
     const guide = document.querySelector('[aria-label="Turn guide"]')!;
     const map = document.querySelector(".battle-layout")!;
@@ -866,7 +872,7 @@ describe("App interactions", () => {
     await act(async () =>
       (
         [...document.querySelectorAll("button")].find(
-          (button) => button.textContent === "NEW CAMPAIGN",
+          (button) => button.textContent?.startsWith("NEW CAMPAIGN"),
         ) as HTMLButtonElement
       ).click(),
     );
@@ -1000,6 +1006,7 @@ describe("App interactions", () => {
     const initialGame = { ...campaign, squads: campaign.squads.map((squad, index) => index === 0 ? { ...squad, sector: "sector-5" as const, strength: 1, fatigue: 3 } : squad) };
     writeSave({ version: SAVE_VERSION, game: initialGame, events: [], reports: [] });
     await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE")) as HTMLButtonElement).click());
     const objectives = document.querySelector(".campaign-objectives") as HTMLElement;
     const debriefBefore = document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement;
     const income = document.querySelector(".income") as HTMLElement;
@@ -1055,6 +1062,8 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const reloaded = createRoot(document.getElementById("root")!);
     await act(async () => reloaded.render(<App />));
+    const continueButton = [...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE"));
+    if (continueButton) await act(async () => (continueButton as HTMLButtonElement).click());
     expect(document.querySelector(".turn-readout strong")?.textContent).toBe("02");
     expect(document.querySelector(".event-rail")?.textContent).toContain("TURN 1 DEBRIEF");
     expect(document.querySelector(".event-rail")?.textContent).toContain("Ashenfall");
@@ -1508,7 +1517,7 @@ describe("App interactions", () => {
     await act(async () =>
       (
         [...document.querySelectorAll(".terminal button")].find((button) =>
-          button.textContent?.startsWith("RESTART"),
+          button.textContent?.startsWith("RESET SAME SEED"),
         ) as HTMLButtonElement
       ).click(),
     );
@@ -1676,6 +1685,8 @@ describe("Editable turn plan", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App initialGame={initialGame} />));
+    const continueButton = [...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE"));
+    if (continueButton) await act(async () => (continueButton as HTMLButtonElement).click());
     return root;
   };
 
@@ -1919,7 +1930,7 @@ describe("Editable turn plan", () => {
     expect(rows()).toHaveLength(1);
     await click(
       [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === "NEW CAMPAIGN",
+        (button) => button.textContent?.startsWith("NEW CAMPAIGN"),
       )!,
     );
     expect(rows()).toHaveLength(0);
@@ -1968,6 +1979,7 @@ describe("Editable turn plan", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    await click([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE"))!);
     await click(
       [...document.querySelectorAll(".research button")].find((button) =>
         button.textContent?.startsWith("Signals"),
@@ -1978,9 +1990,129 @@ describe("Editable turn plan", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const resumed = createRoot(document.getElementById("root")!);
     await act(async () => resumed.render(<App />));
-    expect(document.body.textContent).toContain("RESUMED SAVED CAMPAIGN");
+    expect(document.body.textContent).toContain("SAVED CAMPAIGN AVAILABLE — SEED 42024 · TURN 1");
+    await click(
+      [...document.querySelectorAll("button")].find((button) =>
+        button.textContent?.startsWith("CONTINUE"),
+      )!,
+    );
+    expect(document.body.textContent).toContain("CONTINUING SAVED CAMPAIGN");
     expect(document.body.textContent).toContain("Signals 1/2");
     await act(async () => resumed.unmount());
+  });
+
+  it("keeps a valid saved snapshot pending until CONTINUE, reset, or new seed is chosen", async () => {
+    const saved = { ...createNewCampaign(77), turn: 3 };
+    writeSave({ version: SAVE_VERSION, game: saved, events: [], reports: [], rulesVersion: 1, journalVersion: 1, journal: [] });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    expect(document.body.textContent).toContain("SAVED CAMPAIGN AVAILABLE — SEED 77 · TURN 3");
+    expect(readSave()?.game).toEqual(saved);
+    await click([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("RESET SAME SEED"))!);
+    expect(readSave()?.game.seed).toBe(77);
+    expect(readSave()?.game.turn).toBe(1);
+    expect(document.body.textContent).toContain("RESET SAME SEED · 77");
+    await act(async () => root.unmount());
+
+    document.body.innerHTML = '<div id="root"></div>';
+    const second = createRoot(document.getElementById("root")!);
+    await act(async () => second.render(<App />));
+    await click([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("NEW CAMPAIGN · NEW SEED"))!);
+    expect(readSave()?.game.seed).not.toBe(77);
+    await act(async () => second.unmount());
+  });
+
+  it("keeps a legacy snapshot journal-unavailable through a turn and reload", async () => {
+    const game = { ...createNewCampaign(77), turn: 3 };
+    writeSave({ version: 1, game, events: [], reports: [] });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement).click());
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).journal).toBeUndefined();
+    await act(async () => root.unmount());
+
+    document.body.innerHTML = '<div id="root"></div>';
+    const reloaded = createRoot(document.getElementById("root")!);
+    await act(async () => reloaded.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement).click());
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).journal).toBeUndefined();
+    await act(async () => reloaded.unmount());
+  });
+
+  it("continues an unsupported snapshot into ordinary journal-unavailable saving", async () => {
+    const game = { ...createNewCampaign(88), turn: 4 };
+    writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] });
+    const before = localStorage.getItem(SAVE_KEY);
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement).click());
+    expect(localStorage.getItem(SAVE_KEY)).toBe(before);
+    expect(readSave()?.game).toEqual(game);
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    expect(readSave()?.game.turn).toBe(5);
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).journal).toBeUndefined();
+    expect(document.body.textContent).toContain("saved");
+    await act(async () => root.unmount());
+
+    document.body.innerHTML = '<div id="root"></div>';
+    const reloaded = createRoot(document.getElementById("root")!);
+    await act(async () => reloaded.render(<App />));
+    expect(document.body.textContent).toContain("SAVED CAMPAIGN AVAILABLE — SEED 88 · TURN 5");
+    await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent === "CONTINUE") as HTMLButtonElement).click());
+    await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent === "VERIFY REPLAY") as HTMLButtonElement).click());
+    expect(document.body.textContent).toContain("REPLAY UNAVAILABLE — this older campaign has no action journal.");
+    await act(async () => reloaded.unmount());
+  });
+
+  it("writes a current supported empty journal on explicit reset", async () => {
+    const game = { ...createNewCampaign(99), turn: 4 };
+    writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent?.startsWith("RESET SAME SEED")) as HTMLButtonElement).click());
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
+    expect(saved.version).toBe(SAVE_VERSION);
+    expect(saved.rulesVersion).toBe(1);
+    expect(saved.journalVersion).toBe(1);
+    expect(saved.journal).toEqual([]);
+    expect(saved.game.seed).toBe(99);
+    expect(saved.game.turn).toBe(1);
+    await act(async () => root.unmount());
+  });
+
+  it("keeps SAVE UNAVAILABLE after quota failure when VERIFY performs no write", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
+    const writes = setItem.mock.calls.length;
+    await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent === "VERIFY REPLAY") as HTMLButtonElement).click());
+    expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
+    expect(setItem.mock.calls).toHaveLength(writes);
+    setItem.mockRestore();
+    await act(async () => root.unmount());
+  });
+
+  it("persists the fresh no-save path with a journal initialized as an array", async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
+    expect(saved.journal).toEqual([{ type: "orders", orders: [{ squadId: "squad-1", type: "hold" }] }]);
+    await act(async () => root.unmount());
   });
 
   it("resets the campaign and persists terminal reason after remount", async () => {
@@ -1991,12 +2123,12 @@ describe("Editable turn plan", () => {
     const beforeSeed = readSave()?.game.seed;
     await click(
       [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === "NEW CAMPAIGN",
+        (button) => button.textContent?.startsWith("NEW CAMPAIGN"),
       )!,
     );
     expect(readSave()?.game).toBeDefined();
     expect(readSave()?.game.terminal).toBe("active");
-    expect(readSave()?.game.seed).toBe(42024);
+    expect(readSave()?.game.seed).not.toBe(beforeSeed);
     await act(async () => root.unmount());
 
     const terminal = {
@@ -2013,6 +2145,7 @@ describe("Editable turn plan", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const resumed = createRoot(document.getElementById("root")!);
     await act(async () => resumed.render(<App />));
+    await click([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE"))!);
     expect(document.body.textContent).toContain(
       "Turn 18 reached without victory.",
     );

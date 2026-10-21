@@ -19,8 +19,13 @@ import {
 import {
   readSave,
   readSaveNotice,
+  REPLAY_RULES_VERSION,
+  JOURNAL_VERSION,
+  readSaveUnavailableNotice,
   SAVE_VERSION,
+  verifyReplay,
   writeSave,
+  type JournalAction,
 } from "../game/persistence";
 
 type RailEvent = { turn: number; message: string };
@@ -47,8 +52,8 @@ const queuedCost = (orders: Order[], state: GameState) =>
   );
 
 const SEED = 42024;
-const SAVE_SUCCESS =
-  "Completed turns and research saved; queued orders are not saved.";
+const SAVE_SUCCESS = "Completed turns and research saved; queued orders are not saved.";
+const nextCampaignSeed = (seed: number) => (seed * 1664525 + 1013904223) >>> 0;
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
     Logistics: [
@@ -98,6 +103,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [game, setGame] = useState<GameState>(
     () => initialGame ?? loaded?.game ?? createNewCampaign(SEED),
   );
+  const [pendingSaveChoice, setPendingSaveChoice] = useState(() => Boolean(loaded));
   const [selectedSquad, setSelectedSquad] = useState("squad-1");
   const [selectedAction, setSelectedAction] =
     useState<Extract<OrderType, "move" | "attack">>("move");
@@ -106,26 +112,51 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>(
     () => loaded?.reports ?? [],
   );
+  const loadedReplaySupported = !!loaded && loaded.rulesVersion === REPLAY_RULES_VERSION && loaded.journalVersion === JOURNAL_VERSION;
+  const loadedReplayMetadata = !!loaded && (loaded.journal !== undefined || loaded.rulesVersion !== undefined || loaded.journalVersion !== undefined);
+  const [loadedReplayUnsupported, setLoadedReplayUnsupported] = useState(() => loadedReplayMetadata && !loadedReplaySupported);
+  const [journal, setJournal] = useState<JournalAction[] | undefined>(() => loaded ? (loaded.journal !== undefined && loadedReplaySupported ? loaded.journal : undefined) : []);
   const [saveStatus, setSaveStatus] = useState(
     !initialGame
       ? loaded
-        ? `RESUMED SAVED CAMPAIGN — ${SAVE_SUCCESS}`
+        ? `SAVED CAMPAIGN AVAILABLE — SEED ${loaded.game.seed} · TURN ${loaded.game.turn}`
         : readSaveNotice()
       : "",
   );
   const [error, setError] = useState("");
+  const [storageWarning, setStorageWarning] = useState("");
+  const verify = () => {
+    if (storageWarning) {
+      setSaveStatus(storageWarning);
+      return;
+    }
+    const stored = readSave();
+    if (!stored) {
+      setSaveStatus(readSaveUnavailableNotice() || "SAVE UNAVAILABLE — no stored campaign is available for replay verification.");
+      return;
+    }
+    setSaveStatus(verifyReplay(stored).message);
+  };
   const latestDebrief = events.find((event) => event.message.startsWith("TURN ") && event.message.includes(" DEBRIEF"));
-  const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
+  const persist = (nextGame: GameState, nextEvents = events, nextReports = reports, nextJournal = journal, allowUnsupported = false) => {
     if (!storageEnabled) return null;
+    if (loadedReplayUnsupported && !allowUnsupported) {
+      const warning = "REPLAY UNAVAILABLE — this campaign uses an unsupported replay version; the stored snapshot was not changed.";
+      setSaveStatus(warning);
+      return warning;
+    }
     const warning = writeSave({
       version: SAVE_VERSION,
       game: nextGame,
       events: nextEvents,
       reports: nextReports,
+      ...(nextJournal ? { rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: nextJournal } : {}),
     });
     if (warning) {
+      setStorageWarning(warning);
       setSaveStatus(warning);
     } else {
+      setStorageWarning("");
       setSaveStatus(SAVE_SUCCESS);
     }
     return warning;
@@ -381,7 +412,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       ) as RailEvent[];
       if (phaseReports.length) setReports(phaseReports);
       setEvents(nextEvents);
-      const warning = persist(enemy.nextState, nextEvents, nextReports);
+      const nextJournal = journal ? [...journal, { type: "orders" as const, orders: orders.map((order) => ({ ...order })) }] : undefined;
+      setJournal(nextJournal);
+      const warning = persist(enemy.nextState, nextEvents, nextReports, nextJournal);
       setOrders([]);
       if (!warning) setError("");
     } catch (e) {
@@ -392,7 +425,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     try {
       const nextGame = advanceResearch(game, branch);
       setGame(nextGame);
-      const warning = persist(nextGame);
+      const nextJournal = journal ? [...journal, { type: "research" as const, branch }] : undefined;
+      setJournal(nextJournal);
+      const warning = persist(nextGame, events, reports, nextJournal);
       if (!warning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Research rejected");
@@ -405,9 +440,58 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setOrders([]);
     setEvents([]);
     setReports([]);
+    setJournal([]);
     setError("");
-    const warning = persist(nextGame, [], []);
+    const warning = persist(nextGame, [], [], []);
   };
+  const continueCampaign = () => {
+    setLoadedReplayUnsupported(false);
+    setPendingSaveChoice(false);
+    setSaveStatus(`CONTINUING SAVED CAMPAIGN — SEED ${game.seed} · TURN ${game.turn}`);
+    setError("");
+  };
+  const resetSameSeed = () => {
+    const nextGame = createNewCampaign(game.seed);
+    setLoadedReplayUnsupported(false);
+    setPendingSaveChoice(false);
+    setGame(nextGame);
+    setSelectedSquad("squad-1");
+    setOrders([]);
+    setEvents([]);
+    setReports([]);
+    setJournal([]);
+    setError("");
+    persist(nextGame, [], [], [], true);
+  };
+  const newCampaign = () => {
+    const nextGame = createNewCampaign(nextCampaignSeed(game.seed));
+    setLoadedReplayUnsupported(false);
+    setPendingSaveChoice(false);
+    setGame(nextGame);
+    setSelectedSquad("squad-1");
+    setOrders([]);
+    setEvents([]);
+    setReports([]);
+    setJournal([]);
+    setError("");
+    persist(nextGame, [], [], [], true);
+  };
+  if (pendingSaveChoice && loaded) {
+    return (
+      <main className="command-shell">
+        <section className="notes card">
+          <p className="eyebrow">RIMEWARD // NORTHERN FRONTIER</p>
+          <h1>THE WHITE LINE</h1>
+          <h2>SAVED CAMPAIGN AVAILABLE</h2>
+          <p>SEED {loaded.game.seed} · TURN {loaded.game.turn}</p>
+          {saveStatus && <p className="save-status" role="status">{saveStatus}</p>}
+          <button className="primary" onClick={continueCampaign}>CONTINUE</button>
+          <button onClick={resetSameSeed}>RESET SAME SEED · {loaded.game.seed}</button>
+          <button onClick={newCampaign}>NEW CAMPAIGN · NEW SEED</button>
+        </section>
+      </main>
+    );
+  }
   if (!game.squads.length)
     return (
       <main className="command-shell">
@@ -421,9 +505,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               {saveStatus}
             </p>
           )}
-          <button className="primary" onClick={reset}>
-            NEW CAMPAIGN · SEED {game.seed}
+          <button onClick={verify}>VERIFY REPLAY</button>
+          {loaded && pendingSaveChoice && <button onClick={continueCampaign}>CONTINUE</button>}
+          <button className="primary" onClick={resetSameSeed}>
+            RESET SAME SEED · {game.seed}
           </button>
+          <button onClick={newCampaign}>NEW CAMPAIGN · NEW SEED</button>
         </section>
       </main>
     );
@@ -439,7 +526,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
           <span>TURN</span>
           <strong>{game.turn.toString().padStart(2, "0")}</strong>
           <span>OPERATION THAWLINE</span>
-          <button onClick={reset}>NEW CAMPAIGN</button>
+          <button onClick={newCampaign}>NEW CAMPAIGN · NEW SEED</button>
         </div>
       </header>
       <nav aria-label="Main navigation">
@@ -508,6 +595,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               {saveStatus}
             </p>
           )}
+          <button onClick={verify}>VERIFY REPLAY</button>
+          {loaded && pendingSaveChoice && <button onClick={continueCampaign}>CONTINUE</button>}
+          <button onClick={resetSameSeed}>RESET SAME SEED · {game.seed}</button>
           {game.terminal !== "active" && (
             <section className="terminal card">
               <p className="eyebrow">CAMPAIGN TERMINAL</p>
@@ -519,22 +609,15 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     : "DEFEAT"}
               </h2>
               <p>{game.terminalReason}</p>
-              <button className="primary" onClick={reset}>
-                RESTART · SEED {game.seed}
+              <button className="primary" onClick={resetSameSeed}>
+                RESET SAME SEED · {game.seed}
               </button>
               <button
                 onClick={() => {
-                  const seed = (game.seed * 1664525 + 1013904223) >>> 0;
-                  const nextGame = createNewCampaign(seed);
-                  setGame(nextGame);
-                  setOrders([]);
-                  setEvents([]);
-                  setReports([]);
-                  setError("");
-                  persist(nextGame, [], []);
+                  newCampaign();
                 }}
               >
-                NEW SEED
+                NEW CAMPAIGN · NEW SEED
               </button>
             </section>
           )}
