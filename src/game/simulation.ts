@@ -45,6 +45,7 @@ export type GameState = {
   recentBattles: string[];
   orderHistory: Order[][];
   enemyHistory: EnemyIntent[];
+  adaptiveHistory: AdaptiveHistoryBucket[];
   strategicIntent?: EnemyIntent;
   strategicTarget?: StrategicTarget;
   terminal: TerminalStatus;
@@ -73,6 +74,17 @@ export type EnemyIntent = {
   from: SectorId;
   to?: SectorId;
   target?: SectorId;
+};
+export type AdaptiveObservation = {
+  kind: "move" | "attack";
+  class: UnitClass;
+  from: SectorId;
+  to?: SectorId;
+  target?: SectorId;
+};
+export type AdaptiveHistoryBucket = {
+  turn: number;
+  observations: AdaptiveObservation[];
 };
 export type StrategicTarget = { squadId: string; destination: SectorId };
 export type CommanderStyle = "aggressive raider" | "defensive planner";
@@ -198,6 +210,7 @@ export const createNewCampaign = (seed: number): GameState => {
     recentBattles: [],
     orderHistory: [],
     enemyHistory: [],
+    adaptiveHistory: [],
     strategicIntent: undefined,
     strategicTarget: undefined,
     terminal: "active" as const,
@@ -216,6 +229,76 @@ const error = (message: string): never => {
   throw new Error(message);
 };
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const counterClass: Record<UnitClass, UnitClass> = {
+  Sentinel: "Raider",
+  Raider: "Recon",
+  Recon: "Artillery",
+  Artillery: "Sentinel",
+};
+const adjacentOrSame = (state: GameState, a: SectorId, b: SectorId): boolean =>
+  a === b || Boolean(state.sectors.find((sector) => sector.id === a)?.links.includes(b));
+const observationDestination = (observation: AdaptiveObservation): SectorId =>
+  observation.kind === "move"
+    ? observation.to ?? observation.from
+    : observation.target ?? observation.from;
+const observationCorridor = (observation: AdaptiveObservation): string =>
+  `${observation.from}>${observationDestination(observation)}`;
+const recentAdaptiveBuckets = (state: GameState): AdaptiveHistoryBucket[] =>
+  (Array.isArray(state.adaptiveHistory) ? state.adaptiveHistory : [])
+    .filter((bucket) => Number.isInteger(bucket.turn) && bucket.turn >= state.turn - 2)
+    .sort((a, b) => a.turn - b.turn);
+
+type AdaptiveStyle = "AGGRESSIVE" | "DEFENSIVE" | "UNSET";
+export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
+  const buckets = recentAdaptiveBuckets(state);
+  const observed = buckets.filter((bucket) => bucket.observations.length > 0);
+  const latest = observed.at(-1)?.observations ?? [];
+  if (!latest.length) return "UNSET";
+  for (const candidate of latest) {
+    const matchingTurns = new Set(
+      observed
+        .filter((bucket) =>
+          bucket.observations.some(
+            (observation) =>
+              observation.kind === candidate.kind &&
+              observation.class === candidate.class &&
+              observationCorridor(observation) === observationCorridor(candidate),
+          ),
+        )
+        .map((bucket) => bucket.turn),
+    );
+    const threshold = candidate.kind === "attack" ? 2 : 3;
+    if (matchingTurns.size >= threshold)
+      return candidate.kind === "attack" ? "AGGRESSIVE" : "DEFENSIVE";
+  }
+  return "UNSET";
+};
+export const adaptiveStyleCue = (state: GameState): string => {
+  const buckets = recentAdaptiveBuckets(state);
+  const observed = buckets.filter((bucket) => bucket.observations.length > 0);
+  const latest = observed.at(-1)?.observations[0];
+  const style = adaptiveStyle(state);
+  if (!latest) return "UNSET · no local enemy pattern observed";
+  const sector = state.sectors.find(
+    (item) => item.id === observationDestination(latest),
+  );
+  const near = sector?.name ?? "the nearby line";
+  if (style === "AGGRESSIVE") return `AGGRESSIVE · repeat assault near ${near}`;
+  if (style === "DEFENSIVE") return `DEFENSIVE · repeat advance near ${near}`;
+  return `UNSET · new ${latest.class} ${latest.kind} near ${near}`;
+};
+const appendAdaptiveBucket = (
+  state: GameState,
+  bucket: AdaptiveHistoryBucket,
+): AdaptiveHistoryBucket[] =>
+  [
+    ...(Array.isArray(state.adaptiveHistory) ? state.adaptiveHistory : []).filter(
+      (entry) => entry.turn !== bucket.turn,
+    ),
+    bucket,
+  ]
+    .sort((a, b) => a.turn - b.turn)
+    .slice(-3);
 const supplied = (state: GameState, sectorId: SectorId): boolean => {
   const owned = new Set(
     state.sectors
@@ -442,6 +525,43 @@ const nextLegalStep = (
       if (link === destination) return current.path[0] ?? link;
       seen.add(link);
       queue.push({ sector: link, path: [...current.path, link] });
+    }
+  }
+  return undefined;
+};
+
+const legalCounterIntent = (
+  state: GameState,
+  destination: SectorId,
+  excluded = new Set<string>(),
+): EnemyIntent | undefined => {
+  const defenders = state.squads
+    .filter((squad) => squad.strength > 0 && squad.sector === destination)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (!defenders.length) return undefined;
+  const enemies = state.enemySquads
+    .filter((enemy) => enemy.strength > 0 && !excluded.has(enemy.id))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  for (const defender of defenders) {
+    for (const enemy of enemies) {
+      if (counterClass[enemy.class] !== defender.class) continue;
+      const current = state.sectors.find((sector) => sector.id === enemy.sector);
+      if (current?.links.includes(destination) && attackIsViable(state, enemy, destination, excluded))
+        return {
+          squadId: enemy.id,
+          kind: "attack",
+          from: enemy.sector,
+          to: enemy.sector,
+          target: destination,
+        };
+      const step = nextLegalStep(state, enemy.sector, destination, enemy.id);
+      if (step)
+        return {
+          squadId: enemy.id,
+          kind: "move",
+          from: enemy.sector,
+          to: step,
+        };
     }
   }
   return undefined;
@@ -872,6 +992,10 @@ export const decideEnemyIntent = (
     .map((enemy) => intentForEnemy(state, enemy, phaseTurn, excluded))
     .filter((intent): intent is EnemyIntent => Boolean(intent));
   if (!intents.length) return undefined;
+  const strategicCounter = state.strategicTarget
+    ? legalCounterIntent(state, state.strategicTarget.destination, excluded)
+    : undefined;
+  if (strategicCounter) return strategicCounter;
   const hq = intents.filter(
     (intent) => intent.kind === "attack" && intent.target === state.hq.player,
   );
@@ -902,7 +1026,7 @@ export const decideEnemyIntent = (
       state.objectives.some(
         (objective) =>
           objective.sector === defenderEnemy.sector && !objective.controlled,
-      );
+    );
     if (defender?.kind === "hold" && defenderRelay) return defender;
     const defenderMoveRelay =
       defender?.kind === "move" &&
@@ -942,10 +1066,16 @@ export const decideEnemyIntent = (
   }
   const tier = intents.filter((intent) => intent.kind !== "hold");
   const candidates = tier.length ? tier : intents;
+  const style = adaptiveStyle(state);
   return candidates
     .slice()
     .sort(
       (a, b) =>
+        (style === "AGGRESSIVE"
+          ? Number(b.kind === "attack") - Number(a.kind === "attack")
+          : style === "DEFENSIVE"
+            ? Number(b.kind === "move") - Number(a.kind === "move")
+            : 0) ||
         pressureHash(
           state,
           `${a.squadId}:${a.to ?? a.target ?? a.from}`,
@@ -1224,12 +1354,7 @@ export const resolveTurn = (
   return { nextState, events };
 };
 
-const counters: Record<UnitClass, UnitClass> = {
-  Sentinel: "Raider",
-  Raider: "Recon",
-  Recon: "Artillery",
-  Artillery: "Sentinel",
-};
+const counters = counterClass;
 const battleRandom = (seed: number, target: SectorId, turn: number): number => {
   let value = (seed ^ turn ^ Number(target.slice(7))) >>> 0;
   value = (value * 1664525 + 1013904223) >>> 0;
@@ -1592,6 +1717,7 @@ const resolveEnemyTurnOnce = (
       from,
       to: intent.to,
       message: `${enemy.id} advances to ${intent.to} (${destinationName})`,
+      faction: "enemy",
     });
   } else if (intent?.kind === "hold" && enemy) {
     events.push({
@@ -1648,6 +1774,21 @@ export const resolveEnemyTurn = (
     requestedSlots,
     state.enemySquads.filter((enemy) => enemy.strength > 0).length,
   );
+  const startEnemySquads = new Map(
+    state.enemySquads
+      .filter((enemy) => enemy.strength > 0)
+      .map((enemy) => [enemy.id, enemy] as const),
+  );
+  const localEnemyIds = new Set(
+    [...startEnemySquads.values()]
+      .filter((enemy) =>
+        state.squads.some(
+          (squad) =>
+            squad.strength > 0 && adjacentOrSame(state, squad.sector, enemy.sector),
+        ),
+      )
+      .map((enemy) => enemy.id),
+  );
   for (
     let index = 0;
     index < slots && nextState.terminal === "active";
@@ -1660,6 +1801,26 @@ export const resolveEnemyTurn = (
     phase.events.forEach((event) => acted.add(event.squadId));
     if (!phase.events.length) break;
   }
+  const observations: AdaptiveObservation[] = events
+    .filter(
+      (event) =>
+        event.faction === "enemy" &&
+        (event.type === "move" || event.type === "attack") &&
+        localEnemyIds.has(event.squadId),
+    )
+    .map((event) => {
+      const enemy = startEnemySquads.get(event.squadId);
+      return {
+        kind: event.type as "move" | "attack",
+        class: enemy?.class ?? "Sentinel",
+        from: event.from,
+        ...(event.type === "move" ? { to: event.to } : { target: event.target }),
+      };
+    });
+  nextState.adaptiveHistory = appendAdaptiveBucket(nextState, {
+    turn: state.turn,
+    observations,
+  });
   nextState.income = calculateIncome(nextState);
   nextState.resources = {
     metal: Math.min(99, nextState.resources.metal + nextState.income.metal),

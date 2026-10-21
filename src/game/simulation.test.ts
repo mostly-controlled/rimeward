@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   advanceDay,
   advanceResearch,
+  adaptiveStyle,
+  adaptiveStyleCue,
   calculateIncome,
   connectedOwnedSectors,
   createNewCampaign,
@@ -109,6 +111,79 @@ describe("campaign simulation", () => {
       intelligence: 7,
     });
     expect(warfare.research).toBe(1);
+  });
+
+  it("records only locally visible material enemy actions in three turn buckets", () => {
+    const base = createNewCampaign(42024);
+    const local = {
+      ...base,
+      squads: base.squads.map((squad, index) =>
+        index === 0 ? { ...squad, sector: "sector-0" as const } : { ...squad, strength: 0 },
+      ),
+      enemySquads: base.enemySquads.map((enemy, index) =>
+        index === 0 ? { ...enemy, sector: "sector-1" as const, strength: 10 } : { ...enemy, strength: 0 },
+      ),
+      revealedEnemySquads: [],
+    };
+    const observed = resolveEnemyTurn(local, 1).nextState;
+    expect(observed.adaptiveHistory).toHaveLength(1);
+    expect(observed.adaptiveHistory[0].turn).toBe(1);
+    expect(observed.adaptiveHistory[0].observations).toEqual([
+      expect.objectContaining({ kind: "attack", class: observed.enemySquads[0].class, from: "sector-1", target: "sector-0" }),
+    ]);
+
+    const hidden = resolveEnemyTurn({
+      ...local,
+      enemySquads: local.enemySquads.map((enemy) => ({ ...enemy, sector: "sector-6" as const })),
+    }, 1).nextState;
+    expect(hidden.adaptiveHistory).toEqual([{ turn: 1, observations: [] }]);
+    expect(hidden.adaptiveHistory).not.toEqual(observed.adaptiveHistory);
+  });
+
+  it("requires distinct turns for style, rejects a feint, and expires quiet memory", () => {
+    const base = createNewCampaign(7);
+    const enemyClass = base.enemySquads[0].class;
+    const repeat = {
+      ...base,
+      turn: 2,
+      adaptiveHistory: [
+        { turn: 1, observations: [{ kind: "attack" as const, class: enemyClass, from: "sector-1" as const, target: "sector-0" as const }] },
+        { turn: 2, observations: [{ kind: "attack" as const, class: enemyClass, from: "sector-1" as const, target: "sector-0" as const }] },
+      ],
+    };
+    expect(adaptiveStyle(repeat)).toBe("AGGRESSIVE");
+    expect(adaptiveStyleCue(repeat)).toContain("AGGRESSIVE");
+    const feint = {
+      ...repeat,
+      adaptiveHistory: [
+        repeat.adaptiveHistory[0],
+        { turn: 2, observations: [{ kind: "attack" as const, class: enemyClass, from: "sector-1" as const, target: "sector-2" as const }] },
+      ],
+    };
+    expect(adaptiveStyle(feint)).toBe("UNSET");
+    const quiet = { ...repeat, turn: 4 };
+    expect(adaptiveStyle(quiet)).toBe("UNSET");
+    const holdsOnly = { ...base, adaptiveHistory: [{ turn: 1, observations: [] }, { turn: 2, observations: [] }] };
+    expect(adaptiveStyle(holdsOnly)).toBe("UNSET");
+  });
+
+  it("deploys a legal class counter for a strategic objective within the budget", () => {
+    const base = createNewCampaign(3);
+    const state = {
+      ...base,
+      enemySquads: base.enemySquads.map((enemy, index) =>
+        index === 0 ? { ...enemy, class: "Raider" as const, sector: "sector-1" as const, strength: 10 } : { ...enemy, strength: 0 },
+      ),
+      squads: base.squads.map((squad, index) =>
+        index === 0 ? { ...squad, class: "Sentinel" as const, sector: "sector-0" as const } : { ...squad, strength: 0 },
+      ),
+      strategicTarget: { squadId: "enemy-1", destination: "sector-0" as const },
+    };
+    const intent = decideEnemyIntent(state);
+    expect(intent).toMatchObject({ squadId: "enemy-1", kind: "attack", target: "sector-0" });
+    const phase = resolveEnemyTurn(state, 1);
+    expect(new Set(phase.events.map((event) => event.squadId)).size).toBeLessThanOrEqual(1);
+    expect(phase.events[0]).toMatchObject({ squadId: "enemy-1", type: "attack", target: "sector-0" });
   });
 
   it("reports only HQ-connected owned income with per-sector yields", () => {

@@ -46,6 +46,17 @@ describe("campaign persistence", () => {
     expect(validateSave(legacy)).toBe(true);
     expect(verifyReplay(legacy).status).toBe("unavailable");
   });
+  it("defaults missing legacy adaptive memory and rejects malformed present memory", () => {
+    const game = createNewCampaign(77);
+    const { adaptiveHistory: _adaptiveHistory, ...legacyGame } = game;
+    const legacy = { version: 1, game: legacyGame, events: [], reports: [] };
+    expect(validateSave(legacy)).toBe(true);
+    storage.localStorage.setItem(SAVE_KEY, JSON.stringify(legacy));
+    expect(readSave()?.game.adaptiveHistory).toEqual([]);
+    expect(validateSave({ ...legacy, game: { ...legacyGame, adaptiveHistory: null } })).toBe(false);
+    expect(validateSave({ ...legacy, game: { ...legacyGame, adaptiveHistory: [{ turn: 1, observations: [{ kind: "move", class: "Sentinel", from: "sector-0", to: "sector-1" }] }, { turn: 1, observations: [] }] } })).toBe(false);
+    expect(validateSave({ ...legacy, game: { ...legacyGame, adaptiveHistory: [{ turn: 1, observations: [{ kind: "hold", class: "Sentinel", from: "sector-0" }] }] } })).toBe(false);
+  });
   it("replays accepted research and turns against the saved snapshot", () => {
     const game = createNewCampaign(77);
     const next = advanceResearchForTest(game);

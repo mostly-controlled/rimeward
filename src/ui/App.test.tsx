@@ -66,6 +66,27 @@ describe("App interactions", () => {
     return root;
   };
 
+  it("shows a named local style cue after a real new-campaign turn", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      squads: campaign.squads.map((squad, index) =>
+        index === 0 ? { ...squad, sector: "sector-0" as const } : { ...squad, strength: 0 },
+      ),
+      enemySquads: campaign.enemySquads.map((enemy, index) =>
+        index === 0 ? { ...enemy, sector: "sector-1" as const, strength: 7 } : { ...enemy, strength: 0 },
+      ),
+    };
+    const root = await renderApp(state);
+    await act(async () => (document.querySelector('.order-buttons button') as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
+    expect(cue).toContain("ENEMY STYLE CUE");
+    expect(cue).toContain("Frostgate");
+    expect(cue).not.toContain("sector-");
+    await act(async () => root.unmount());
+  });
+
   it("sanitizes persisted legacy enemy debriefs without Signals", () => {
     const legacy = "TURN 4 DEBRIEF\nENEMY PHASE OBSERVED: enemy-1 move sector-3";
     expect(displayRailMessage(legacy, 0)).toContain("movement withheld — Signals 0");
