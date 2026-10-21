@@ -178,7 +178,9 @@ describe("campaign simulation", () => {
         { turn: 3, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-2" as const }] },
       ],
     };
-    expect(adaptiveStyle(feint)).toBe("UNSET");
+    // Class continuity is independent of the observed corridor: this remains
+    // a defensive class pattern even though the route changed after turn 1.
+    expect(adaptiveStyle(feint)).toBe("DEFENSIVE");
     const repeatIntents = decideEnemyIntents(repeat);
     const feintIntents = decideEnemyIntents(feint);
     const repeatPhase = resolveEnemyTurn(repeat);
@@ -211,6 +213,20 @@ describe("campaign simulation", () => {
     expect(state.turn).toBe(4);
     expect(state.adaptiveHistory.map((bucket) => bucket.turn)).toEqual([1, 2, 3]);
     expect(adaptiveStyle(state)).toBe("DEFENSIVE");
+  });
+
+  it("resets class and corridor confidence independently when either pattern switches", () => {
+    const base = createNewCampaign(7);
+    const state = {
+      ...base,
+      turn: 3,
+      adaptiveHistory: [
+        { turn: 1, observations: [{ kind: "move" as const, class: "Sentinel" as const, from: "sector-1" as const, to: "sector-2" as const }] },
+        { turn: 2, observations: [{ kind: "move" as const, class: "Raider" as const, from: "sector-2" as const, to: "sector-3" as const }] },
+        { turn: 3, observations: [{ kind: "move" as const, class: "Sentinel" as const, from: "sector-3" as const, to: "sector-4" as const }] },
+      ],
+    };
+    expect(adaptiveStyle(state)).toBe("UNSET");
   });
 
   it("deploys a legal class counter for a strategic objective within the budget", () => {

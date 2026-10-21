@@ -247,24 +247,22 @@ export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
   const observed = buckets.filter((bucket) => bucket.observations.length > 0);
   const latest = observed.at(-1)?.observations ?? [];
   if (!latest.length) return "UNSET";
-  for (const candidate of latest) {
-    const matchingTurns = new Set(
-      observed
-        .filter((bucket) =>
-          bucket.observations.some(
-            (observation) =>
-              observation.kind === candidate.kind &&
-              observation.class === candidate.class &&
-              observationCorridor(observation) === observationCorridor(candidate),
-          ),
-        )
-        .map((bucket) => bucket.turn),
-    );
-    if (matchingTurns.size >= 3)
-      return pressureHash(state, "adaptive-style", 0) % 2 === 0
-        ? "AGGRESSIVE"
-        : "DEFENSIVE";
+  let classConfidence = 0;
+  let corridorConfidence = 0;
+  let previousClass: UnitClass | undefined;
+  let previousCorridor: string | undefined;
+  for (const bucket of observed) {
+    const observation = bucket.observations[0];
+    const corridor = observationCorridor(observation);
+    classConfidence = observation.class === previousClass ? classConfidence + 1 : 1;
+    corridorConfidence = corridor === previousCorridor ? corridorConfidence + 1 : 1;
+    previousClass = observation.class;
+    previousCorridor = corridor;
   }
+  const personality = pressureHash(state, "adaptive-style", 0) % 2 === 0;
+  const threshold = personality ? 2 : 3;
+  if (classConfidence >= threshold || corridorConfidence >= threshold)
+    return personality ? "AGGRESSIVE" : "DEFENSIVE";
   return "UNSET";
 };
 export const adaptiveStyleCue = (state: GameState): string => {
