@@ -209,14 +209,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     (order): order is Order & { target: SectorId } =>
       (order.type === "move" || order.type === "attack") && Boolean(order.target),
   );
-  const guideQueue = orders.length
-    ? orders
-        .map((order) => {
-          const owner = game.squads.find((unit) => unit.id === order.squadId);
-          return `${owner?.class.toUpperCase() ?? order.squadId} ${order.squadId.slice(-1)} · ${order.type.toUpperCase()}`;
-        })
-        .join(", ")
-    : "";
   const unassignedSquads = game.squads.filter(
     (unit) => unit.strength > 0 && !orderFor(unit.id),
   );
@@ -233,6 +225,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     return undefined;
   })();
   const canSelectNextUnassigned = game.terminal === "active" && Boolean(nextUnassigned);
+  const selectedOrder = orderFor(selectedId);
   const selectNextUnassigned = () => {
     if (!canSelectNextUnassigned || !nextUnassigned) return;
     setSelectedSquad(nextUnassigned.id);
@@ -274,6 +267,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       status: enemyHq?.owner === "player" ? "CAPTURED" : "REQUIRED",
     },
   ];
+  const requiredRelayLabels = campaignObjectives
+    .filter((objective) => objective.key !== "enemy-hq" && objective.status === "REQUIRED")
+    .map((objective) => objective.label);
   const setOrder = (type: OrderType, target?: SectorId) => {
     if (!selectedId || game.terminal !== "active") return;
     setError("");
@@ -523,6 +519,51 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               </button>
             </section>
           )}
+          <section className="turn-guide" aria-label="Turn guide">
+            <p className="eyebrow">TURN GUIDE · TURN {game.turn}</p>
+            <h3>GOAL</h3>
+            <p>
+              {game.terminal === "active"
+                ? `Hold all relays AND enemy HQ; defend ${playerHq?.name ?? game.hq.player}. Remaining relays: ${requiredRelayLabels.join(", ") || "none"}. HQ: ${enemyHq?.name ?? game.hq.enemy} ${enemyHq?.owner === "player" ? "CAPTURED" : "REQUIRED"}. Objectives may not be reachable this turn.`
+                : game.terminal === "victory"
+                  ? "The frontier is secure."
+                  : "The campaign has ended."}
+            </p>
+            {game.terminal === "active" ? (
+              <ol>
+                <li>
+                  <strong>SELECT SQUAD</strong> — {squad.class.toUpperCase()} {squad.id.slice(-1)} at {sectorName(squad.sector)} (STR {squad.strength}, FTG {squad.fatigue}).
+                </li>
+                <li>
+                  <strong>CHOOSE {selectedAction.toUpperCase()}</strong> — {selectedAction === "attack"
+                    ? "choose a legal target below to queue ATTACK."
+                    : "choose a highlighted target below to queue MOVE."}
+                </li>
+                <li>
+                  <strong>{legalTargets.length ? "HIGHLIGHTED LEGAL DESTINATION" : "NO LEGAL TARGETS"}</strong> — {legalTargets.length
+                    ? legalTargets.map((target) => target.name).join(", ")
+                    : selectedAction === "attack"
+                      ? recoverySupplied
+                        ? "no enemy target is reachable; use HOLD or select another squad."
+                        : "no enemy target is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."
+                      : recoverySupplied
+                        ? "no unoccupied friendly destination is reachable; use HOLD or RECOVER, or select ATTACK when an enemy-held destination is legal."
+                        : "no unoccupied friendly destination is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."}
+                </li>
+                <li>
+                  <strong>{orders.length ? `QUEUED (${orders.length}) — NOT EXECUTED` : "NOT QUEUED"}</strong> — {orders.length ? `${selectedOrder ? `${selectedOrder.type.toUpperCase()} is queued for the selected squad. ` : ""}${unassignedSquads.length} unassigned${unassignedSquads.length === 1 ? " squad" : " squads"}; ${unassignedSquads.length ? "choose another or HOLD UNASSIGNED to avoid fatigue. " : ""}Player orders resolve first, then the enemy phase. EXECUTE TURN resolves assigned orders without requiring all squads.` : "Queue orders for your squads."}
+                </li>
+              </ol>
+            ) : (
+              <p className="muted">Terminal state: {game.terminal.toUpperCase()}. The campaign is over; use RESTART or NEW SEED above to replay or begin a new campaign. No further planning is available.</p>
+            )}
+            {game.terminal === "active" && (
+              <p className="muted">Selecting MOVE/ATTACK does not queue; choose highlighted target.</p>
+            )}
+            {game.terminal === "active" && (
+              <p className="muted">STR = strength. FTG = fatigue. HOLD is free and lowers FTG by 1; unassigned squads gain 1 fatigue. Supplied RECOVER costs the shown metal + 2 energy, restores strength, and lowers fatigue; it is unavailable when unsupplied.</p>
+            )}
+          </section>
           <section className="resource-strip">
             <span>
               <b>METAL</b> {game.resources.metal}
@@ -576,68 +617,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               ))}
             </div>
           </section>
-          <section className="turn-guide" aria-label="Turn guide">
-            <p className="eyebrow">TURN GUIDE · TURN {game.turn}</p>
-            <h3>GOAL</h3>
-            <p>
-              {game.terminal === "active"
-                ? `Secure ${campaignObjectives.find((objective) => objective.status === "REQUIRED")?.label ?? "the frontier"}.`
-                : game.terminal === "victory"
-                  ? "The frontier is secure."
-                  : "The campaign has ended."}
-            </p>
-            {game.terminal === "active" ? (
-              <ol>
-                <li>
-                  <strong>SELECT SQUAD</strong> — {squad.class.toUpperCase()}{" "}
-                  {squad.id.slice(-1)} at {sectorName(squad.sector)} (STR{" "}
-                  {squad.strength}, FTG {squad.fatigue}).
-                </li>
-                <li>
-                  <strong>CHOOSE {selectedAction.toUpperCase()}</strong> —{" "}
-                  {selectedAction === "attack"
-                    ? "ATTACK is available only when a legal target exists; choose one below."
-                    : "pick a highlighted legal destination below."}
-                </li>
-                <li>
-                  <strong>
-                    {legalTargets.length
-                      ? "HIGHLIGHTED LEGAL DESTINATION"
-                      : "NO LEGAL TARGETS"}
-                  </strong>{" "}
-                  —{" "}
-                  {legalTargets.length
-                    ? legalTargets.map((target) => target.name).join(", ")
-                    : selectedAction === "attack"
-                      ? recoverySupplied
-                        ? "no enemy target is reachable; use HOLD or select another squad."
-                        : "no enemy target is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."
-                      : recoverySupplied
-                        ? "no unoccupied friendly destination is reachable; use HOLD or RECOVER, or select ATTACK when an enemy-held destination is legal."
-                        : "no unoccupied friendly destination is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."}
-                </li>
-                <li>
-                  <strong>
-                    {orders.length ? "QUEUED — NOT EXECUTED" : "NOT QUEUED"}
-                  </strong>{" "}
-                  —{" "}
-                  {orders.length
-                    ? `${guideQueue}. Cancel an order to revise, then EXECUTE TURN.`
-                    : "select a highlighted destination to queue it."}
-                </li>
-              </ol>
-            ) : (
-              <p className="muted">
-                Terminal state: {game.terminal.toUpperCase()}. Orders are
-                disabled.
-              </p>
-            )}
-            <p className="muted">
-              STR = strength. FTG = fatigue. HOLD lowers FTG by 1. RECOVER
-              restores STR and lowers FTG when supplied.
-            </p>
-          </section>
-
           <section className="card debrief-panel" aria-label="Last turn debrief">
             <div className="panel-heading">
               <h2>WHAT CHANGED / WHY</h2>
