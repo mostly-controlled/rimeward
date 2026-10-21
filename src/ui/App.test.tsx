@@ -955,6 +955,9 @@ describe("App interactions", () => {
     expect(debrief).toContain("UNASSIGNED FATIGUE:");
     expect(debrief).toContain("SQUAD LOSSES:");
     expect(debrief).toMatch(/WHY: .*STR 1, FTG 3.*ATTACK risks losing this squad.*HOLD.*RECOVER/);
+    expect(document.querySelector(".debrief-what-changed")?.textContent).toContain("WHAT CHANGED:");
+    expect(document.querySelector(".debrief-player-result")?.textContent).toContain("PLAYER RESULT:");
+    expect(document.querySelector(".debrief-next")?.textContent).toContain("NEXT:");
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".map-panel") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".orders") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const debriefElement = document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement;
