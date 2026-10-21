@@ -103,7 +103,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [game, setGame] = useState<GameState>(
     () => initialGame ?? loaded?.game ?? createNewCampaign(SEED),
   );
-  const [pendingSaveChoice, setPendingSaveChoice] = useState(() => Boolean(loaded?.journal));
+  const [pendingSaveChoice, setPendingSaveChoice] = useState(() => Boolean(loaded));
   const [selectedSquad, setSelectedSquad] = useState("squad-1");
   const [selectedAction, setSelectedAction] =
     useState<Extract<OrderType, "move" | "attack">>("move");
@@ -114,8 +114,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   );
   const loadedReplaySupported = !!loaded && loaded.rulesVersion === REPLAY_RULES_VERSION && loaded.journalVersion === JOURNAL_VERSION;
   const loadedReplayMetadata = !!loaded && (loaded.journal !== undefined || loaded.rulesVersion !== undefined || loaded.journalVersion !== undefined);
-  const loadedReplayUnsupported = loadedReplayMetadata && !loadedReplaySupported;
-  const [journal, setJournal] = useState<JournalAction[] | undefined>(() => loaded ? (loaded.journal === undefined || loadedReplaySupported ? loaded.journal ?? [] : undefined) : initialGame ? [] : undefined);
+  const [loadedReplayUnsupported, setLoadedReplayUnsupported] = useState(() => loadedReplayMetadata && !loadedReplaySupported);
+  const [journal, setJournal] = useState<JournalAction[] | undefined>(() => loaded ? (loaded.journal !== undefined && loadedReplaySupported ? loaded.journal : undefined) : []);
   const [saveStatus, setSaveStatus] = useState(
     !initialGame
       ? loaded
@@ -138,9 +138,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setSaveStatus(verifyReplay(stored).message);
   };
   const latestDebrief = events.find((event) => event.message.startsWith("TURN ") && event.message.includes(" DEBRIEF"));
-  const persist = (nextGame: GameState, nextEvents = events, nextReports = reports, nextJournal = journal) => {
+  const persist = (nextGame: GameState, nextEvents = events, nextReports = reports, nextJournal = journal, allowUnsupported = false) => {
     if (!storageEnabled) return null;
-    if (loadedReplayUnsupported) {
+    if (loadedReplayUnsupported && !allowUnsupported) {
       const warning = "REPLAY UNAVAILABLE — this campaign uses an unsupported replay version; the stored snapshot was not changed.";
       setSaveStatus(warning);
       return warning;
@@ -451,6 +451,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   };
   const resetSameSeed = () => {
     const nextGame = createNewCampaign(game.seed);
+    setLoadedReplayUnsupported(false);
     setPendingSaveChoice(false);
     setGame(nextGame);
     setSelectedSquad("squad-1");
@@ -459,10 +460,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setReports([]);
     setJournal([]);
     setError("");
-    persist(nextGame, [], [], []);
+    persist(nextGame, [], [], [], true);
   };
   const newCampaign = () => {
     const nextGame = createNewCampaign(nextCampaignSeed(game.seed));
+    setLoadedReplayUnsupported(false);
     setPendingSaveChoice(false);
     setGame(nextGame);
     setSelectedSquad("squad-1");
@@ -471,7 +473,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setReports([]);
     setJournal([]);
     setError("");
-    persist(nextGame, [], [], []);
+    persist(nextGame, [], [], [], true);
   };
   if (pendingSaveChoice && loaded) {
     return (

@@ -86,6 +86,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const reloaded = createRoot(document.getElementById("root")!);
     await act(async () => reloaded.render(<App />));
+    await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE")) as HTMLButtonElement).click());
     const reloadDetails = document.querySelector("details summary") as HTMLElement;
     await act(async () => reloadDetails.click());
     const secondRender = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
@@ -335,6 +336,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE")) as HTMLButtonElement).click());
     const objectives = document.querySelector(".campaign-objectives")!;
     const guide = document.querySelector('[aria-label="Turn guide"]')!;
     const map = document.querySelector(".battle-layout")!;
@@ -1004,6 +1006,7 @@ describe("App interactions", () => {
     const initialGame = { ...campaign, squads: campaign.squads.map((squad, index) => index === 0 ? { ...squad, sector: "sector-5" as const, strength: 1, fatigue: 3 } : squad) };
     writeSave({ version: SAVE_VERSION, game: initialGame, events: [], reports: [] });
     await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE")) as HTMLButtonElement).click());
     const objectives = document.querySelector(".campaign-objectives") as HTMLElement;
     const debriefBefore = document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement;
     const income = document.querySelector(".income") as HTMLElement;
@@ -1976,6 +1979,7 @@ describe("Editable turn plan", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    await click([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE"))!);
     await click(
       [...document.querySelectorAll(".research button")].find((button) =>
         button.textContent?.startsWith("Signals"),
@@ -2049,6 +2053,7 @@ describe("Editable turn plan", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const resumed = createRoot(document.getElementById("root")!);
     await act(async () => resumed.render(<App />));
+    await click([...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith("CONTINUE"))!);
     expect(document.body.textContent).toContain(
       "Turn 18 reached without victory.",
     );
