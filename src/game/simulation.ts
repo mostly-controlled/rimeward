@@ -1277,11 +1277,18 @@ export const resolveTurn = (
   validateOrders(state, playerOrders);
   const nextState = clone(state);
   const events: GameEvent[] = [];
-  const visibleEnemyIds = new Set(state.enemySquads.filter((enemy) => enemy.strength > 0).filter((enemy) => state.squads.some((squad) => squad.strength > 0 && adjacentOrSame(state, squad.sector, enemy.sector))).map((enemy) => enemy.id));
   const observations: AdaptiveObservation[] = playerOrders.flatMap((order) => {
     if (order.type !== "move" && order.type !== "attack") return [];
     const squad = state.squads.find((item) => item.id === order.squadId);
-    if (!squad || squad.strength <= 0 || !visibleEnemyIds.size) return [];
+    if (
+      !squad ||
+      squad.strength <= 0 ||
+      !state.enemySquads.some(
+        (enemy) =>
+          enemy.strength > 0 && adjacentOrSame(state, squad.sector, enemy.sector),
+      )
+    )
+      return [];
     return [{ kind: order.type, class: squad.class, from: squad.sector, ...(order.type === "move" ? { to: order.target } : { target: order.target }) }];
   });
   for (const order of playerOrders) {
