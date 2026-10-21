@@ -949,6 +949,11 @@ describe("App interactions", () => {
     expect(document.querySelector(".debrief-what-changed")?.textContent).toContain("WHAT CHANGED:");
     expect(document.querySelector(".debrief-player-result")?.textContent).toContain("PLAYER RESULT:");
     expect(document.querySelector(".debrief-next")?.textContent).toContain("NEXT:");
+    const summary = document.querySelector(".debrief-summary")?.textContent ?? "";
+    expect(summary).toContain("PLAYER RESULT:");
+    expect(document.querySelector(".debrief-what-changed")?.textContent).not.toContain("HOLD");
+    expect(document.querySelector(".debrief-summary")?.firstElementChild?.textContent).toContain("PLAYER RESULT:");
+    expect(debrief).toContain("connected");
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".map-panel") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".orders") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const debriefElement = document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement;
