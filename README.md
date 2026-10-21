@@ -19,9 +19,12 @@ npm run build
 
 This issue intentionally excludes backend services, authentication, persistence, remote assets, desktop packaging, and browser automation. Gameplay systems arrive in later issues.
 
-## Concrete campaign paths
+## Short delivery guide
 
-- **Winning path:** from seed `42024`, move `squad-1` through `Whiteplain` and `Glassway`, attack and capture `Ashenfall`, then repeat the same supplied, adjacent advance-and-attack pattern for the other two relay sectors. A relay counts only after its sector is held by the Ward; capture does not teleport the squad or grant an undefended objective for free.
-- **Losing paths:** allow an enemy squad to advance through adjacent legal links until it captures the Ward HQ, let all Ward squads be destroyed, or reach turn 18 without all three relays. Terminal state is checked after the enemy phase, and further orders/research are blocked.
-- **Economy:** income comes only from player-owned sectors connected to the HQ. Captured or cut-off sectors stop yielding their explicit metal, energy, and intelligence values until the link is restored. Recover costs one metal and attacks cost two energy; rejected multi-order batches spend nothing.
-- **Replay:** recreate the campaign with the same seed and submit the same ordered commands. Enemy movement, battle variance, research effects, and resource totals are deterministic; a different seed is available from the terminal screen.
+1. Install and run: `npm ci`, then `npm run dev`. Open the local Vite URL and choose `NEW CAMPAIGN · NEW SEED` (or enter a known seed in the terminal screen).
+2. Each turn assigns at most one action to each living Ward squad. Orders are validated as a batch; an invalid batch spends nothing. `HOLD` is free, `ATTACK` costs `2 metal + 3 energy`, and supplied `RECOVER` costs the displayed metal amount plus `2 energy`.
+3. Income is paid only by Ward-owned sectors connected to HQ. The turn rail reports connected income/supply, order costs, enemy response, and the resulting resource deltas. Research is paid from the shown branch cost and threshold.
+4. Use `SAVE CAMPAIGN` after completed turns or research. Queued orders are not saved. On reload choose `CONTINUE SAVED CAMPAIGN`; `VERIFY REPLAY` replays the saved ordered journal for the same seed. `RESET SAME SEED` starts that seed over; `NEW CAMPAIGN · NEW SEED` derives a new seed.
+5. Terminal campaigns cannot accept more orders. A campaign can lose through HQ capture, destruction of all Ward squads, or reaching the turn limit without all relays.
+
+Validation: `npm run check`, `npm test -- --run`, and `npm run build`.
