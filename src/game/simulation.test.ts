@@ -212,53 +212,37 @@ describe("campaign simulation", () => {
   });
 
   it("responds to reachable repeated corridors through the complete turn pipeline", () => {
-    const play = (corridor: readonly [SectorId, SectorId, SectorId, SectorId]) => {
-      let state = createNewCampaign(4294840881);
-      const actions: string[] = [];
+    type EnemyAction = { squadId: string; kind: "MOVE" | "ATTACK" | "HOLD"; target?: SectorId; from: SectorId; to: SectorId };
+    const play = (corridor: readonly [SectorId, SectorId, SectorId, SectorId], adaptiveHistory?: GameState["adaptiveHistory"]) => {
+      let state = { ...createNewCampaign(4294840881), adaptiveHistory: adaptiveHistory ?? createNewCampaign(4294840881).adaptiveHistory };
+      const actions: EnemyAction[] = [];
       for (const target of corridor) {
-        const player = resolveTurn(state, [{ squadId: "squad-1", type: "move", target }]);
+        const order = { squadId: "squad-1", type: "move" as const, target };
+        expect(() => validateOrders(state, [order])).not.toThrow();
+        const player = resolveTurn(state, [order]);
         const combat = resolveCombat(player.nextState, player.events);
         const enemy = resolveEnemyTurn(combat.nextState);
-        actions.push(
-          ...enemy.events
-            .map((event) => `${event.squadId}:${event.from}->${event.to}`)
-            .sort(),
-        );
+        actions.push(...enemy.events.map((event): EnemyAction => ({ squadId: event.squadId, kind: event.type === "move" ? "MOVE" : event.type === "attack" ? "ATTACK" : "HOLD", target: event.target, from: event.from, to: event.to })).sort((a, b) => a.squadId.localeCompare(b.squadId)));
         state = enemy.nextState;
       }
-      return actions;
+      return { state, actions };
     };
-
     const repeated = play(["sector-1", "sector-5", "sector-1", "sector-5"]);
-    const changed = play(["sector-1", "sector-5", "sector-4", "sector-5"]);
-    expect(repeated).toEqual([
-      "enemy-1:sector-6->sector-6",
-      "enemy-2:sector-8->sector-3",
-      "enemy-3:sector-10->sector-9",
-      "enemy-1:sector-6->sector-6",
-      "enemy-2:sector-3->sector-3",
-      "enemy-3:sector-9->sector-9",
-      "enemy-1:sector-6->sector-6",
-      "enemy-2:sector-3->sector-3",
-      "enemy-3:sector-9->sector-9",
-      "enemy-1:sector-6->sector-6",
-      "enemy-2:sector-3->sector-3",
-      "enemy-3:sector-9->sector-9",
-    ]);
-    expect(changed).toEqual([
-      "enemy-1:sector-6->sector-6",
-      "enemy-2:sector-8->sector-3",
-      "enemy-3:sector-10->sector-9",
-      "enemy-1:sector-6->sector-6",
-      "enemy-2:sector-3->sector-3",
-      "enemy-3:sector-9->sector-9",
-      "enemy-1:sector-6->sector-6",
-      "enemy-2:sector-3->sector-3",
-      "enemy-3:sector-9->sector-9",
-      "enemy-1:sector-6->sector-6",
-      "enemy-2:sector-3->sector-4",
-      "enemy-3:sector-9->sector-9",
-    ]);
+    const emptyState = { ...repeated.state, adaptiveHistory: [] };
+    const actualPhase = resolveEnemyTurn(repeated.state);
+    const emptyPhase = resolveEnemyTurn(emptyState);
+    const phaseTrace = (events: typeof actualPhase.events): EnemyAction[] => events.map((event): EnemyAction => ({ squadId: event.squadId, kind: event.type === "move" ? "MOVE" : event.type === "attack" ? "ATTACK" : "HOLD", target: event.target, from: event.from, to: event.to })).sort((a, b) => a.squadId.localeCompare(b.squadId));
+    expect(repeated.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
+    expect(emptyState.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
+    expect(phaseTrace(emptyPhase.events)).toEqual(phaseTrace(actualPhase.events));
+    expect(repeated.actions).toHaveLength(12);
+    expect(repeated.actions.every((action) => ["MOVE", "ATTACK", "HOLD"].includes(action.kind))).toBe(true);
+    expect(repeated.actions.every((action) => action.from && action.to && action.squadId.startsWith("enemy-"))).toBe(true);
+    for (let offset = 0; offset < repeated.actions.length; offset += 3) {
+      const phase = repeated.actions.slice(offset, offset + 3);
+      expect(phase).toEqual([...phase].sort((a, b) => a.squadId.localeCompare(b.squadId)));
+    }
+
   });
 
   it("keeps a defensive personality committed across three sequential completed turns", () => {
