@@ -2023,6 +2023,84 @@ describe("Editable turn plan", () => {
     await act(async () => second.unmount());
   });
 
+  it("keeps a legacy snapshot journal-unavailable through a turn and reload", async () => {
+    const game = { ...createNewCampaign(77), turn: 3 };
+    writeSave({ version: 1, game, events: [], reports: [] });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement).click());
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).journal).toBeUndefined();
+    await act(async () => root.unmount());
+
+    document.body.innerHTML = '<div id="root"></div>';
+    const reloaded = createRoot(document.getElementById("root")!);
+    await act(async () => reloaded.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement).click());
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).journal).toBeUndefined();
+    await act(async () => reloaded.unmount());
+  });
+
+  it("preserves unsupported save metadata and state when continuing", async () => {
+    const game = { ...createNewCampaign(88), turn: 4 };
+    writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] });
+    const before = localStorage.getItem(SAVE_KEY);
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement).click());
+    expect(localStorage.getItem(SAVE_KEY)).toBe(before);
+    expect(readSave()?.game).toEqual(game);
+    await act(async () => root.unmount());
+  });
+
+  it("writes a current supported empty journal on explicit reset", async () => {
+    const game = { ...createNewCampaign(99), turn: 4 };
+    writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent?.startsWith("RESET SAME SEED")) as HTMLButtonElement).click());
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
+    expect(saved.version).toBe(SAVE_VERSION);
+    expect(saved.rulesVersion).toBe(1);
+    expect(saved.journalVersion).toBe(1);
+    expect(saved.journal).toEqual([]);
+    expect(saved.game.seed).toBe(99);
+    expect(saved.game.turn).toBe(1);
+    await act(async () => root.unmount());
+  });
+
+  it("keeps SAVE UNAVAILABLE after quota failure when VERIFY performs no write", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
+    const writes = setItem.mock.calls.length;
+    await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent === "VERIFY REPLAY") as HTMLButtonElement).click());
+    expect(document.body.textContent).toContain("SAVE UNAVAILABLE");
+    expect(setItem.mock.calls).toHaveLength(writes);
+    setItem.mockRestore();
+    await act(async () => root.unmount());
+  });
+
+  it("persists the fresh no-save path with a journal initialized as an array", async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
+    expect(saved.journal).toEqual([{ type: "orders", orders: [{ squadId: "squad-1", type: "hold" }] }]);
+    await act(async () => root.unmount());
+  });
+
   it("resets the campaign and persists terminal reason after remount", async () => {
     storage.localStorage.clear();
     document.body.innerHTML = '<div id="root"></div>';
