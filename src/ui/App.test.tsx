@@ -64,7 +64,8 @@ describe("App interactions", () => {
     return root;
   };
 
-  it("shows a named local style cue after a real new-campaign turn", async () => {
+  it("shows a named local style cue in a synthetic board fixture", async () => {
+    // Synthetic fixture: this does not claim normal-campaign browser coverage.
     const campaign = createNewCampaign(42024);
     const state = {
       ...campaign,

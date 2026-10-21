@@ -140,27 +140,55 @@ describe("campaign simulation", () => {
     expect(hidden.adaptiveHistory).not.toEqual(observed.adaptiveHistory);
   });
 
-  it("requires distinct turns for style, rejects a feint, and expires quiet memory", () => {
+  it("requires distinct turns for style and makes repeat-vs-feint decisions from player observations", () => {
     const base = createNewCampaign(7);
-    const enemyClass = base.enemySquads[0].class;
-    const repeat = {
+    const playerClass = base.squads[0].class;
+    const board = {
       ...base,
-      turn: 2,
+      enemySquads: base.enemySquads.map((enemy, index) =>
+        index === 0
+          ? { ...enemy, class: "Raider" as const, sector: "sector-5" as const, strength: 10 }
+          : index === 1
+            ? { ...enemy, class: "Recon" as const, sector: "sector-3" as const, strength: 10 }
+            : { ...enemy, strength: 0 },
+      ),
+      squads: base.squads.map((squad, index) =>
+        index === 0
+          ? { ...squad, class: "Sentinel" as const, sector: "sector-0" as const }
+          : { ...squad, strength: 0 },
+      ),
+    };
+    const repeat = {
+      ...board,
+      turn: 3,
       adaptiveHistory: [
-        { turn: 1, observations: [{ kind: "attack" as const, class: enemyClass, from: "sector-1" as const, target: "sector-0" as const }] },
-        { turn: 2, observations: [{ kind: "attack" as const, class: enemyClass, from: "sector-1" as const, target: "sector-0" as const }] },
+        { turn: 1, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-4" as const }] },
+        { turn: 2, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-4" as const }] },
+        { turn: 3, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-4" as const }] },
       ],
     };
-    expect(adaptiveStyle(repeat)).toBe("AGGRESSIVE");
-    expect(adaptiveStyleCue(repeat)).toContain("AGGRESSIVE");
+    expect(adaptiveStyle(repeat)).toBe("DEFENSIVE");
+    expect(adaptiveStyleCue(repeat)).toContain("DEFENSIVE");
     const feint = {
-      ...repeat,
+      ...board,
+      turn: 3,
       adaptiveHistory: [
         repeat.adaptiveHistory[0],
-        { turn: 2, observations: [{ kind: "attack" as const, class: enemyClass, from: "sector-1" as const, target: "sector-2" as const }] },
+        { turn: 2, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-2" as const }] },
+        { turn: 3, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-2" as const }] },
       ],
     };
     expect(adaptiveStyle(feint)).toBe("UNSET");
+    const repeatIntents = decideEnemyIntents(repeat);
+    const feintIntents = decideEnemyIntents(feint);
+    const repeatPhase = resolveEnemyTurn(repeat);
+    const feintPhase = resolveEnemyTurn(feint);
+    expect(repeatIntents).not.toEqual([]);
+    expect(feintIntents).not.toEqual([]);
+    expect(repeatPhase.events).not.toEqual([]);
+    expect(feintPhase.events).not.toEqual([]);
+    expect([...repeatIntents, ...feintIntents].every((intent) => /^enemy-/.test(intent.squadId))).toBe(true);
+    expect([...repeatPhase.events, ...feintPhase.events].every((event) => event.faction === "enemy" && event.from !== undefined)).toBe(true);
     const quiet = { ...repeat, turn: 4 };
     expect(adaptiveStyle(quiet)).toBe("UNSET");
     const holdsOnly = { ...base, adaptiveHistory: [{ turn: 1, observations: [] }, { turn: 2, observations: [] }] };
@@ -3610,9 +3638,16 @@ describe("campaign simulation", () => {
       ),
       "Signals",
     );
+    const committedAdaptiveHistory = {
+      ...signals,
+      adaptiveHistory: [
+        { turn: 1, observations: [{ kind: "attack" as const, class: signals.squads[0].class, from: "sector-1" as const, target: "sector-0" as const }] },
+        { turn: 2, observations: [{ kind: "attack" as const, class: signals.squads[0].class, from: "sector-1" as const, target: "sector-0" as const }] },
+      ],
+    };
     const budget = 5;
-    const forecast = decideEnemyIntents(signals, budget);
-    const actual = resolveEnemyTurn(signals, budget);
+    const forecast = decideEnemyIntents(committedAdaptiveHistory, budget);
+    const actual = resolveEnemyTurn(committedAdaptiveHistory, budget);
     expect(
       actual.events.map((event) => ({
         squadId: event.squadId,
