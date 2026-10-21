@@ -1954,7 +1954,7 @@ describe("Editable turn plan", () => {
     expect(new Set([...document.querySelectorAll(".planned-route")].map((item) => `${item.getAttribute("x1")},${item.getAttribute("y1")},${item.getAttribute("x2")},${item.getAttribute("y2")}`))).toHaveLength(2);
     expect(document.querySelector(".planned-arrow-move")?.getAttribute("fill")).toBe("#f0dda1");
     expect(document.querySelector(".planned-arrow-move")?.getAttribute("stroke")).toBe("#071114");
-    expect(document.querySelectorAll(".planned-label")[0].textContent).toContain("PLAN · MOVE");
+    expect(document.querySelectorAll(".planned-label")[0].textContent).toMatch(/^M\d+$/);
     expect(document.querySelectorAll(".planned-label")[0].textContent).not.toContain("RESOLVED");
     await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
     expect(document.querySelectorAll(".planned-order")).toHaveLength(1);
