@@ -1011,10 +1011,6 @@ export const decideEnemyIntent = (
             pressureHash(state, `${b.squadId}:${b.target}`, phaseTurn) ||
           a.squadId.localeCompare(b.squadId),
       )[0];
-  const strategicCounter = adaptiveStyle(state) !== "UNSET"
-    ? legalCounterIntent(state, excluded)
-    : undefined;
-  if (strategicCounter) return strategicCounter;
   if (state.strategicTarget) {
     const defender = intents.find(
       (intent) => intent.squadId === state.strategicTarget?.squadId,
@@ -1065,6 +1061,13 @@ export const decideEnemyIntent = (
         to: targetEnemy.sector,
       };
   }
+  // A live strategic assignment owns its squad until the relay/HQ/guard
+  // objective is resolved. Counterdeployment is a fallback and must not
+  // pull that squad away from the assignment.
+  const strategicCounter = adaptiveStyle(state) !== "UNSET"
+    ? legalCounterIntent(state, excluded)
+    : undefined;
+  if (strategicCounter) return strategicCounter;
   const tier = intents.filter((intent) => intent.kind !== "hold");
   const candidates = tier.length ? tier : intents;
   const style = adaptiveStyle(state);
