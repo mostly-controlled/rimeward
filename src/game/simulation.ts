@@ -582,6 +582,7 @@ const rememberedGuardTarget = (
   targets: SectorId[],
   excluded: Set<string>,
 ): SectorId | undefined => {
+  if (adaptiveStyle(state) === "UNSET") return undefined;
   if (
     !state.objectives.some(
       (objective) => objective.sector === enemy.sector && !objective.controlled,
@@ -595,14 +596,17 @@ const rememberedGuardTarget = (
     ? committedObservation(rememberedBucket)
     : undefined;
   if (!remembered) return undefined;
-  const desiredClass = Object.entries(counterClass).find(
-    ([, victim]) => victim === remembered.class,
-  )?.[0] as UnitClass | undefined;
-  if (enemy.class !== desiredClass) return undefined;
   return targets.find(
-    (target) =>
-      target === observationDestination(remembered) &&
-      attackIsViable(state, enemy, target, excluded),
+    (target) => {
+      if (!attackIsViable(state, enemy, target, excluded)) return false;
+      const occupant = state.squads.find(
+        (squad) => squad.sector === target && squad.strength > 0,
+      );
+      return (
+        target === observationDestination(remembered) ||
+        occupant?.class === remembered.class
+      );
+    },
   );
 };
 
@@ -637,6 +641,23 @@ const intentForEnemy = (
         from: enemy.sector,
         to: enemy.sector,
         target: hqCounterTarget,
+      };
+    const rememberedHqTarget = rememberedGuardTarget(
+      state,
+      enemy,
+      (current?.links ?? []).filter((target) =>
+        state.squads.some((squad) => squad.sector === target && squad.strength > 0) &&
+        attackIsViable(state, enemy, target, excluded),
+      ),
+      excluded,
+    );
+    if (rememberedHqTarget)
+      return {
+        squadId: enemy.id,
+        kind: "attack",
+        from: enemy.sector,
+        to: enemy.sector,
+        target: rememberedHqTarget,
       };
     return {
       squadId: enemy.id,

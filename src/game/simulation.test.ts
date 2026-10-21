@@ -213,7 +213,7 @@ describe("campaign simulation", () => {
 
   it("responds to reachable repeated corridors through the complete turn pipeline", () => {
     type EnemyAction = { squadId: string; kind: "MOVE" | "ATTACK" | "HOLD"; target?: SectorId; from: SectorId; to: SectorId };
-    const play = (corridor: readonly [SectorId, SectorId, SectorId, SectorId], committed: boolean) => {
+    const play = (corridor: readonly SectorId[], committed: boolean) => {
       let state = createNewCampaign(4294840881);
       const actions: EnemyAction[] = [];
       for (const target of corridor) {
