@@ -111,7 +111,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     () => loaded?.reports ?? [],
   );
   const loadedReplaySupported = !!loaded && loaded.rulesVersion === REPLAY_RULES_VERSION && loaded.journalVersion === JOURNAL_VERSION;
-  const loadedReplayUnsupported = !!loaded?.journal && !loadedReplaySupported;
+  const loadedReplayMetadata = !!loaded && (loaded.journal !== undefined || loaded.rulesVersion !== undefined || loaded.journalVersion !== undefined);
+  const loadedReplayUnsupported = loadedReplayMetadata && !loadedReplaySupported;
   const [journal, setJournal] = useState<JournalAction[] | undefined>(() => loaded ? (loaded.journal === undefined || loadedReplaySupported ? loaded.journal ?? [] : undefined) : initialGame ? [] : undefined);
   const [saveStatus, setSaveStatus] = useState(
     !initialGame
