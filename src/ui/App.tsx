@@ -630,7 +630,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               <h2>WHAT CHANGED / WHY</h2>
               <span className="muted">LAST TURN</span>
             </div>
-            {latestDebrief ? (() => { const lines = latestDebrief.message.split("\n"); const summary = lines.slice(0, Math.min(4, lines.length)); const details = lines.slice(summary.length); const row = (line: string) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={line}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+            {latestDebrief ? (() => { const lines = latestDebrief.message.split("\n"); const summary = lines.slice(0, Math.min(4, lines.length)); const details = lines.slice(summary.length); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
           </section>
           <div className="battle-layout">
             <section className="map-panel card">
@@ -1040,8 +1040,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 {assaultForecasts.length > 0 && (
                   <section className="expected-losses" aria-label="Expected assault losses">
                     <h3>ASSAULT FORECAST</h3>
-                    {assaultForecasts.map(({ target, knownDefenders, hiddenDefenders }) => (
-                      <p key={target}>
+                    {assaultForecasts.map(({ target, knownDefenders, hiddenDefenders }, index) => (
+                      <p key={`${target}-${index}`}>
                         {sectorName(target)}: {hiddenDefenders
                           ? "Defenders unknown; outcome and losses are uncertain."
                           : knownDefenders.length

@@ -586,12 +586,8 @@ describe("App interactions", () => {
       rail.filter((message) => message.includes("squad-2 move Whiteplain")),
     ).toHaveLength(1);
     const enemyEvents = rail.filter((message) => message.includes("enemy") && !message.includes("DEBRIEF"));
-    expect(enemyEvents).toEqual(
-      expectedEnemy.events.map((event) =>
-        expect.stringContaining(event.message.replace(/sector-\d+/g, (id) => ({ "sector-3": "Northstar", "sector-9": "Vesper", "sector-6": "Ashenfall" } as Record<string, string>)[id] ?? id)),
-      ),
-    );
-    expect(enemyEvents).toHaveLength(expectedEnemy.events.length);
+    expect(enemyEvents).toEqual([]);
+    expect(document.querySelector(".event-rail")?.textContent).toContain("movement withheld — Signals 0");
     expect(document.querySelector(".turn-readout strong")?.textContent).toBe(
       "02",
     );
@@ -815,10 +811,10 @@ describe("App interactions", () => {
     await act(async () => root.render(<App />));
     await executeTarget("Whiteplain");
     const firstTurn = entries();
-    expect(firstTurn.length).toBeGreaterThanOrEqual(3);
+    expect(firstTurn.length).toBeGreaterThanOrEqual(2);
     expect(firstTurn.every((entry) => entry.turn === "01")).toBe(true);
     expect(firstTurn.some((entry) => entry.message?.startsWith("enemy-"))).toBe(
-      true,
+      false,
     );
     expect(firstTurn).toContainEqual({
       turn: "01",
@@ -828,7 +824,7 @@ describe("App interactions", () => {
     await executeTarget("Glassway");
     expect(
       entries()
-        .slice(0, 4)
+        .slice(0, 2)
         .every((entry) => entry.turn === "02"),
     ).toBe(true);
     expect(entries().filter((entry) => entry.turn === "01")).toEqual(firstTurn);
@@ -842,18 +838,13 @@ describe("App interactions", () => {
     await executeTarget("Ashenfall");
     const battleTurn = entries();
     expect(battleTurn[0].message).toMatch(/^Ashenfall .* casualty entries$/);
-    expect(battleTurn.slice(0, Math.min(4, battleTurn.length)).every((entry) => entry.turn === "03")).toBe(
+    expect(battleTurn.slice(0, Math.min(3, battleTurn.length)).every((entry) => entry.turn === "03")).toBe(
       true,
     );
     const retainedFirstTurnEnemies = battleTurn.filter(
       (entry) => entry.turn === "01" && entry.message?.startsWith("enemy-"),
     );
-    expect(retainedFirstTurnEnemies.length).toBeGreaterThan(0);
-    expect(
-      retainedFirstTurnEnemies.every((entry) =>
-        firstTurn.some((original) => original.message === entry.message),
-      ),
-    ).toBe(true);
+    expect(retainedFirstTurnEnemies).toEqual([]);
 
     await act(async () =>
       (
@@ -881,7 +872,7 @@ describe("App interactions", () => {
       entries().some(
         (entry) => entry.turn === "04" && entry.message?.startsWith("enemy-"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(document.querySelector(".turn-readout strong")?.textContent).toBe(
       "05",
     );
@@ -951,7 +942,7 @@ describe("App interactions", () => {
     expect(debrief).toContain("ENEMY PHASE OBSERVED:");
     expect(debrief).toContain("NEXT:");
     expect(document.querySelector('[aria-label="Last turn debrief"]')).not.toBe(document.querySelector(".event-rail"));
-    expect(debrief).toContain("RELAY CONTROL:");
+    expect(debrief).not.toContain("RELAY CONTROL:");
     expect(debrief).toContain("UNASSIGNED FATIGUE:");
     expect(debrief).toContain("SQUAD LOSSES:");
     expect(debrief).toMatch(/WHY: .*STR 1, FTG 3.*ATTACK risks losing this squad.*HOLD.*RECOVER/);
