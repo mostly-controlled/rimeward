@@ -524,7 +524,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             <h3>GOAL</h3>
             <p>
               {game.terminal === "active"
-                ? `Hold all relays AND enemy HQ; defend ${playerHq?.name ?? game.hq.player}. Relays: ${requiredRelayLabels.join(", ") || "none"}. HQ: ${enemyHq?.name ?? game.hq.enemy}.`
+                ? `Hold all relays AND enemy HQ; defend ${playerHq?.name ?? game.hq.player}. Remaining relays: ${requiredRelayLabels.join(", ") || "none"}. (Relays: ${requiredRelayLabels.join(", ") || "none"}. HQ: ${enemyHq?.name ?? game.hq.enemy} ${enemyHq?.owner === "player" ? "CAPTURED" : "REQUIRED"}.) Reachability depends on the selected squad's current sector and links.`
                 : game.terminal === "victory"
                   ? "The frontier is secure."
                   : "The campaign has ended."}
@@ -546,10 +546,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       ? recoverySupplied
                         ? "no enemy target is reachable; use HOLD or select another squad."
                         : "no enemy target is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."
-                      : "no unoccupied friendly destination is reachable; use HOLD or RECOVER, or select ATTACK when an enemy-held destination is legal."}
+                      : recoverySupplied
+                        ? "no unoccupied friendly destination is reachable; use HOLD or RECOVER, or select ATTACK when an enemy-held destination is legal."
+                        : "no unoccupied friendly destination is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."}
                 </li>
                 <li>
-                  <strong>{orders.length ? `QUEUED (${orders.length}) — NOT EXECUTED` : "NOT QUEUED"}</strong> — {`${selectedOrder ? `${selectedOrder.type.toUpperCase()} is queued for the selected squad. ` : ""}${unassignedSquads.length} unassigned${unassignedSquads.length === 1 ? " squad" : " squads"}; ${unassignedSquads.length ? "choose another or HOLD UNASSIGNED to avoid fatigue. " : ""}EXECUTE TURN resolves assigned orders without requiring all squads.`}
+                  <strong>{orders.length ? `QUEUED (${orders.length}) — NOT EXECUTED` : "NOT QUEUED"}</strong> — {orders.length ? `${selectedOrder ? `${selectedOrder.type.toUpperCase()} is queued for the selected squad. ` : ""}${unassignedSquads.length} unassigned${unassignedSquads.length === 1 ? " squad" : " squads"}; ${unassignedSquads.length ? "choose another or HOLD UNASSIGNED to avoid fatigue. " : ""}Player orders resolve first, then the enemy phase. EXECUTE TURN resolves assigned orders without requiring all squads.` : "Queue orders for your squads."}
                 </li>
               </ol>
             ) : (
@@ -558,7 +560,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             {game.terminal === "active" && (
               <p className="muted">Selecting MOVE/ATTACK does not queue; choose highlighted target.</p>
             )}
-            <p className="muted">STR = strength. FTG = fatigue. HOLD is free and lowers FTG by 1; unassigned squads gain 1 fatigue. Supplied RECOVER costs the shown metal + 2 energy, restores strength, and lowers fatigue; it is unavailable when unsupplied.</p>
+            {game.terminal === "active" && (
+              <p className="muted">STR = strength. FTG = fatigue. HOLD is free and lowers FTG by 1; unassigned squads gain 1 fatigue. Supplied RECOVER costs the shown metal + 2 energy, restores strength, and lowers fatigue; it is unavailable when unsupplied.</p>
+            )}
           </section>
           <section className="resource-strip">
             <span>
@@ -1045,7 +1049,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   </p>
                 )}
                 <section className="queued-orders" aria-label="Queued orders">
-                  <h3>QUEUED ({orders.length}) — NOT EXECUTED</h3>
+                  <h3>QUEUED ORDERS</h3>
                   <p className="unassigned-count">
                     UNASSIGNED LIVING SQUADS: {unassignedSquads.length}
                   </p>
