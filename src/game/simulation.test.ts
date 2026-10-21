@@ -20,6 +20,7 @@ import {
   validateOrders,
   type GameState,
   type Order,
+  type SectorId,
 } from "./simulation";
 
 describe("campaign simulation", () => {
@@ -208,6 +209,29 @@ describe("campaign simulation", () => {
     expect(adaptiveStyle(quiet)).toBe("DEFENSIVE");
     const holdsOnly = { ...base, adaptiveHistory: [{ turn: 1, observations: [] }, { turn: 2, observations: [] }] };
     expect(adaptiveStyle(holdsOnly)).toBe("UNSET");
+  });
+
+  it("responds to reachable repeated corridors through the complete turn pipeline", () => {
+    const play = (corridor: readonly [SectorId, SectorId, SectorId, SectorId]) => {
+      let state = createNewCampaign(4294840881);
+      const actions: string[] = [];
+      for (const target of corridor) {
+        const player = resolveTurn(state, [{ squadId: "squad-1", type: "move", target }]);
+        const combat = resolveCombat(player.nextState, player.events);
+        const enemy = resolveEnemyTurn(combat.nextState);
+        actions.push(
+          ...enemy.events
+            .map((event) => `${event.squadId}:${event.from}->${event.to}`)
+            .sort(),
+        );
+        state = enemy.nextState;
+      }
+      return actions;
+    };
+
+    const repeated = play(["sector-1", "sector-5", "sector-1", "sector-5"]);
+    const changed = play(["sector-1", "sector-5", "sector-4", "sector-5"]);
+    expect(repeated).not.toEqual(changed);
   });
 
   it("keeps a defensive personality committed across three sequential completed turns", () => {
