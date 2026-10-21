@@ -72,6 +72,8 @@ export const battleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captur
         ? "captured"
         : "won; not captured"
       : "lost";
+export const enemyBattleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captured">) =>
+  report.captured ? "captured" : report.winner === "player" ? "repelled; sector retained" : report.winner === "enemy" ? "enemy won; sector retained" : "held; sector retained";
 const squadLabel = (squad: { class: string; id: string }) =>
   `${squad.class} ${squad.id.replace(/^squad-/, "#")}`;
 const pos: Record<string, [number, number]> = {
@@ -303,7 +305,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
       const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const playerAfter = combat.nextState.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const playerStrength = playerAfter?.strength ?? 0; const afterStrength = after?.strength ?? 0; const playerFatigue = playerAfter?.fatigue ?? unit.fatigue; const afterFatigue = after?.fatigue ?? playerFatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? `cost ${recoveryMetalCost(before)} metal + 2 energy` : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; if (order.type === "hold" && afterStrength === unit.strength && afterFatigue === unit.fatigue && !control) return null; return squadLabel(unit) + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — before → your orders → enemy response; STR " + unit.strength + "→" + playerStrength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + playerFatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
       const playerBattleLines = combat.reports.map((report) => name(report.target) + ": " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
-      const enemyBattleLines = enemy.reports.map((report) => { const outcome = report.captured ? "captured" : report.winner === "player" ? "repelled; sector retained" : report.winner === "enemy" ? "enemy won; sector retained" : "held; sector retained"; return name(report.target) + ": enemy assault — " + outcome + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties; });
+      const enemyBattleLines = enemy.reports.map((report) => name(report.target) + ": enemy assault — " + enemyBattleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
       const enemyLines = before.researchLevels.Signals > 0 && enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
       const relayLines = before.objectives.map((objective) => {
         const sector = before.sectors.find((candidate) => candidate.id === objective.sector);

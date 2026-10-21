@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, battleOutcomeLabel, displayRailMessage } from "./App";
+import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel } from "./App";
 import {
   readSave,
   SAVE_KEY,
@@ -27,6 +27,43 @@ describe("App interactions", () => {
     expect(displayRailMessage(legacy, 0)).toContain("movement withheld — Signals 0");
     expect(displayRailMessage(legacy, 0)).not.toContain("enemy-1");
     expect(displayRailMessage(legacy, 1)).toBe(legacy);
+  });
+
+  it("renders recovery as before, player phase, and enemy response from real resolution", async () => {
+    const campaign = createNewCampaign(42024);
+    const initialGame = {
+      ...campaign,
+      resources: { ...campaign.resources, metal: 10, energy: 10 },
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, strength: 6 } : unit),
+      enemySquads: campaign.enemySquads.slice(0, 1).map((enemy) => ({ ...enemy, sector: campaign.squads[0].sector })),
+    };
+    const player = resolveTurn(initialGame, [{ squadId: "squad-1", type: "recover" }]);
+    const combat = resolveCombat(player.nextState, player.events);
+    const enemy = resolveEnemyTurn(combat.nextState);
+    const root = await renderApp(initialGame);
+    await act(async () => (document.querySelectorAll(".squad-card")[0] as HTMLButtonElement).click());
+    await act(async () => (document.querySelectorAll(".order-buttons button")[1] as HTMLButtonElement).click());
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    const debrief = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    const playerStrength = combat.nextState.squads.find((unit) => unit.id === "squad-1")?.strength;
+    const finalStrength = enemy.nextState.squads.find((unit) => unit.id === "squad-1")?.strength;
+    expect(debrief).toContain(`STR 6→${playerStrength}→${finalStrength}`);
+    await act(async () => root.unmount());
+  });
+
+  it("preserves enemy-won combat as sector retained when simulation reports no capture", () => {
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, strength: 1, sector: "sector-1" as const } : unit),
+      enemySquads: campaign.enemySquads.slice(0, 1).map((enemy) => ({ ...enemy, strength: 9, sector: "sector-2" as const })),
+    };
+    const turn = resolveTurn(state, [{ squadId: "squad-1", type: "attack", target: "sector-2" }]);
+    const result = resolveCombat(turn.nextState, turn.events);
+    const report = result.reports.find((entry) => entry.winner === "enemy");
+    expect(report).toBeDefined();
+    expect(report?.captured).toBe(false);
+    expect(enemyBattleOutcomeLabel(report!)).toBe("enemy won; sector retained");
   });
 
   const renderApp = async (initialGame = createNewCampaign(42024)) => {
