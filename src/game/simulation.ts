@@ -983,10 +983,6 @@ export const decideEnemyIntent = (
     .map((enemy) => intentForEnemy(state, enemy, phaseTurn, excluded))
     .filter((intent): intent is EnemyIntent => Boolean(intent));
   if (!intents.length) return undefined;
-  const strategicCounter = state.strategicTarget
-    ? legalCounterIntent(state, state.strategicTarget.destination, excluded)
-    : undefined;
-  if (strategicCounter) return strategicCounter;
   const hq = intents.filter(
     (intent) => intent.kind === "attack" && intent.target === state.hq.player,
   );
@@ -1005,6 +1001,10 @@ export const decideEnemyIntent = (
             pressureHash(state, `${b.squadId}:${b.target}`, phaseTurn) ||
           a.squadId.localeCompare(b.squadId),
       )[0];
+  const strategicCounter = state.strategicTarget && adaptiveStyle(state) !== "UNSET"
+    ? legalCounterIntent(state, state.strategicTarget.destination, excluded)
+    : undefined;
+  if (strategicCounter) return strategicCounter;
   if (state.strategicTarget) {
     const defender = intents.find(
       (intent) => intent.squadId === state.strategicTarget?.squadId,
@@ -1277,6 +1277,13 @@ export const resolveTurn = (
   validateOrders(state, playerOrders);
   const nextState = clone(state);
   const events: GameEvent[] = [];
+  const visibleEnemyIds = new Set(state.enemySquads.filter((enemy) => enemy.strength > 0).filter((enemy) => state.squads.some((squad) => squad.strength > 0 && adjacentOrSame(state, squad.sector, enemy.sector))).map((enemy) => enemy.id));
+  const observations: AdaptiveObservation[] = playerOrders.flatMap((order) => {
+    if (order.type !== "move" && order.type !== "attack") return [];
+    const squad = state.squads.find((item) => item.id === order.squadId);
+    if (!squad || squad.strength <= 0 || !visibleEnemyIds.size) return [];
+    return [{ kind: order.type, class: squad.class, from: squad.sector, ...(order.type === "move" ? { to: order.target } : { target: order.target }) }];
+  });
   for (const order of playerOrders) {
     const squad = nextState.squads.find((item) => item.id === order.squadId);
     if (!squad || squad.strength <= 0) continue;
@@ -1326,6 +1333,7 @@ export const resolveTurn = (
   }));
   nextState.turn += 1;
   nextState.orderHistory = [...nextState.orderHistory, clone(playerOrders)];
+  nextState.adaptiveHistory = appendAdaptiveBucket(nextState, { turn: state.turn, observations });
   return { nextState, events };
 };
 
@@ -1749,21 +1757,6 @@ export const resolveEnemyTurn = (
     requestedSlots,
     state.enemySquads.filter((enemy) => enemy.strength > 0).length,
   );
-  const startEnemySquads = new Map(
-    state.enemySquads
-      .filter((enemy) => enemy.strength > 0)
-      .map((enemy) => [enemy.id, enemy] as const),
-  );
-  const localEnemyIds = new Set(
-    [...startEnemySquads.values()]
-      .filter((enemy) =>
-        state.squads.some(
-          (squad) =>
-            squad.strength > 0 && adjacentOrSame(state, squad.sector, enemy.sector),
-        ),
-      )
-      .map((enemy) => enemy.id),
-  );
   for (
     let index = 0;
     index < slots && nextState.terminal === "active";
@@ -1776,26 +1769,6 @@ export const resolveEnemyTurn = (
     phase.events.forEach((event) => acted.add(event.squadId));
     if (!phase.events.length) break;
   }
-  const observations: AdaptiveObservation[] = events
-    .filter(
-      (event) =>
-        event.faction === "enemy" &&
-        (event.type === "move" || event.type === "attack") &&
-        localEnemyIds.has(event.squadId),
-    )
-    .map((event) => {
-      const enemy = startEnemySquads.get(event.squadId);
-      return {
-        kind: event.type as "move" | "attack",
-        class: enemy?.class ?? "Sentinel",
-        from: event.from,
-        ...(event.type === "move" ? { to: event.to } : { target: event.target }),
-      };
-    });
-  nextState.adaptiveHistory = appendAdaptiveBucket(nextState, {
-    turn: state.turn,
-    observations,
-  });
   nextState.income = calculateIncome(nextState);
   nextState.resources = {
     metal: Math.min(99, nextState.resources.metal + nextState.income.metal),

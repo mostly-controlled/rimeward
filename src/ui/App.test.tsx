@@ -80,8 +80,8 @@ describe("App interactions", () => {
     await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
     const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
     expect(cue).toContain("ENEMY STYLE CUE");
-    expect(cue).toContain("Frostgate");
-    expect(cue).not.toContain("sector-");
+    expect(cue).toContain("UNSET");
+    expect(cue).toContain("no local enemy pattern observed");
     await act(async () => root.unmount());
   });
 
@@ -2134,7 +2134,7 @@ describe("Editable turn plan", () => {
     await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent?.startsWith("RESET SAME SEED")) as HTMLButtonElement).click());
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
     expect(saved.version).toBe(SAVE_VERSION);
-    expect(saved.rulesVersion).toBe(1);
+    expect(saved.rulesVersion).toBe(2);
     expect(saved.journalVersion).toBe(1);
     expect(saved.journal).toEqual([]);
     expect(saved.game.seed).toBe(99);

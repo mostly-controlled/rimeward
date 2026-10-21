@@ -113,7 +113,7 @@ describe("campaign simulation", () => {
     expect(warfare.research).toBe(1);
   });
 
-  it("records only locally visible material enemy actions in three turn buckets", () => {
+  it("records accepted player actions visible to living enemies in three turn buckets", () => {
     const base = createNewCampaign(42024);
     const local = {
       ...base,
@@ -125,17 +125,17 @@ describe("campaign simulation", () => {
       ),
       revealedEnemySquads: [],
     };
-    const observed = resolveEnemyTurn(local, 1).nextState;
+    const observed = resolveTurn(local, [{ squadId: "squad-1", type: "attack", target: "sector-1" }]).nextState;
     expect(observed.adaptiveHistory).toHaveLength(1);
     expect(observed.adaptiveHistory[0].turn).toBe(1);
     expect(observed.adaptiveHistory[0].observations).toEqual([
-      expect.objectContaining({ kind: "attack", class: observed.enemySquads[0].class, from: "sector-1", target: "sector-0" }),
+      expect.objectContaining({ kind: "attack", class: observed.squads[0].class, from: "sector-0", target: "sector-1" }),
     ]);
 
-    const hidden = resolveEnemyTurn({
+    const hidden = resolveTurn({
       ...local,
       enemySquads: local.enemySquads.map((enemy) => ({ ...enemy, sector: "sector-6" as const })),
-    }, 1).nextState;
+    }, [{ squadId: "squad-1", type: "attack", target: "sector-1" }]).nextState;
     expect(hidden.adaptiveHistory).toEqual([{ turn: 1, observations: [] }]);
     expect(hidden.adaptiveHistory).not.toEqual(observed.adaptiveHistory);
   });
