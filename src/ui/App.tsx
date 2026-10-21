@@ -874,7 +874,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 {resolvedFeedback?.turn === game.turn - 1 && (
                   <g className="resolved-feedback" aria-label={`Resolved actions for turn ${resolvedFeedback.turn}`} key={resolvedFeedback.turn}>
                     {resolvedFeedback.routes.map((route, index) => <line key={`resolved-route-${index}`} className={`resolved-route resolved-${route.type}`} x1={pos[route.from][0]} y1={pos[route.from][1]} x2={pos[route.to][0]} y2={pos[route.to][1]} />)}
-                    {resolvedFeedback.casualties.map((marker, index) => <g key={`casualty-${index}`} className={`casualty-marker casualty-${marker.side}`} transform={`translate(${pos[marker.target][0]},${pos[marker.target][1]})`} aria-label={`${marker.side} casualty at ${sectorName(marker.target)}`}><circle r="10" /><text textAnchor="middle" y="4">×</text></g>)}
                   </g>
                 )}
                 {game.sectors.map((s) => {
@@ -964,6 +963,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     </g>
                   );
                 })}
+                {resolvedFeedback?.turn === game.turn - 1 && (
+                  <g className="casualty-feedback" pointerEvents="none" aria-label="Casualty markers">
+                    {resolvedFeedback.casualties.map((marker, index) => <g key={`casualty-${index}`} className={`casualty-marker casualty-${marker.side}`} transform={`translate(${pos[marker.target][0]},${pos[marker.target][1]})`} aria-label={`${marker.side} casualty at ${sectorName(marker.target)}`}><circle r="10" /><text textAnchor="middle" y="4">×</text></g>)}
+                  </g>
+                )}
               </svg>
               <div className="legend" aria-label="Map legend">
                 <span>

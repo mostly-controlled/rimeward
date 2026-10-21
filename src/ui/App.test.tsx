@@ -2430,7 +2430,10 @@ describe("Editable turn plan", () => {
     expect(document.querySelector('[aria-label="Resolved actions for turn 1"]')).toBeTruthy();
     expect(document.querySelector(".resolved-route")).toBeTruthy();
     expect(document.querySelector(".resolved-route")?.getAttribute("class")).toContain("resolved-move");
-    expect(document.querySelector("style")?.textContent).toContain("prefers-reduced-motion");
+    const map = document.querySelector(".map")!;
+    expect(map.querySelector(".resolved-route")!.compareDocumentPosition(map.querySelector(".sector")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(map.querySelector(".casualty-feedback")!.compareDocumentPosition(map.querySelector(".sector")!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(map.querySelector(".casualty-feedback")?.getAttribute("pointer-events")).toBe("none");
     await act(async () => root.unmount());
   });
 });
