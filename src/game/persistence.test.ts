@@ -31,7 +31,7 @@ describe("campaign persistence", () => {
   it("rejects malformed nested battle report data", () => {
     const game = createNewCampaign(77);
     const report = { target: "sector-1", terrain: "ice", attackers: [], defenders: [], classAdvantages: [42], defenderCounters: [], terrainMultiplier: 1, fatiguePenalty: 0, variance: 0, attackerPower: 1, defenderPower: 1, winner: "draw", casualties: [], playerCasualties: 0, enemyCasualties: 0, retreat: [], captured: false, relayControlled: false };
-    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [report], journalVersion: JOURNAL_VERSION, journal: [] })).toBe(false);
+    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [report], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [] })).toBe(false);
   });
   it("validates persisted research, recent battles, routes, and terminal reason", () => {
     const game = createNewCampaign(77);
@@ -57,8 +57,17 @@ describe("campaign persistence", () => {
   });
   it("rejects malformed journal shapes", () => {
     const game = createNewCampaign(77);
-    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [], journalVersion: JOURNAL_VERSION + 1, journal: [] })).toBe(false);
-    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [], journalVersion: JOURNAL_VERSION, journal: [{ type: "orders", orders: [] }] })).toBe(false);
+    const baseline = { version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [] };
+    expect(validateSave({ ...baseline, journalVersion: JOURNAL_VERSION + 1 })).toBe(true);
+    expect(validateSave({ ...baseline, journal: [{ type: "orders", orders: [] }] })).toBe(false);
+    expect(validateSave({ ...baseline, journal: [{ type: "orders", orders: [{ squadId: "squad-1", type: "hold" }, { squadId: "squad-1", type: "move" }] }] })).toBe(false);
+    expect(verifyReplay({ ...baseline, journal: [{ type: "orders", orders: [{ squadId: "squad-1", type: "nonsense" as never }] }] })).toMatchObject({ status: "corrupt" });
+  });
+  it("loads valid campaigns with unsupported replay metadata", () => {
+    const game = createNewCampaign(77);
+    const payload = { version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] };
+    expect(validateSave(payload)).toBe(true);
+    expect(verifyReplay(payload).status).toBe("unsupported");
   });
 });
 

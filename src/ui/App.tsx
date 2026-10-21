@@ -109,7 +109,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>(
     () => loaded?.reports ?? [],
   );
-  const [journal, setJournal] = useState<JournalAction[]>(() => loaded?.journal ?? []);
+  const [journal, setJournal] = useState<JournalAction[] | undefined>(() => loaded ? loaded.journal : []);
   const [saveStatus, setSaveStatus] = useState(
     !initialGame
       ? loaded
@@ -119,20 +119,18 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   );
   const [error, setError] = useState("");
   const verify = () => {
-    const result = verifyReplay({ version: SAVE_VERSION, game, events, reports, rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal });
+    const result = verifyReplay({ version: SAVE_VERSION, game, events, reports, rulesVersion: journal ? REPLAY_RULES_VERSION : loaded?.rulesVersion, journalVersion: journal ? JOURNAL_VERSION : loaded?.journalVersion, journal });
     setSaveStatus(result.message);
   };
   const latestDebrief = events.find((event) => event.message.startsWith("TURN ") && event.message.includes(" DEBRIEF"));
-  const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
+  const persist = (nextGame: GameState, nextEvents = events, nextReports = reports, nextJournal = journal) => {
     if (!storageEnabled) return null;
     const warning = writeSave({
       version: SAVE_VERSION,
       game: nextGame,
       events: nextEvents,
       reports: nextReports,
-      rulesVersion: REPLAY_RULES_VERSION,
-      journalVersion: JOURNAL_VERSION,
-      journal,
+      ...(nextJournal ? { rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: nextJournal } : {}),
     });
     if (warning) {
       setSaveStatus(warning);
@@ -392,9 +390,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       ) as RailEvent[];
       if (phaseReports.length) setReports(phaseReports);
       setEvents(nextEvents);
-      const nextJournal = [...journal, { type: "orders" as const, orders: orders.map((order) => ({ ...order })) }];
+      const nextJournal = journal ? [...journal, { type: "orders" as const, orders: orders.map((order) => ({ ...order })) }] : undefined;
       setJournal(nextJournal);
-      const warning = writeSave({ version: SAVE_VERSION, game: enemy.nextState, events: nextEvents, reports: nextReports, rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: nextJournal });
+      const warning = persist(enemy.nextState, nextEvents, nextReports, nextJournal);
       setOrders([]);
       if (!warning) setError("");
     } catch (e) {
@@ -405,9 +403,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     try {
       const nextGame = advanceResearch(game, branch);
       setGame(nextGame);
-      const nextJournal = [...journal, { type: "research" as const, branch }];
+      const nextJournal = journal ? [...journal, { type: "research" as const, branch }] : undefined;
       setJournal(nextJournal);
-      const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events, reports, rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: nextJournal });
+      const warning = persist(nextGame, events, reports, nextJournal);
       if (!warning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Research rejected");
@@ -422,7 +420,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setReports([]);
     setJournal([]);
     setError("");
-    const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [] });
+    const warning = persist(nextGame, [], [], []);
   };
   if (!game.squads.length)
     return (
@@ -550,7 +548,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   setReports([]);
                   setJournal([]);
                   setError("");
-                  writeSave({ version: SAVE_VERSION, game: nextGame, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [] });
+                  persist(nextGame, [], [], []);
                 }}
               >
                 NEW SEED
