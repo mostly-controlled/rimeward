@@ -142,7 +142,6 @@ describe("campaign simulation", () => {
 
   it("requires distinct turns for style and makes repeat-vs-feint decisions from player observations", () => {
     const base = createNewCampaign(7);
-    const playerClass = base.squads[0].class;
     const board = {
       ...base,
       enemySquads: base.enemySquads.map((enemy, index) =>
@@ -154,31 +153,22 @@ describe("campaign simulation", () => {
       ),
       squads: base.squads.map((squad, index) =>
         index === 0
-          ? { ...squad, class: "Sentinel" as const, sector: "sector-0" as const }
+          ? { ...squad, class: "Sentinel" as const, sector: "sector-3" as const }
           : { ...squad, strength: 0 },
       ),
     };
-    const repeat = {
-      ...board,
-      turn: 3,
-      adaptiveHistory: [
-        { turn: 1, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-4" as const }] },
-        { turn: 2, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-4" as const }] },
-        { turn: 3, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-4" as const }] },
-      ],
+    const playObservedAttacks = (target: "sector-2" | "sector-4") => {
+      let state = board;
+      for (let turn = 0; turn < 3; turn += 1)
+        state = resolveTurn(state, [{ squadId: "squad-1", type: "attack", target }]).nextState;
+      // Keep the decision inputs identical apart from the observation history.
+      return { ...state, resources: { ...board.resources } };
     };
+    const repeat = playObservedAttacks("sector-4");
     expect(adaptiveStyle(repeat)).toBe("DEFENSIVE");
     expect(adaptiveStyleCue(repeat)).toContain("Defensive planner");
     expect(adaptiveStyleCue(repeat)).toContain("response uncertain");
-    const feint = {
-      ...board,
-      turn: 3,
-      adaptiveHistory: [
-        repeat.adaptiveHistory[0],
-        { turn: 2, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-2" as const }] },
-        { turn: 3, observations: [{ kind: "move" as const, class: playerClass, from: "sector-3" as const, to: "sector-2" as const }] },
-      ],
-    };
+    const feint = playObservedAttacks("sector-2");
     // Class continuity is independent of the observed corridor: this remains
     // a defensive class pattern even though the route changed after turn 1.
     expect(adaptiveStyle(feint)).toBe("DEFENSIVE");
