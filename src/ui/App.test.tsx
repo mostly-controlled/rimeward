@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel } from "./App";
+import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel, occupationLabel } from "./App";
 import {
   readSave,
   SAVE_KEY,
@@ -22,6 +22,39 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("preserves the seeded Raider move/attack reports with faction-correct enemy labels", async () => {
+    const root = await renderApp(createNewCampaign(58386330));
+    expect(document.querySelector(".action-feedback")).toBeNull();
+    const named = (label: string) => [...document.querySelectorAll("button")].find((button) => button.textContent?.includes(label)) as HTMLButtonElement;
+    const execute = async () => await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+
+    await act(async () => named("MOVE").click());
+    await act(async () => named("Whiteplain").click());
+    await execute();
+    expect(document.querySelector(".turn-readout")?.textContent).toContain("02");
+    expect(document.querySelector(".action-feedback")?.textContent).toBeTruthy();
+    expect(document.querySelector('[aria-label="Resolved actions for turn 1"]')).toBeTruthy();
+
+    await act(async () => named("ATTACK").click());
+    const attackTarget = named("Cairnwatch");
+    expect(attackTarget).toBeTruthy();
+    await act(async () => attackTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await execute();
+    const report = document.querySelector(".reports")?.textContent ?? "";
+    expect(report).toContain("Cairnwatch");
+    expect(report).toContain("WARD DEFENDERS Sentinel 9/10");
+    expect(report).toContain("HOSTILE ATTACKERS Artillery 5/8");
+    expect(report).toContain("SURVIVORS: HOSTILE 5; WARD 9");
+    expect(document.querySelector('[aria-label="Resolved actions for turn 1"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Resolved actions for turn 2"]')).toBeTruthy();
+    await act(async () => root.unmount());
+  });
+
+  it("keeps engagement outcome separate from occupation", () => {
+    expect(battleOutcomeLabel({ winner: "player", captured: false })).toBe("won; not captured");
+    expect(occupationLabel({ captured: false, relayControlled: false })).toBe("occupation: no change");
+    expect(occupationLabel({ captured: true, relayControlled: true })).toBe("occupation: captured");
+  });
   const renderApp = async (initialGame = createNewCampaign(42024)) => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
@@ -2386,6 +2419,21 @@ describe("Editable turn plan", () => {
     const root = await mount({ ...createNewCampaign(42024), terminal: "victory", terminalReason: "Campaign complete." });
     expect(document.querySelectorAll(".planned-order")).toHaveLength(0);
     expect(execute().disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
+
+  it("announces the resolved turn and exposes non-blocking visual feedback", async () => {
+    const root = await mount();
+    await target("Whiteplain");
+    await click(execute());
+    expect(document.querySelector('.debrief-panel [aria-live="polite"]')?.textContent).toContain("WHAT CHANGED");
+    expect(document.querySelector('[aria-label="Resolved actions for turn 1"]')).toBeTruthy();
+    expect(document.querySelector(".resolved-route")).toBeTruthy();
+    expect(document.querySelector(".resolved-route")?.getAttribute("class")).toContain("resolved-move");
+    const map = document.querySelector(".map")!;
+    expect(map.querySelector(".resolved-route")!.compareDocumentPosition(map.querySelector(".sector")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(map.querySelector(".casualty-feedback")!.compareDocumentPosition(map.querySelector(".sector")!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(map.querySelector(".casualty-feedback")?.getAttribute("pointer-events")).toBe("none");
     await act(async () => root.unmount());
   });
 });
