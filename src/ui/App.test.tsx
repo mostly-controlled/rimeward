@@ -64,6 +64,42 @@ describe("App interactions", () => {
     return root;
   };
 
+  it("shows the seeded human style and no-pattern cue before commitment", async () => {
+    // Synthetic fixture: this does not claim normal-campaign browser coverage.
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      squads: campaign.squads.map((squad, index) =>
+        index === 0 ? { ...squad, sector: "sector-0" as const } : { ...squad, strength: 0 },
+      ),
+      enemySquads: campaign.enemySquads.map((enemy, index) =>
+        index === 0 ? { ...enemy, sector: "sector-1" as const, strength: 7 } : { ...enemy, strength: 0 },
+      ),
+    };
+    const root = await renderApp(state);
+    const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
+    expect(cue).toContain("ENEMY STYLE CUE");
+    expect(cue).toMatch(/Aggressive raider|Defensive planner/);
+    expect(cue).toContain("no pattern yet");
+    expect(cue).not.toMatch(/UNSET|enemy pattern|enemy order/i);
+    await act(async () => root.unmount());
+  });
+
+  it("keeps human style names while showing partial adaptive states", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      turn: 2,
+      adaptiveHistory: [{ turn: 1, observations: [{ kind: "move" as const, class: "Raider" as const, from: "sector-1" as const, to: "sector-2" as const }] }],
+    };
+    const root = await renderApp(state);
+    const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
+    expect(cue).toMatch(/Aggressive raider|Defensive planner/);
+    expect(cue).toContain("pressure noticed");
+    expect(cue).not.toContain("UNSET");
+    await act(async () => root.unmount());
+  });
+
   it("sanitizes persisted legacy enemy debriefs without Signals", () => {
     const legacy = "TURN 4 DEBRIEF\nENEMY PHASE OBSERVED: enemy-1 move sector-3";
     expect(displayRailMessage(legacy, 0)).toContain("movement withheld — Signals 0");
@@ -2113,7 +2149,7 @@ describe("Editable turn plan", () => {
     await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent?.startsWith("RESET SAME SEED")) as HTMLButtonElement).click());
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
     expect(saved.version).toBe(SAVE_VERSION);
-    expect(saved.rulesVersion).toBe(1);
+    expect(saved.rulesVersion).toBe(2);
     expect(saved.journalVersion).toBe(1);
     expect(saved.journal).toEqual([]);
     expect(saved.game.seed).toBe(99);

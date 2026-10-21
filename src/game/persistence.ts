@@ -1,10 +1,10 @@
-import { advanceResearch, createNewCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, type BattleReport, type GameState, type Order, type OrderType, type ResearchBranch, type SectorId } from "./simulation";
+import { advanceResearch, createNewCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, type AdaptiveHistoryBucket, type BattleReport, type GameState, type Order, type OrderType, type ResearchBranch, type SectorId } from "./simulation";
 declare const localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 export const SAVE_KEY = "rimeward:campaign";
 export const SAVE_VERSION = 2;
 export const JOURNAL_VERSION = 1;
-export const REPLAY_RULES_VERSION = 1;
+export const REPLAY_RULES_VERSION = 2;
 const MAX_TURNS = 18;
 const MAX_RESEARCH_PURCHASES = 6;
 const MAX_ORDER_BATCH = 5;
@@ -28,6 +28,24 @@ const classes = new Set(["Sentinel", "Raider", "Recon", "Artillery"]);
 const terrains = new Set(["ice", "ridge", "tundra", "crater"]);
 const orders = new Set<OrderType>(["hold", "recover", "move", "attack"]);
 const branches = ["Logistics", "Warfare", "Signals"];
+const adaptiveClasses = new Set(["Sentinel", "Raider", "Recon", "Artillery"]);
+const validAdaptiveHistory = (value: unknown): value is AdaptiveHistoryBucket[] => {
+  if (!Array.isArray(value) || value.length > 3) return false;
+  const turns = value.map((bucket) => isObject(bucket) ? bucket.turn : undefined);
+  if (new Set(turns).size !== turns.length) return false;
+  return value.every((bucket) => {
+    if (!isObject(bucket) || typeof bucket.turn !== "number" || !Number.isInteger(bucket.turn) || bucket.turn < 1 || !Array.isArray(bucket.observations)) return false;
+    return bucket.observations.every((observation) =>
+      isObject(observation) &&
+      ["move", "attack"].includes(String(observation.kind)) &&
+      adaptiveClasses.has(String(observation.class)) &&
+      sectorRef(observation.from) &&
+      (observation.kind === "move"
+        ? sectorRef(observation.to) && observation.target === undefined
+        : sectorRef(observation.target) && observation.to === undefined),
+    );
+  });
+};
 
 export const validateSave = (value: unknown): value is SavePayload => {
   if (!isObject(value) || ![1, SAVE_VERSION].includes(value.version as number) || !finite(value)) return false;
@@ -38,7 +56,7 @@ export const validateSave = (value: unknown): value is SavePayload => {
 
   if (game.orderHistory.some((turn) => !Array.isArray(turn) || turn.some((order) => !isObject(order) || !campaignSquadIds.has(String(order.squadId)) || !orders.has(order.type as OrderType) || (order.target !== undefined && !sectorRef(order.target))))) return false;
   const intent = (entry: unknown) => isObject(entry) && typeof entry.squadId === "string" && ["wait", "hold", "move", "attack"].includes(String(entry.kind)) && sectorRef(entry.from) && (entry.to === undefined || sectorRef(entry.to)) && (entry.target === undefined || sectorRef(entry.target));
-  if (game.enemyHistory.some((entry) => !intent(entry)) || (game.strategicIntent !== undefined && !intent(game.strategicIntent)) || (game.strategicTarget !== undefined && (!isObject(game.strategicTarget) || typeof game.strategicTarget.squadId !== "string" || !sectorRef(game.strategicTarget.destination))) || typeof game.research !== "number" || !Number.isFinite(game.research) || !isObject(game.researchLevels) || branches.some((branch) => typeof (game.researchLevels as Record<string, unknown>)[branch] !== "number" || !Number.isFinite((game.researchLevels as Record<string, unknown>)[branch])) || !Array.isArray(game.recentBattles) || game.recentBattles.some((entry) => typeof entry !== "string") || !Array.isArray(game.revealedEnemySquads) || game.revealedEnemySquads.some((id) => typeof id !== "string") || !Array.isArray(game.scoutedEnemyRoutes) || game.scoutedEnemyRoutes.some((id) => typeof id !== "string") || (game.terminalReason !== undefined && typeof game.terminalReason !== "string") || typeof game.supplyCapacity !== "number" || !Number.isFinite(game.supplyCapacity)) return false;
+  if (game.enemyHistory.some((entry) => !intent(entry)) || (game.strategicIntent !== undefined && !intent(game.strategicIntent)) || (game.strategicTarget !== undefined && (!isObject(game.strategicTarget) || typeof game.strategicTarget.squadId !== "string" || !sectorRef(game.strategicTarget.destination))) || (game.adaptiveHistory !== undefined && !validAdaptiveHistory(game.adaptiveHistory)) || typeof game.research !== "number" || !Number.isFinite(game.research) || !isObject(game.researchLevels) || branches.some((branch) => typeof (game.researchLevels as Record<string, unknown>)[branch] !== "number" || !Number.isFinite((game.researchLevels as Record<string, unknown>)[branch])) || !Array.isArray(game.recentBattles) || game.recentBattles.some((entry) => typeof entry !== "string") || !Array.isArray(game.revealedEnemySquads) || game.revealedEnemySquads.some((id) => typeof id !== "string") || !Array.isArray(game.scoutedEnemyRoutes) || game.scoutedEnemyRoutes.some((id) => typeof id !== "string") || (game.terminalReason !== undefined && typeof game.terminalReason !== "string") || typeof game.supplyCapacity !== "number" || !Number.isFinite(game.supplyCapacity)) return false;
   const squadView = (entry: unknown) => isObject(entry) && typeof entry.squadId === "string" && classes.has(String(entry.class)) && typeof entry.strength === "number" && Number.isFinite(entry.strength) && typeof entry.units === "number" && Number.isFinite(entry.units);
   const casualty = (entry: unknown) => isObject(entry) && typeof entry.squadId === "string" && ["player", "enemy"].includes(String(entry.side)) && typeof entry.strength === "number" && Number.isFinite(entry.strength);
   const report = (entry: unknown) => isObject(entry) && sectorRef(entry.target) && terrains.has(String(entry.terrain)) && ["player", "enemy", "draw"].includes(String(entry.winner)) && Array.isArray(entry.attackers) && entry.attackers.every(squadView) && Array.isArray(entry.defenders) && entry.defenders.every(squadView) && Array.isArray(entry.classAdvantages) && entry.classAdvantages.every((item) => typeof item === "string") && Array.isArray(entry.defenderCounters) && entry.defenderCounters.every((item) => typeof item === "string") && ["terrainMultiplier", "fatiguePenalty", "variance", "attackerPower", "defenderPower", "playerCasualties", "enemyCasualties"].every((key) => typeof entry[key] === "number" && Number.isFinite(entry[key])) && Array.isArray(entry.casualties) && entry.casualties.every(casualty) && Array.isArray(entry.retreat) && entry.retreat.every((item) => isObject(item) && typeof item.squadId === "string" && sectorRef(item.to)) && typeof entry.captured === "boolean" && typeof entry.relayControlled === "boolean";
@@ -46,7 +64,11 @@ export const validateSave = (value: unknown): value is SavePayload => {
   if (value.version === SAVE_VERSION && value.journal !== undefined && (!Array.isArray(value.journal) || value.journal.filter((entry) => isObject(entry) && entry.type === "research").length > MAX_RESEARCH_PURCHASES || value.journal.filter((entry) => isObject(entry) && entry.type === "orders").length > MAX_TURNS || value.journal.length > MAX_TURNS + MAX_RESEARCH_PURCHASES || value.journal.some((entry) => !isObject(entry) || (entry.type === "research" ? !branches.includes(String(entry.branch)) : entry.type !== "orders" || !Array.isArray(entry.orders) || entry.orders.length === 0 || entry.orders.length > MAX_ORDER_BATCH || new Set(entry.orders.map((order) => isObject(order) ? String(order.squadId) : "")).size !== entry.orders.length || entry.orders.some((order) => !isObject(order) || !campaignSquadIds.has(String(order.squadId)) || !orders.has(order.type as OrderType) || (order.target !== undefined && !sectorRef(order.target))))))) return false;
   return true;
 };
-export const readSave = (): SavePayload | null => { try { const raw = localStorage.getItem(SAVE_KEY); return raw ? ((() => { const parsed: unknown = JSON.parse(raw); return validateSave(parsed) ? parsed : null; })()) : null; } catch { return null; } };
+const withAdaptiveDefaults = (payload: SavePayload): SavePayload =>
+  payload.game.adaptiveHistory
+    ? payload
+    : { ...payload, game: { ...payload.game, adaptiveHistory: [] } };
+export const readSave = (): SavePayload | null => { try { const raw = localStorage.getItem(SAVE_KEY); return raw ? ((() => { const parsed: unknown = JSON.parse(raw); return validateSave(parsed) ? withAdaptiveDefaults(parsed) : null; })()) : null; } catch { return null; } };
 export const readSaveNotice = (): string => { try { const raw = localStorage.getItem(SAVE_KEY); return raw && !readSave() ? "SAVE RESET — the stored campaign was corrupt or unsupported; a fresh campaign is ready." : ""; } catch { return "SAVE UNAVAILABLE — browser storage is blocked; this campaign may not survive reload."; } };
 export const readSaveUnavailableNotice = (): string => { try { const raw = localStorage.getItem(SAVE_KEY); return raw === null ? "" : readSave() ? "" : "SAVE UNAVAILABLE — the stored campaign could not be read; replay verification is unavailable."; } catch { return "SAVE UNAVAILABLE — browser storage is blocked; this campaign may not survive reload."; } };
 export const writeSave = (payload: SavePayload): string | null => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(payload)); return null; } catch { return "SAVE UNAVAILABLE — browser storage is blocked or full; this campaign may not survive reload."; } };

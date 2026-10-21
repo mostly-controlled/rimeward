@@ -45,6 +45,7 @@ export type GameState = {
   recentBattles: string[];
   orderHistory: Order[][];
   enemyHistory: EnemyIntent[];
+  adaptiveHistory: AdaptiveHistoryBucket[];
   strategicIntent?: EnemyIntent;
   strategicTarget?: StrategicTarget;
   terminal: TerminalStatus;
@@ -70,6 +71,17 @@ export type EnemyIntent = {
   from: SectorId;
   to?: SectorId;
   target?: SectorId;
+};
+export type AdaptiveObservation = {
+  kind: "move" | "attack";
+  class: UnitClass;
+  from: SectorId;
+  to?: SectorId;
+  target?: SectorId;
+};
+export type AdaptiveHistoryBucket = {
+  turn: number;
+  observations: AdaptiveObservation[];
 };
 export type StrategicTarget = { squadId: string; destination: SectorId };
 export type BattleReport = {
@@ -193,6 +205,7 @@ export const createNewCampaign = (seed: number): GameState => {
     recentBattles: [],
     orderHistory: [],
     enemyHistory: [],
+    adaptiveHistory: [],
     strategicIntent: undefined,
     strategicTarget: undefined,
     terminal: "active" as const,
@@ -209,6 +222,75 @@ const error = (message: string): never => {
   throw new Error(message);
 };
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const counterClass: Record<UnitClass, UnitClass> = {
+  Sentinel: "Raider",
+  Raider: "Recon",
+  Recon: "Artillery",
+  Artillery: "Sentinel",
+};
+const adjacentOrSame = (state: GameState, a: SectorId, b: SectorId): boolean =>
+  a === b || Boolean(state.sectors.find((sector) => sector.id === a)?.links.includes(b));
+const observationDestination = (observation: AdaptiveObservation): SectorId =>
+  observation.kind === "move"
+    ? observation.to ?? observation.from
+    : observation.target ?? observation.from;
+const observationCorridor = (observation: AdaptiveObservation): string =>
+  `${observation.from}>${observationDestination(observation)}`;
+const recentAdaptiveBuckets = (state: GameState): AdaptiveHistoryBucket[] =>
+  (Array.isArray(state.adaptiveHistory) ? state.adaptiveHistory : [])
+    .filter((bucket) => Number.isInteger(bucket.turn) && bucket.turn >= state.turn - 3)
+    .sort((a, b) => a.turn - b.turn);
+const committedObservation = (bucket: AdaptiveHistoryBucket): AdaptiveObservation =>
+  bucket.observations.at(-1)!;
+
+type AdaptiveStyle = "AGGRESSIVE" | "DEFENSIVE" | "UNSET";
+export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
+  const buckets = recentAdaptiveBuckets(state);
+  const observed = buckets.filter((bucket) => bucket.observations.length > 0);
+  const latest = observed.at(-1)?.observations ?? [];
+  if (!latest.length) return "UNSET";
+  let classConfidence = 0;
+  let corridorConfidence = 0;
+  let previousClass: UnitClass | undefined;
+  let previousCorridor: string | undefined;
+  for (const bucket of observed) {
+    const observation = committedObservation(bucket);
+    const corridor = observationCorridor(observation);
+    classConfidence = observation.class === previousClass ? classConfidence + 1 : 1;
+    corridorConfidence = corridor === previousCorridor ? corridorConfidence + 1 : 1;
+    previousClass = observation.class;
+    previousCorridor = corridor;
+  }
+  const personality = pressureHash(state, "adaptive-style", 0) % 2 === 0;
+  const threshold = personality ? 2 : 3;
+  if (classConfidence >= threshold || corridorConfidence >= threshold)
+    return personality ? "AGGRESSIVE" : "DEFENSIVE";
+  return "UNSET";
+};
+export const adaptiveStyleCue = (state: GameState): string => {
+  const buckets = recentAdaptiveBuckets(state);
+  const observed = buckets.filter((bucket) => bucket.observations.length > 0);
+  const latest = observed.at(-1) ? committedObservation(observed.at(-1)!) : undefined;
+  const styleName = pressureHash(state, "adaptive-style", 0) % 2 === 0
+    ? "Aggressive raider"
+    : "Defensive planner";
+  if (!latest) return `${styleName} · no pattern yet`;
+  if (adaptiveStyle(state) === "UNSET")
+    return `${styleName} · ${observed.length === 1 ? "pressure noticed" : "response uncertain"}`;
+  return `${styleName} · ${adaptiveStyle(state) === "AGGRESSIVE" ? "pressure noticed" : "response uncertain"}`;
+};
+const appendAdaptiveBucket = (
+  state: GameState,
+  bucket: AdaptiveHistoryBucket,
+): AdaptiveHistoryBucket[] =>
+  [
+    ...(Array.isArray(state.adaptiveHistory) ? state.adaptiveHistory : []).filter(
+      (entry) => entry.turn !== bucket.turn,
+    ),
+    bucket,
+  ]
+    .sort((a, b) => a.turn - b.turn)
+    .slice(-3);
 const supplied = (state: GameState, sectorId: SectorId): boolean => {
   const owned = new Set(
     state.sectors
@@ -440,6 +522,97 @@ const nextLegalStep = (
   return undefined;
 };
 
+const legalCounterIntent = (
+  state: GameState,
+  excluded = new Set<string>(),
+): EnemyIntent | undefined => {
+  // Counterdeployment is based only on the remembered visible observation.
+  // Current player positions at the remembered destination are intentionally
+  // not consulted; only local adjacent attack viability is allowed below.
+  const rememberedBucket = recentAdaptiveBuckets(state)
+    .filter((bucket) => bucket.observations.length > 0)
+    .at(-1);
+  const remembered = rememberedBucket ? committedObservation(rememberedBucket) : undefined;
+  if (!remembered) return undefined;
+  const destination = observationDestination(remembered);
+  const desiredClass = Object.entries(counterClass).find(
+    ([, victim]) => victim === remembered.class,
+  )?.[0] as UnitClass | undefined;
+  if (!desiredClass) return undefined;
+  const enemies = state.enemySquads
+    .filter((enemy) => {
+      if (
+        !Number.isFinite(enemy.strength) ||
+        enemy.strength <= 0 ||
+        excluded.has(enemy.id)
+      )
+        return false;
+      const guardingObjective = state.objectives.some(
+        (objective) => objective.sector === enemy.sector && !objective.controlled,
+      );
+      return enemy.sector !== state.hq.enemy && !guardingObjective;
+    })
+    .sort((a, b) => a.id.localeCompare(b.id));
+  for (const enemy of enemies) {
+      if (enemy.class !== desiredClass) continue;
+      const current = state.sectors.find((sector) => sector.id === enemy.sector);
+      if (current?.links.includes(destination) && attackIsViable(state, enemy, destination, excluded))
+        return {
+          squadId: enemy.id,
+          kind: "attack",
+          from: enemy.sector,
+          to: enemy.sector,
+          target: destination,
+        };
+      const step = nextLegalStep(state, enemy.sector, destination, enemy.id);
+      if (step)
+        return {
+          squadId: enemy.id,
+          kind: "move",
+          from: enemy.sector,
+          to: step,
+        };
+  }
+  return undefined;
+};
+
+const rememberedGuardTarget = (
+  state: GameState,
+  enemy: EnemySquad,
+  targets: SectorId[],
+  excluded: Set<string>,
+): SectorId | undefined => {
+  if (adaptiveStyle(state) === "UNSET") return undefined;
+  if (
+    !state.objectives.some(
+      (objective) => objective.sector === enemy.sector && !objective.controlled,
+    ) && enemy.sector !== state.hq.enemy
+  )
+    return undefined;
+  const rememberedBucket = recentAdaptiveBuckets(state)
+    .filter((bucket) => bucket.observations.length > 0)
+    .at(-1);
+  const remembered = rememberedBucket
+    ? committedObservation(rememberedBucket)
+    : undefined;
+  if (!remembered) return undefined;
+  const destination = observationDestination(remembered);
+  return targets.find(
+    (target) => {
+      if (!attackIsViable(state, enemy, target, excluded)) return false;
+      return (
+        target === destination ||
+        state.squads.some(
+          (squad) =>
+            squad.strength > 0 &&
+            squad.sector === target &&
+            squad.class === remembered.class,
+        )
+      );
+    },
+  );
+};
+
 const intentForEnemy = (
   state: GameState,
   enemy: EnemySquad,
@@ -456,6 +629,23 @@ const intentForEnemy = (
     )
     .slice(-4);
   if (enemy.sector === state.hq.enemy) {
+    const rememberedHqTarget = rememberedGuardTarget(
+      state,
+      enemy,
+      (current?.links ?? []).filter((target) =>
+        state.squads.some((squad) => squad.sector === target && squad.strength > 0) &&
+        attackIsViable(state, enemy, target, excluded),
+      ),
+      excluded,
+    );
+    if (rememberedHqTarget)
+      return {
+        squadId: enemy.id,
+        kind: "attack",
+        from: enemy.sector,
+        to: enemy.sector,
+        target: rememberedHqTarget,
+      };
     const hqCounterTarget = (current?.links ?? [])
       .filter((target) =>
         state.squads.some((squad) => squad.sector === target && squad.strength > 0),
@@ -499,6 +689,27 @@ const intentForEnemy = (
     );
     return occupied && (sector?.owner === "player" || relay);
   });
+  const relayHasImmediateWardThreat =
+    state.objectives.some(
+      (objective) => objective.sector === enemy.sector && !objective.controlled,
+    ) &&
+    state.squads.some((squad) => {
+      if (squad.strength <= 0) return false;
+      const squadSector = state.sectors.find((sector) => sector.id === squad.sector);
+      return squadSector?.links.includes(enemy.sector);
+    });
+  if (relayHasImmediateWardThreat) {
+    const rememberedRelayTarget = rememberedGuardTarget(
+      state,
+      enemy,
+      occupiedPlayerTargets.filter((target) =>
+        attackIsViable(state, enemy, target, excluded),
+      ),
+      excluded,
+    );
+    if (rememberedRelayTarget)
+      return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: rememberedRelayTarget };
+  }
   const occupiedPlayerTarget = choosePressureTarget(
     state,
     occupiedPlayerTargets.filter((target) =>
@@ -513,6 +724,13 @@ const intentForEnemy = (
       from: enemy.sector,
       to: enemy.sector,
       target: occupiedPlayerTarget,
+    };
+  if (relayHasImmediateWardThreat)
+    return {
+      squadId: enemy.id,
+      kind: "hold",
+      from: enemy.sector,
+      to: enemy.sector,
     };
   // A live guard on an approach contests a captured relay before stale HQ
   // pursuit. This uses only a real adjacent tile and a finite actor.
@@ -562,25 +780,6 @@ const intentForEnemy = (
       };
     }
   }
-  const relayHasImmediateWardThreat =
-    state.objectives.some(
-      (objective) => objective.sector === enemy.sector && !objective.controlled,
-    ) &&
-    state.squads.some((squad) => {
-      if (squad.strength <= 0) return false;
-      const squadSector = state.sectors.find((sector) => sector.id === squad.sector);
-      return squadSector?.links.includes(enemy.sector);
-    });
-  if (relayHasImmediateWardThreat && !occupiedPlayerTarget)
-    return {
-      squadId: enemy.id,
-      kind: "hold",
-      from: enemy.sector,
-      to: enemy.sector,
-    };
-  const guardsRelay = state.objectives.some(
-    (objective) => objective.sector === enemy.sector && !objective.controlled,
-  );
   const exposedSupplyApproach = (current?.links ?? []).find((target) => {
     const sector = state.sectors.find((item) => item.id === target);
     return (
@@ -623,13 +822,17 @@ const intentForEnemy = (
         supplied(state, sector.id),
     )
     .sort((a, b) => a.id.localeCompare(b.id))[0];
-  if (guardsRelay && !depot)
+  const guardsRelay = state.objectives.some(
+    (objective) => objective.sector === enemy.sector && !objective.controlled,
+  );
+  if (guardsRelay && !depot) {
     return {
       squadId: enemy.id,
       kind: "hold",
       from: enemy.sector,
       to: enemy.sector,
     };
+  }
   if (depot) {
     const depotOccupied = state.squads.some(
       (squad) => squad.sector === depot.id && squad.strength > 0,
@@ -893,7 +1096,7 @@ export const decideEnemyIntent = (
       state.objectives.some(
         (objective) =>
           objective.sector === defenderEnemy.sector && !objective.controlled,
-      );
+    );
     if (defender?.kind === "hold" && defenderRelay) return defender;
     const defenderMoveRelay =
       defender?.kind === "move" &&
@@ -931,12 +1134,22 @@ export const decideEnemyIntent = (
         to: targetEnemy.sector,
       };
   }
+  const strategicCounter = adaptiveStyle(state) !== "UNSET"
+    ? legalCounterIntent(state, excluded)
+    : undefined;
+  if (strategicCounter) return strategicCounter;
   const tier = intents.filter((intent) => intent.kind !== "hold");
   const candidates = tier.length ? tier : intents;
+  const style = adaptiveStyle(state);
   return candidates
     .slice()
     .sort(
       (a, b) =>
+        (style === "AGGRESSIVE"
+          ? Number(b.kind === "attack") - Number(a.kind === "attack")
+          : style === "DEFENSIVE"
+            ? Number(b.kind === "move") - Number(a.kind === "move")
+            : 0) ||
         pressureHash(
           state,
           `${a.squadId}:${a.to ?? a.target ?? a.from}`,
@@ -1147,6 +1360,24 @@ export const resolveTurn = (
   validateOrders(state, playerOrders);
   const nextState = clone(state);
   const events: GameEvent[] = [];
+  const observations: AdaptiveObservation[] = playerOrders.flatMap((order) => {
+    if (order.type !== "move" && order.type !== "attack") return [];
+    const squad = state.squads.find((item) => item.id === order.squadId);
+    const observedSectors = order.type === "move" ? [squad?.sector, order.target] : [squad?.sector];
+    if (
+      !squad ||
+      squad.strength <= 0 ||
+      !state.enemySquads.some(
+        (enemy) =>
+          enemy.strength > 0 &&
+          observedSectors.some(
+            (sector) => sector !== undefined && adjacentOrSame(state, sector, enemy.sector),
+          ),
+      )
+    )
+      return [];
+    return [{ kind: order.type, class: squad.class, from: squad.sector, ...(order.type === "move" ? { to: order.target } : { target: order.target }) }];
+  });
   for (const order of playerOrders) {
     const squad = nextState.squads.find((item) => item.id === order.squadId);
     if (!squad || squad.strength <= 0) continue;
@@ -1196,15 +1427,11 @@ export const resolveTurn = (
   }));
   nextState.turn += 1;
   nextState.orderHistory = [...nextState.orderHistory, clone(playerOrders)];
+  nextState.adaptiveHistory = appendAdaptiveBucket(nextState, { turn: state.turn, observations });
   return { nextState, events };
 };
 
-const counters: Record<UnitClass, UnitClass> = {
-  Sentinel: "Raider",
-  Raider: "Recon",
-  Recon: "Artillery",
-  Artillery: "Sentinel",
-};
+const counters = counterClass;
 const battleRandom = (seed: number, target: SectorId, turn: number): number => {
   let value = (seed ^ turn ^ Number(target.slice(7))) >>> 0;
   value = (value * 1664525 + 1013904223) >>> 0;
@@ -1567,6 +1794,7 @@ const resolveEnemyTurnOnce = (
       from,
       to: intent.to,
       message: `${enemy.id} advances to ${intent.to} (${destinationName})`,
+      faction: "enemy",
     });
   } else if (intent?.kind === "hold" && enemy) {
     events.push({
