@@ -29,6 +29,8 @@ import {
 } from "../game/persistence";
 
 type RailEvent = { turn: number; message: string };
+type ReportEntry = BattleReport & { phase: "player" | "enemy" | "unknown" };
+type ResolvedFeedback = { turn: number; routes: { from: SectorId; to: SectorId; type: "move" | "attack" }[]; attacks: SectorId[]; casualties: { target: SectorId; side: "player" | "enemy" }[] };
 export const displayRailMessage = (message: string, signals: number) =>
   signals > 0 || !message.startsWith("TURN ")
     ? message
@@ -79,6 +81,7 @@ export const battleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captur
       : "lost";
 export const enemyBattleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captured">) =>
   report.captured ? "captured" : report.winner === "player" ? "repelled; sector retained" : report.winner === "enemy" ? "enemy won; sector retained" : "held; sector retained";
+export const occupationLabel = (report: Pick<BattleReport, "captured" | "relayControlled">) => report.captured ? "occupation: captured" : report.relayControlled ? "occupation: sector held" : "occupation: no change";
 const squadLabel = (squad: { class: string; id: string }) =>
   `${squad.class} ${squad.id.replace(/^squad-/, "#")}`;
 const pos: Record<string, [number, number]> = {
@@ -112,6 +115,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>(
     () => loaded?.reports ?? [],
   );
+  const [reportEntries, setReportEntries] = useState<ReportEntry[]>(() => (loaded?.reports ?? []).map((report) => ({ ...report, phase: "unknown" })));
   const loadedReplaySupported = !!loaded && loaded.rulesVersion === REPLAY_RULES_VERSION && loaded.journalVersion === JOURNAL_VERSION;
   const loadedReplayMetadata = !!loaded && (loaded.journal !== undefined || loaded.rulesVersion !== undefined || loaded.journalVersion !== undefined);
   const [loadedReplayUnsupported, setLoadedReplayUnsupported] = useState(() => loadedReplayMetadata && !loadedReplaySupported);
@@ -125,6 +129,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   );
   const [error, setError] = useState("");
   const [actionFeedback, setActionFeedback] = useState("");
+  const [resolvedFeedback, setResolvedFeedback] = useState<ResolvedFeedback | null>(null);
   const [storageWarning, setStorageWarning] = useState("");
   const verify = () => {
     if (storageWarning) {
@@ -334,13 +339,17 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const enemy = resolveEnemyTurn(combat.nextState);
       const name = (id?: SectorId) => id ? before.sectors.find((sector) => sector.id === id)?.name ?? id : "unknown sector";
       const phaseReports = [...combat.reports, ...enemy.reports];
+      const reportEntriesNext: ReportEntry[] = [
+        ...combat.reports.map((report) => ({ ...report, phase: "player" as const })),
+        ...enemy.reports.map((report) => ({ ...report, phase: "enemy" as const })),
+      ];
       const visibleFeedback = phaseReports.length
         ? `Resolved ${phaseReports.length} visible battle${phaseReports.length === 1 ? "" : "s"}: ${phaseReports.map((report) => name(report.target)).join(", ")}.`
         : "Turn resolved: no visible battles.";
       const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
       const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const playerAfter = combat.nextState.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const playerStrength = playerAfter?.strength ?? 0; const afterStrength = after?.strength ?? 0; const playerFatigue = playerAfter?.fatigue ?? unit.fatigue; const afterFatigue = after?.fatigue ?? playerFatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? `cost ${recoveryMetalCost(before)} metal + 2 energy` : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; if (order.type === "hold" && afterStrength === unit.strength && afterFatigue === unit.fatigue && !control) return null; return squadLabel(unit) + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — before → your orders → enemy response; STR " + unit.strength + "→" + playerStrength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + playerFatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
-      const playerBattleLines = combat.reports.map((report) => name(report.target) + ": " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
-      const enemyBattleLines = enemy.reports.map((report) => name(report.target) + ": enemy assault — " + enemyBattleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
+      const playerBattleLines = combat.reports.map((report) => name(report.target) + ": engagement outcome: " + battleOutcomeLabel(report) + "; " + occupationLabel(report) + "; Ward casualties −" + report.playerCasualties + ", hostile casualties −" + report.enemyCasualties);
+      const enemyBattleLines = enemy.reports.map((report) => name(report.target) + ": enemy assault engagement outcome: " + enemyBattleOutcomeLabel(report) + "; " + occupationLabel(report) + "; Ward casualties −" + report.playerCasualties + ", hostile casualties −" + report.enemyCasualties);
       const enemyLines = before.researchLevels.Signals > 0 && enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
       const relayLines = before.objectives.map((objective) => {
         const sector = before.sectors.find((candidate) => candidate.id === objective.sector);
@@ -395,6 +404,16 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         `NEXT: ${nextChoices}`,
       ].join("\n");
       setGame(enemy.nextState);
+      const routes = orders.flatMap((order) => {
+        if ((order.type !== "move" && order.type !== "attack") || !order.target) return [];
+        const unit = before.squads.find((candidate) => candidate.id === order.squadId);
+        return unit ? [{ from: unit.sector, to: order.target, type: order.type }] : [];
+      });
+      setResolvedFeedback({ turn: before.turn, routes, attacks: orders.filter((order) => order.type === "attack" && order.target).map((order) => order.target!), casualties: phaseReports.flatMap((report) => report.casualties.map((casualty) => ({ target: report.target, side: casualty.side }))) });
+      setActionFeedback([
+        routes.length ? routes.map((route) => `${route.type.toUpperCase()} ${name(route.from)} → ${name(route.to)}`).join("; ") : "Turn resolved",
+        ...phaseReports.map((report) => `${name(report.target)}: ${report.winner === "player" ? "Ward won" : report.winner === "enemy" ? "hostile won" : "draw"}; casualties Ward ${report.playerCasualties}, hostile ${report.enemyCasualties}`),
+      ].join(". ") + ".");
       const nextReports = phaseReports.length ? phaseReports : reports;
       const visibleEnemyEvents = before.researchLevels.Signals > 0 ? enemy.events.map((e) => e.message) : [];
       const nextEvents = (
@@ -414,7 +433,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
           ...events,
         ].slice(0, 20)
       ) as RailEvent[];
-      if (phaseReports.length) setReports(phaseReports);
+      if (phaseReports.length) {
+        setReports(phaseReports);
+        setReportEntries(reportEntriesNext);
+      }
       setEvents(nextEvents);
       setActionFeedback(visibleFeedback);
       const nextJournal = journal ? [...journal, { type: "orders" as const, orders: orders.map((order) => ({ ...order })) }] : undefined;
@@ -438,13 +460,22 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       setError(e instanceof Error ? e.message : "Research rejected");
     }
   };
+  const clearResolvedFeedback = () => {
+    setReportEntries([]);
+    setActionFeedback("");
+    setResolvedFeedback(null);
+  };
   const reset = () => {
+    clearResolvedFeedback();
     const nextGame = createNewCampaign(game.seed);
     setGame(nextGame);
     setSelectedSquad("squad-1");
     setOrders([]);
     setEvents([]);
     setReports([]);
+    setReportEntries([]);
+    setActionFeedback("");
+    setResolvedFeedback(null);
     setJournal([]);
     setError("");
     const warning = persist(nextGame, [], [], []);
@@ -456,6 +487,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setError("");
   };
   const resetSameSeed = () => {
+    clearResolvedFeedback();
     const nextGame = createNewCampaign(game.seed);
     setLoadedReplayUnsupported(false);
     setPendingSaveChoice(false);
@@ -469,6 +501,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     persist(nextGame, [], [], [], true);
   };
   const newCampaign = () => {
+    clearResolvedFeedback();
     const nextGame = createNewCampaign(nextCampaignSeed(game.seed));
     setLoadedReplayUnsupported(false);
     setPendingSaveChoice(false);
@@ -735,6 +768,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               {latestDebrief ? (() => { const lines = displayRailMessage(latestDebrief.message, game.researchLevels.Signals).split("\n"); const priority = ["PLAYER RESULT:", "ENEMY RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:"]; const next = lines.find((line) => line.startsWith("NEXT:")); const summary = [...priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 4), next].filter(Boolean) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
             </div>
           </section>
+          <p className="action-feedback" role="status" aria-live="polite">{actionFeedback}</p>
           <div className="battle-layout">
             <section className="map-panel card">
               <div className="panel-heading">
@@ -832,6 +866,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       );
                     })}
                 </g>
+                {resolvedFeedback?.turn === game.turn - 1 && (
+                  <g className="resolved-feedback" aria-label={`Resolved actions for turn ${resolvedFeedback.turn}`}>
+                    {resolvedFeedback.routes.map((route, index) => <line key={`resolved-route-${index}`} className={`resolved-route resolved-${route.type}`} x1={pos[route.from][0]} y1={pos[route.from][1]} x2={pos[route.to][0]} y2={pos[route.to][1]} />)}
+                    {resolvedFeedback.casualties.map((marker, index) => <g key={`casualty-${index}`} className={`casualty-marker casualty-${marker.side}`} transform={`translate(${pos[marker.target][0]},${pos[marker.target][1]})`} aria-label={`${marker.side} casualty at ${sectorName(marker.target)}`}><circle r="10" /><text textAnchor="middle" y="4">×</text></g>)}
+                  </g>
+                )}
                 {game.sectors.map((s) => {
                   const [x, y] = pos[s.id];
                   const wardPresence = wardStrengthBySector.get(s.id);
@@ -966,14 +1006,16 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     <h2>BATTLE REPORT</h2>
                     <span className="muted">RESOLVED</span>
                   </div>
-                  {reports.map((report, index) => (
-                    <article key={`${report.target}-${report.winner}-${index}`}>
-                      <h3>
-                        {game.sectors.find((s) => s.id === report.target)?.name}{" "}
-                        · ENGAGEMENT: {report.winner.toUpperCase()}
-                      </h3>
-                      <p>
-                        FACTION: WARD · ATTACKERS{" "}
+                  {reportEntries.map((report, index) => {
+                    const attackerFaction = report.phase === "enemy" ? "HOSTILE" : "WARD";
+                    const defenderFaction = report.phase === "enemy" ? "WARD" : "HOSTILE";
+                    const attackerLosses = report.phase === "enemy" ? report.enemyCasualties : report.playerCasualties;
+                    const defenderLosses = report.phase === "enemy" ? report.playerCasualties : report.enemyCasualties;
+                    return <article key={`${report.target}-${report.winner}-${index}`}>
+                      <h3>{game.sectors.find((s) => s.id === report.target)?.name} · {report.phase === "enemy" ? "ENEMY PHASE" : "PLAYER PHASE"}</h3>
+                      <p><strong>ENGAGEMENT OUTCOME:</strong> {report.phase === "enemy" ? enemyBattleOutcomeLabel(report) : battleOutcomeLabel(report)}</p>
+                      <p><strong>OCCUPATION:</strong> {occupationLabel(report)}</p>
+                      <p>{attackerFaction} ATTACKERS{" "}
                         {report.attackers
                           .map(
                             (unit) =>
@@ -982,7 +1024,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                           .join(", ")}
                       </p>
                       <p>
-                        FACTION: HOSTILE · DEFENDERS{" "}
+                        {defenderFaction} DEFENDERS{" "}
                         {report.defenders
                           .map(
                             (unit) =>
@@ -991,10 +1033,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                           .join(", ") || "NONE"}
                       </p>
                       <p>
-                        CASUALTIES: Ward {report.playerCasualties} · hostile {report.enemyCasualties} · SURVIVORS: Ward {Math.max(0, report.attackers.reduce((total, unit) => total + unit.strength, 0) - report.playerCasualties)} · hostile {Math.max(0, report.defenders.reduce((total, unit) => total + unit.strength, 0) - report.enemyCasualties)}
-                      </p>
-                      <p>
-                        OCCUPATION: {report.captured ? "Ward captured sector" : report.relayControlled ? "Ward holds sector" : "sector not captured"}
+                        CASUALTIES: Ward −{report.playerCasualties} · hostile −{report.enemyCasualties} · POSTCOMBAT SURVIVORS: {attackerFaction} {Math.max(0, report.attackers.reduce((total, unit) => total + unit.units, 0) - attackerLosses)} · {defenderFaction} {Math.max(0, report.defenders.reduce((total, unit) => total + unit.units, 0) - defenderLosses)}
                       </p>
                       <p>
                         Terrain {report.terrain} ×{report.terrainMultiplier} ·
@@ -1002,19 +1041,20 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                         {report.variance}
                       </p>
                       <p>
-                        {report.classAdvantages
+                        <strong>CASUALTIES:</strong> Ward −{report.playerCasualties}; hostile −{report.enemyCasualties} · {report.classAdvantages
                           .concat(report.defenderCounters)
                           .join(" · ") || "No class counter"}{" "}
                         · {report.casualties.length} casualty entries
                       </p>
+                      <p><strong>SURVIVORS:</strong> Ward {report.attackers.reduce((sum, unit) => sum + unit.units, 0) - report.playerCasualties}; hostile {report.defenders.reduce((sum, unit) => sum + unit.units, 0) - report.enemyCasualties}</p>
                       <p>
                         {report.retreat.length
                           ? `Retreat: ${report.retreat.map((item) => item.to).join(", ")}`
                           : "No retreat"}{" "}
                         · {report.captured ? "Captured" : "Not captured"}
                       </p>
-                    </article>
-                  ))}
+                    </article>;
+                  })}
                 </section>
               )}
               <section className="card squad-panel">
@@ -1060,7 +1100,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   <div className="legal-targets" aria-label="Named legal attack targets">
                     <h3>LEGAL TARGETS</h3>
                     {legalTargets.length ? legalTargets.map((target) => (
-                      <button type="button" className="legal-target" key={target.id} onClick={() => setOrder("attack", target.id)}>
+                      <button type="button" className="legal-target" key={target.id} onClick={() => setOrder("attack", target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder("attack", target.id); } }}>
                         ATTACK {target.name}
                       </button>
                     )) : <p className="muted">No legal attack targets in range.</p>}
@@ -1098,6 +1138,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     ),
                   )}
                 </div>
+                {(selectedAction === "move" || selectedAction === "attack") && (
+                  <div className="legal-targets" aria-label={`Legal ${selectedAction} targets`}>
+                    <h3>LEGAL {selectedAction.toUpperCase()} TARGETS</h3>
+                    {legalTargets.length ? legalTargets.map((target) => <button key={target.id} disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button>) : <p className="muted">No legal targets in reach.</p>}
+                  </div>
+                )}
                 <section
                   className="recovery-preview"
                   aria-label="Recovery preview"

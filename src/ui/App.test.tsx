@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel } from "./App";
+import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel, occupationLabel } from "./App";
 import {
   readSave,
   SAVE_KEY,
@@ -22,6 +22,34 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("preserves the seeded Raider move/attack reports with faction-correct enemy labels", async () => {
+    const root = await renderApp(createNewCampaign(58386330));
+    const named = (label: string) => [...document.querySelectorAll("button")].find((button) => button.textContent?.includes(label)) as HTMLButtonElement;
+    const execute = async () => await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+
+    await act(async () => named("MOVE").click());
+    await act(async () => named("Whiteplain").click());
+    await execute();
+    expect(document.querySelector(".turn-readout")?.textContent).toContain("02");
+
+    await act(async () => named("ATTACK").click());
+    const attackTarget = named("Cairnwatch");
+    expect(attackTarget).toBeTruthy();
+    await act(async () => attackTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await execute();
+    const report = document.querySelector(".reports")?.textContent ?? "";
+    expect(report).toContain("Cairnwatch");
+    expect(report).toMatch(/WARD.*9\/10|Ward.*9\/10/s);
+    expect(report).toMatch(/HOSTILE.*5\/8|hostile.*5\/8/s);
+    expect(report).toMatch(/survivor|SURVIVOR/);
+    await act(async () => root.unmount());
+  });
+
+  it("keeps engagement outcome separate from occupation", () => {
+    expect(battleOutcomeLabel({ winner: "player", captured: false })).toBe("won; not captured");
+    expect(occupationLabel({ captured: false, relayControlled: false })).toBe("occupation: no change");
+    expect(occupationLabel({ captured: true, relayControlled: true })).toBe("occupation: captured");
+  });
   const renderApp = async (initialGame = createNewCampaign(42024)) => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
