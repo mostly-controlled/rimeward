@@ -147,7 +147,7 @@ describe("campaign simulation", () => {
       ...base,
       enemySquads: base.enemySquads.map((enemy, index) =>
         index === 0
-          ? { ...enemy, class: "Raider" as const, sector: "sector-5" as const, strength: 10 }
+          ? { ...enemy, class: "Artillery" as const, sector: "sector-5" as const, strength: 10 }
           : index === 1
             ? { ...enemy, class: "Recon" as const, sector: "sector-3" as const, strength: 10 }
             : { ...enemy, strength: 0 },
@@ -187,8 +187,10 @@ describe("campaign simulation", () => {
     const feintPhase = resolveEnemyTurn(feint);
     expect(repeatIntents).not.toEqual([]);
     expect(feintIntents).not.toEqual([]);
+    expect(repeatIntents).not.toEqual(feintIntents);
     expect(repeatPhase.events).not.toEqual([]);
     expect(feintPhase.events).not.toEqual([]);
+    expect(repeatPhase.events).not.toEqual(feintPhase.events);
     expect([...repeatIntents, ...feintIntents].every((intent) => /^enemy-/.test(intent.squadId))).toBe(true);
     expect([...repeatPhase.events, ...feintPhase.events].every((event) => event.from !== undefined)).toBe(true);
     const quiet = { ...repeat, turn: 4 };
@@ -213,6 +215,23 @@ describe("campaign simulation", () => {
     expect(state.turn).toBe(4);
     expect(state.adaptiveHistory.map((bucket) => bucket.turn)).toEqual([1, 2, 3]);
     expect(adaptiveStyle(state)).toBe("DEFENSIVE");
+  });
+
+  it("commits the last visible observation in each turn for style, cue, and counter target", () => {
+    const base = createNewCampaign(7);
+    const state = {
+      ...base,
+      turn: 3,
+      adaptiveHistory: [1, 2, 3].map((turn) => ({
+        turn,
+        observations: [
+          { kind: "move" as const, class: "Raider" as const, from: "sector-1" as const, to: "sector-2" as const },
+          { kind: "move" as const, class: "Sentinel" as const, from: "sector-3" as const, to: "sector-4" as const },
+        ],
+      })),
+    };
+    expect(adaptiveStyle(state)).toBe("DEFENSIVE");
+    expect(adaptiveStyleCue(state)).toContain("near Rimefield");
   });
 
   it("resets class and corridor confidence independently when either pattern switches", () => {

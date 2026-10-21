@@ -240,6 +240,8 @@ const recentAdaptiveBuckets = (state: GameState): AdaptiveHistoryBucket[] =>
   (Array.isArray(state.adaptiveHistory) ? state.adaptiveHistory : [])
     .filter((bucket) => Number.isInteger(bucket.turn) && bucket.turn >= state.turn - 3)
     .sort((a, b) => a.turn - b.turn);
+const committedObservation = (bucket: AdaptiveHistoryBucket): AdaptiveObservation =>
+  bucket.observations.at(-1)!;
 
 type AdaptiveStyle = "AGGRESSIVE" | "DEFENSIVE" | "UNSET";
 export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
@@ -252,7 +254,7 @@ export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
   let previousClass: UnitClass | undefined;
   let previousCorridor: string | undefined;
   for (const bucket of observed) {
-    const observation = bucket.observations[0];
+    const observation = committedObservation(bucket);
     const corridor = observationCorridor(observation);
     classConfidence = observation.class === previousClass ? classConfidence + 1 : 1;
     corridorConfidence = corridor === previousCorridor ? corridorConfidence + 1 : 1;
@@ -268,7 +270,7 @@ export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
 export const adaptiveStyleCue = (state: GameState): string => {
   const buckets = recentAdaptiveBuckets(state);
   const observed = buckets.filter((bucket) => bucket.observations.length > 0);
-  const latest = observed.at(-1)?.observations[0];
+  const latest = observed.at(-1) ? committedObservation(observed.at(-1)!) : undefined;
   const style = adaptiveStyle(state);
   if (!latest) return "UNSET · no local enemy pattern observed";
   const sector = state.sectors.find(
@@ -529,9 +531,10 @@ const legalCounterIntent = (
   // Counterdeployment is based only on the remembered visible observation.
   // Current player positions at the remembered destination are intentionally
   // not consulted; only local adjacent attack viability is allowed below.
-  const remembered = recentAdaptiveBuckets(state)
-    .flatMap((bucket) => bucket.observations)
+  const rememberedBucket = recentAdaptiveBuckets(state)
+    .filter((bucket) => bucket.observations.length > 0)
     .at(-1);
+  const remembered = rememberedBucket ? committedObservation(rememberedBucket) : undefined;
   if (!remembered) return undefined;
   const destination = observationDestination(remembered);
   const desiredClass = Object.entries(counterClass).find(
