@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, battleOutcomeLabel } from "./App";
+import { App, battleOutcomeLabel, displayRailMessage } from "./App";
 import {
   readSave,
   SAVE_KEY,
@@ -22,6 +22,13 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("sanitizes persisted legacy enemy debriefs without Signals", () => {
+    const legacy = "TURN 4 DEBRIEF\nENEMY PHASE OBSERVED: enemy-1 move sector-3";
+    expect(displayRailMessage(legacy, 0)).toContain("movement withheld — Signals 0");
+    expect(displayRailMessage(legacy, 0)).not.toContain("enemy-1");
+    expect(displayRailMessage(legacy, 1)).toBe(legacy);
+  });
+
   const renderApp = async (initialGame = createNewCampaign(42024)) => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
