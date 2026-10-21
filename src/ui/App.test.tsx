@@ -1542,12 +1542,16 @@ describe("Editable turn plan", () => {
     expect(rows()[1].textContent).toContain(
       "RAIDER squad-2 · ATTACK → Lastlight",
     );
+    expect([...document.querySelectorAll(".planned-marker text")].map((item) => item.textContent)).toEqual(["M1", "A2"]);
+    expect(document.querySelector('[aria-label="PLAN · MOVE · SENTINEL M1 to Whiteplain"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="PLAN · ATTACK · RAIDER A2 to Lastlight"]')).not.toBeNull();
     expect(rows()[0].querySelector("button")?.getAttribute("aria-label")).toBe(
       "Cancel SENTINEL squad-1 · MOVE → Whiteplain",
     );
     const resources = document.querySelector(".resource-strip")!.textContent;
     await cancel("squad-1");
     expect(rows()).toHaveLength(1);
+    expect([...document.querySelectorAll(".planned-marker text")].map((item) => item.textContent)).toEqual(["A2"]);
     expect(rows()[0].textContent).toContain(
       "RAIDER squad-2 · ATTACK → Lastlight",
     );

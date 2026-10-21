@@ -708,8 +708,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       const markerY = destination[1] + (dy / length) * 40 + ny * offset;
                       const endX = markerX;
                       const endY = markerY;
-                      const labelX = (startX + endX) / 2 + nx * 12;
-                      const labelY = (startY + endY) / 2 + ny * 12;
                       const orderLabel = `PLAN · ${order.type.toUpperCase()} · ${unit.class.toUpperCase()}`;
                       const squadNumber = unit.id.match(/(\d+)$/)?.[1] ?? unit.id;
                       const conciseLabel = `${order.type === "move" ? "M" : "A"}${squadNumber}`;
@@ -730,11 +728,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                             y2={endY}
                             markerEnd={`url(#planned-arrow-${order.type})`}
                           />
-                          {sharedOrders.length > 1 && (
+                          {(
                             <g
                               className={`planned-marker planned-marker-${squadNumber}`}
                               role="img"
-                              aria-label={`${orderLabel} to ${sectorName(target)}`}
+                              aria-label={`${orderLabel} ${conciseLabel} to ${sectorName(target)}`}
                             >
                               <circle cx={endX} cy={endY} r="9" />
                               <text x={endX} y={endY + 3} textAnchor="middle">{conciseLabel}</text>
