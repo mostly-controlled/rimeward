@@ -19,8 +19,12 @@ import {
 import {
   readSave,
   readSaveNotice,
+  JOURNAL_VERSION,
+  REPLAY_RULES_VERSION,
   SAVE_VERSION,
+  verifyReplay,
   writeSave,
+  type JournalAction,
 } from "../game/persistence";
 
 type RailEvent = { turn: number; message: string };
@@ -47,8 +51,7 @@ const queuedCost = (orders: Order[], state: GameState) =>
   );
 
 const SEED = 42024;
-const SAVE_SUCCESS =
-  "Completed turns and research saved; queued orders are not saved.";
+const SAVE_SUCCESS = "Campaign saved locally; queued orders are not saved.";
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
     Logistics: [
@@ -106,6 +109,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>(
     () => loaded?.reports ?? [],
   );
+  const [journal, setJournal] = useState<JournalAction[]>(() => loaded?.journal ?? []);
   const [saveStatus, setSaveStatus] = useState(
     !initialGame
       ? loaded
@@ -114,6 +118,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       : "",
   );
   const [error, setError] = useState("");
+  const verify = () => {
+    const result = verifyReplay({ version: SAVE_VERSION, game, events, reports, rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal });
+    setSaveStatus(result.message);
+  };
   const latestDebrief = events.find((event) => event.message.startsWith("TURN ") && event.message.includes(" DEBRIEF"));
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports) => {
     if (!storageEnabled) return null;
@@ -122,6 +130,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       game: nextGame,
       events: nextEvents,
       reports: nextReports,
+      rulesVersion: REPLAY_RULES_VERSION,
+      journalVersion: JOURNAL_VERSION,
+      journal,
     });
     if (warning) {
       setSaveStatus(warning);
@@ -381,7 +392,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       ) as RailEvent[];
       if (phaseReports.length) setReports(phaseReports);
       setEvents(nextEvents);
-      const warning = persist(enemy.nextState, nextEvents, nextReports);
+      const nextJournal = [...journal, { type: "orders" as const, orders: orders.map((order) => ({ ...order })) }];
+      setJournal(nextJournal);
+      const warning = writeSave({ version: SAVE_VERSION, game: enemy.nextState, events: nextEvents, reports: nextReports, rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: nextJournal });
       setOrders([]);
       if (!warning) setError("");
     } catch (e) {
@@ -392,7 +405,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     try {
       const nextGame = advanceResearch(game, branch);
       setGame(nextGame);
-      const warning = persist(nextGame);
+      const nextJournal = [...journal, { type: "research" as const, branch }];
+      setJournal(nextJournal);
+      const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events, reports, rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: nextJournal });
       if (!warning) setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Research rejected");
@@ -405,8 +420,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setOrders([]);
     setEvents([]);
     setReports([]);
+    setJournal([]);
     setError("");
-    const warning = persist(nextGame, [], []);
+    const warning = writeSave({ version: SAVE_VERSION, game: nextGame, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [] });
   };
   if (!game.squads.length)
     return (
@@ -421,6 +437,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               {saveStatus}
             </p>
           )}
+          <button onClick={verify}>VERIFY REPLAY</button>
           <button className="primary" onClick={reset}>
             NEW CAMPAIGN · SEED {game.seed}
           </button>
@@ -508,6 +525,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               {saveStatus}
             </p>
           )}
+          <button onClick={verify}>VERIFY REPLAY</button>
           {game.terminal !== "active" && (
             <section className="terminal card">
               <p className="eyebrow">CAMPAIGN TERMINAL</p>
@@ -530,8 +548,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   setOrders([]);
                   setEvents([]);
                   setReports([]);
+                  setJournal([]);
                   setError("");
-                  persist(nextGame, [], []);
+                  writeSave({ version: SAVE_VERSION, game: nextGame, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [] });
                 }}
               >
                 NEW SEED

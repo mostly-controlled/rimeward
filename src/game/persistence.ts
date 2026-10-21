@@ -1,10 +1,13 @@
-import { createNewCampaign, type BattleReport, type GameState, type OrderType, type SectorId } from "./simulation";
+import { advanceResearch, createNewCampaign, resolveCombat, resolveEnemyTurn, resolveTurn, type BattleReport, type GameState, type Order, type OrderType, type ResearchBranch, type SectorId } from "./simulation";
 declare const localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 export const SAVE_KEY = "rimeward:campaign";
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+export const JOURNAL_VERSION = 1;
+export const REPLAY_RULES_VERSION = 1;
+export type JournalAction = { type: "research"; branch: ResearchBranch } | { type: "orders"; orders: Order[] };
 export type SavedView = { turn: number; message: string };
-export type SavePayload = { version: number; game: GameState; events: SavedView[]; reports: BattleReport[] };
+export type SavePayload = { version: number; game: GameState; events: SavedView[]; reports: BattleReport[]; rulesVersion?: number; journalVersion?: number; journal?: JournalAction[] };
 
 const finite = (value: unknown): boolean => {
   if (typeof value === "number") return Number.isFinite(value);
@@ -24,7 +27,7 @@ const orders = new Set<OrderType>(["hold", "recover", "move", "attack"]);
 const branches = ["Logistics", "Warfare", "Signals"];
 
 export const validateSave = (value: unknown): value is SavePayload => {
-  if (!isObject(value) || value.version !== SAVE_VERSION || !finite(value)) return false;
+  if (!isObject(value) || ![1, SAVE_VERSION].includes(value.version as number) || !finite(value)) return false;
   const game = value.game;
   if (!isObject(game) || typeof game.seed !== "number" || !Number.isInteger(game.seed) || game.seed < 0 || typeof game.turn !== "number" || !Number.isInteger(game.turn) || game.turn < 1 || !["active", "victory", "defeat"].includes(String(game.terminal)) || !resource(game.resources) || !resource(game.income) || !Array.isArray(game.sectors) || game.sectors.length !== sectors.length || !Array.isArray(game.squads) || !Array.isArray(game.enemySquads) || !Array.isArray(game.objectives) || !Array.isArray(game.orderHistory) || !Array.isArray(game.enemyHistory)) return false;
   if (game.sectors.some((sector, index) => !isObject(sector) || sector.id !== sectors[index].id || !sectorRef(sector.id) || typeof sector.name !== "string" || !terrains.has(String(sector.terrain)) || !["player", "enemy", "neutral"].includes(String(sector.owner)) || !Array.isArray(sector.links) || sector.links.some((link) => !sectorRef(link)) || !resource(sector.yields))) return false;
@@ -36,8 +39,35 @@ export const validateSave = (value: unknown): value is SavePayload => {
   const squadView = (entry: unknown) => isObject(entry) && typeof entry.squadId === "string" && classes.has(String(entry.class)) && typeof entry.strength === "number" && Number.isFinite(entry.strength) && typeof entry.units === "number" && Number.isFinite(entry.units);
   const casualty = (entry: unknown) => isObject(entry) && typeof entry.squadId === "string" && ["player", "enemy"].includes(String(entry.side)) && typeof entry.strength === "number" && Number.isFinite(entry.strength);
   const report = (entry: unknown) => isObject(entry) && sectorRef(entry.target) && terrains.has(String(entry.terrain)) && ["player", "enemy", "draw"].includes(String(entry.winner)) && Array.isArray(entry.attackers) && entry.attackers.every(squadView) && Array.isArray(entry.defenders) && entry.defenders.every(squadView) && Array.isArray(entry.classAdvantages) && entry.classAdvantages.every((item) => typeof item === "string") && Array.isArray(entry.defenderCounters) && entry.defenderCounters.every((item) => typeof item === "string") && ["terrainMultiplier", "fatiguePenalty", "variance", "attackerPower", "defenderPower", "playerCasualties", "enemyCasualties"].every((key) => typeof entry[key] === "number" && Number.isFinite(entry[key])) && Array.isArray(entry.casualties) && entry.casualties.every(casualty) && Array.isArray(entry.retreat) && entry.retreat.every((item) => isObject(item) && typeof item.squadId === "string" && sectorRef(item.to)) && typeof entry.captured === "boolean" && typeof entry.relayControlled === "boolean";
-  return Array.isArray(value.events) && value.events.every((event) => isObject(event) && typeof event.turn === "number" && Number.isFinite(event.turn) && typeof event.message === "string") && Array.isArray(value.reports) && value.reports.every(report);
+  if (!Array.isArray(value.events) || !value.events.every((event) => isObject(event) && typeof event.turn === "number" && Number.isFinite(event.turn) && typeof event.message === "string") || !Array.isArray(value.reports) || !value.reports.every(report)) return false;
+  if (value.version === SAVE_VERSION && (value.rulesVersion !== REPLAY_RULES_VERSION || value.journalVersion !== JOURNAL_VERSION || !Array.isArray(value.journal) || value.journal.length > game.turn * game.squads.length + 100 || value.journal.some((entry) => !isObject(entry) || (entry.type === "research" ? !branches.includes(String(entry.branch)) : entry.type !== "orders" || !Array.isArray(entry.orders) || entry.orders.length === 0 || entry.orders.length > game.squads.length || entry.orders.some((order) => !isObject(order) || !campaignSquadIds.has(String(order.squadId)) || !orders.has(order.type as OrderType) || (order.target !== undefined && !sectorRef(order.target))))))) return false;
+  return true;
 };
 export const readSave = (): SavePayload | null => { try { const raw = localStorage.getItem(SAVE_KEY); return raw ? ((() => { const parsed: unknown = JSON.parse(raw); return validateSave(parsed) ? parsed : null; })()) : null; } catch { return null; } };
 export const readSaveNotice = (): string => { try { const raw = localStorage.getItem(SAVE_KEY); return raw && !readSave() ? "SAVE RESET — the stored campaign was corrupt or unsupported; a fresh campaign is ready." : ""; } catch { return "SAVE UNAVAILABLE — browser storage is blocked; this campaign may not survive reload."; } };
 export const writeSave = (payload: SavePayload): string | null => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(payload)); return null; } catch { return "SAVE UNAVAILABLE — browser storage is blocked or full; this campaign may not survive reload."; } };
+
+export type ReplayResult = { status: "match" | "mismatch" | "unavailable" | "unsupported" | "corrupt"; message: string };
+export const verifyReplay = (saved: SavePayload): ReplayResult => {
+  if (saved.version !== SAVE_VERSION || !saved.journal) return { status: "unavailable", message: "REPLAY UNAVAILABLE — this older campaign has no action journal." };
+  if (saved.rulesVersion !== REPLAY_RULES_VERSION) return { status: "unsupported", message: "REPLAY UNAVAILABLE — this campaign uses rules from an unsupported version." };
+  if (saved.journalVersion !== JOURNAL_VERSION) return { status: "unsupported", message: "REPLAY UNAVAILABLE — this campaign uses an unsupported replay journal version." };
+  if (!Array.isArray(saved.journal) || saved.journal.length > saved.game.turn * saved.game.squads.length + 100) return { status: "corrupt", message: "REPLAY UNAVAILABLE — the local replay journal is corrupt." };
+  try {
+    let game = createNewCampaign(saved.game.seed);
+    let reports: BattleReport[] = [];
+    for (const action of saved.journal) {
+      if (action.type === "research") game = advanceResearch(game, action.branch);
+      else {
+        const turn = resolveTurn(game, action.orders);
+        const combat = resolveCombat(turn.nextState, turn.events);
+        const enemy = resolveEnemyTurn(combat.nextState);
+        game = enemy.nextState;
+        const phaseReports = [...combat.reports, ...enemy.reports];
+        if (phaseReports.length) reports = phaseReports;
+      }
+    }
+    const same = JSON.stringify(game) === JSON.stringify(saved.game) && JSON.stringify(reports) === JSON.stringify(saved.reports);
+    return same ? { status: "match", message: "REPLAY MATCH — saved campaign state and reports are reproducible." } : { status: "mismatch", message: "REPLAY MISMATCH — saved campaign was not changed." };
+  } catch { return { status: "corrupt", message: "REPLAY UNAVAILABLE — the journal is malformed or cannot be replayed." }; }
+};
