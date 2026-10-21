@@ -749,7 +749,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       aria-disabled={game.terminal !== "active"}
                       tabIndex={target ? 0 : -1}
                       focusable="true"
-                      aria-label={`${s.name}, ${s.owner} sector${scouted ? ", scouted enemy squad present" : ""}${target ? `, ${selectedAction} target` : ""}`}
+                      aria-label={`${s.name}, ${s.owner} sector${wardPresence ? `, ${wardPresence.squads} living Ward squad${wardPresence.squads === 1 ? "" : "s"}` : ""}${scouted ? ", scouted enemy squad present" : ""}${target ? `, ${selectedAction} target` : ""}`}
                       onClick={chooseTarget}
                       onKeyDown={(event) => {
                         if (
@@ -774,9 +774,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                         {s.name}
                       </text>
                       {wardPresence && (
-                        <g className="ward-strength-badge" aria-label={`${wardPresence.squads} living Ward squad${wardPresence.squads === 1 ? "" : "s"}, strength ${wardPresence.strength}`}>
-                          <rect x={x - 27} y={y + 57} width="54" height="16" rx="3" />
-                          <text x={x} y={y + 68} textAnchor="middle">WARD {wardPresence.squads} · {wardPresence.strength}</text>
+                        <g className="ward-strength-badge" aria-label={`${wardPresence.squads} living Ward squad${wardPresence.squads === 1 ? "" : "s"}`}>
+                          <rect x={x - 16} y={y + 55} width="32" height="22" rx="4" />
+                          <text x={x} y={y + 72} textAnchor="middle">{wardPresence.squads}</text>
                         </g>
                       )}
                       {game.objectives.some((o) => o.sector === s.id) && (
@@ -816,7 +816,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   UNHELD
                 </span>
                 <span>◈ RELAY</span>
-                <span className="ward-legend" aria-label="Ward strength badge legend">WARD N · S = living Ward squad count and combined strength</span>
+                <span className="ward-legend" aria-label="Ward squad badge legend">Ward squads</span>
                 <span className="plan-key" aria-label="Planned order key">
                   <i className="plan-line move" />
                   PLAN · MOVE
