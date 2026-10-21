@@ -299,13 +299,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
       const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const afterStrength = after?.strength ?? 0; const afterFatigue = after?.fatigue ?? unit.fatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? `cost ${recoveryMetalCost(before)} metal + 2 energy` : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; if (order.type === "hold" && afterStrength === unit.strength && afterFatigue === unit.fatigue && !control) return null; return squadLabel(unit) + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
       const playerBattleLines = combat.reports.map((report) => name(report.target) + ": " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
-      const enemyBattleLines = enemy.reports.map((report) => name(report.target) + ": enemy assault, Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
-      const battleLines = [...playerBattleLines, ...enemyBattleLines];
+      const enemyBattleLines = enemy.reports.map((report) => name(report.target) + ": enemy assault — " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
       const enemyLines = before.researchLevels.Signals > 0 && enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
       const relayLines = before.objectives.map((objective) => {
         const sector = before.sectors.find((candidate) => candidate.id === objective.sector);
         const after = sector && enemy.nextState.sectors.find((candidate) => candidate.id === sector.id);
-        const playerPhase = sector && turn.nextState.sectors.find((candidate) => candidate.id === sector.id);
+        const playerPhase = sector && combat.nextState.sectors.find((candidate) => candidate.id === sector.id);
         return sector && after && (playerPhase?.owner !== sector.owner || after.owner !== playerPhase?.owner) ? `${sector.name}: ${sector.owner} → ${playerPhase?.owner ?? sector.owner} → ${after.owner}` : null;
       }).filter(Boolean) as string[];
       const beforeIncome = calculateIncome(before);
@@ -348,7 +347,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         ...(squadLosses.length ? [`SQUAD LOSSES: ${squadLosses.join("; ")}`] : []),
         delta,
         incomeLine,
-        `PLAYER RESULT: ${battleLines.length ? battleLines.join("; ") : "no battle observed"}`,
+        `PLAYER RESULT: ${playerBattleLines.length ? playerBattleLines.join("; ") : "no player assault observed"}`,
+        ...(enemyBattleLines.length ? [`ENEMY RESULT: ${enemyBattleLines.join("; ")}`] : []),
         `ENEMY PHASE OBSERVED: ${enemyLines.length ? enemyLines.join("; ") : before.researchLevels.Signals > 0 ? "no movement observed" : "movement withheld — Signals 0"}`,
         `WHY: ${attackChoices.length ? attackChoices.join("; ") : "observed state/events above determine the result"}`,
         `NEXT: ${nextChoices}`,
@@ -635,7 +635,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               <h2>WHAT CHANGED / WHY</h2>
               <span className="muted">LAST TURN</span>
             </div>
-            {latestDebrief ? (() => { const lines = latestDebrief.message.split("\n"); const priority = ["PLAYER RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:", "NEXT:"]; const summary = priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 5) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+            {latestDebrief ? (() => { const lines = latestDebrief.message.split("\n"); const priority = ["PLAYER RESULT:", "ENEMY RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:"]; const next = lines.find((line) => line.startsWith("NEXT:")); const summary = [...priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 4), next].filter(Boolean) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
           </section>
           <div className="battle-layout">
             <section className="map-panel card">
