@@ -576,6 +576,36 @@ const legalCounterIntent = (
   return undefined;
 };
 
+const rememberedGuardTarget = (
+  state: GameState,
+  enemy: EnemySquad,
+  targets: SectorId[],
+  excluded: Set<string>,
+): SectorId | undefined => {
+  if (
+    !state.objectives.some(
+      (objective) => objective.sector === enemy.sector && !objective.controlled,
+    ) && enemy.sector !== state.hq.enemy
+  )
+    return undefined;
+  const rememberedBucket = recentAdaptiveBuckets(state)
+    .filter((bucket) => bucket.observations.length > 0)
+    .at(-1);
+  const remembered = rememberedBucket
+    ? committedObservation(rememberedBucket)
+    : undefined;
+  if (!remembered) return undefined;
+  const desiredClass = Object.entries(counterClass).find(
+    ([, victim]) => victim === remembered.class,
+  )?.[0] as UnitClass | undefined;
+  if (enemy.class !== desiredClass) return undefined;
+  return targets.find(
+    (target) =>
+      target === observationDestination(remembered) &&
+      attackIsViable(state, enemy, target, excluded),
+  );
+};
+
 const intentForEnemy = (
   state: GameState,
   enemy: EnemySquad,
@@ -642,6 +672,20 @@ const intentForEnemy = (
     ),
     phaseTurn,
   );
+  const rememberedTarget = rememberedGuardTarget(
+    state,
+    enemy,
+    occupiedPlayerTargets,
+    excluded,
+  );
+  if (rememberedTarget)
+    return {
+      squadId: enemy.id,
+      kind: "attack",
+      from: enemy.sector,
+      to: enemy.sector,
+      target: rememberedTarget,
+    };
   if (occupiedPlayerTarget)
     return {
       squadId: enemy.id,

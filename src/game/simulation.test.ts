@@ -213,13 +213,14 @@ describe("campaign simulation", () => {
 
   it("responds to reachable repeated corridors through the complete turn pipeline", () => {
     type EnemyAction = { squadId: string; kind: "MOVE" | "ATTACK" | "HOLD"; target?: SectorId; from: SectorId; to: SectorId };
-    const play = (corridor: readonly [SectorId, SectorId, SectorId, SectorId], adaptiveHistory?: GameState["adaptiveHistory"]) => {
-      let state = { ...createNewCampaign(4294840881), adaptiveHistory: adaptiveHistory ?? createNewCampaign(4294840881).adaptiveHistory };
+    const play = (corridor: readonly [SectorId, SectorId, SectorId, SectorId], committed: boolean) => {
+      let state = createNewCampaign(4294840881);
       const actions: EnemyAction[] = [];
       for (const target of corridor) {
         const order = { squadId: "squad-1", type: "move" as const, target };
-        expect(() => validateOrders(state, [order])).not.toThrow();
-        const player = resolveTurn(state, [order]);
+        const playerState = committed ? state : { ...state, adaptiveHistory: [] };
+        expect(() => validateOrders(playerState, [order])).not.toThrow();
+        const player = resolveTurn(playerState, [order]);
         const combat = resolveCombat(player.nextState, player.events);
         const enemy = resolveEnemyTurn(combat.nextState);
         actions.push(...enemy.events.map((event): EnemyAction => ({ squadId: event.squadId, kind: event.type === "move" ? "MOVE" : event.type === "attack" ? "ATTACK" : "HOLD", target: event.target, from: event.from, to: event.to })).sort((a, b) => a.squadId.localeCompare(b.squadId)));
@@ -227,17 +228,21 @@ describe("campaign simulation", () => {
       }
       return { state, actions };
     };
-    const repeated = play(["sector-1", "sector-5", "sector-1", "sector-5"]);
-    const emptyState = { ...repeated.state, adaptiveHistory: [] };
+    const corridor = ["sector-1", "sector-5", "sector-1", "sector-5"] as const;
+    const repeated = play(corridor, true);
+    const empty = play(corridor, false);
     const actualPhase = resolveEnemyTurn(repeated.state);
-    const emptyPhase = resolveEnemyTurn(emptyState);
+    const emptyPhase = resolveEnemyTurn(empty.state);
     const phaseTrace = (events: typeof actualPhase.events): EnemyAction[] => events.map((event): EnemyAction => ({ squadId: event.squadId, kind: event.type === "move" ? "MOVE" : event.type === "attack" ? "ATTACK" : "HOLD", target: event.target, from: event.from, to: event.to })).sort((a, b) => a.squadId.localeCompare(b.squadId));
     expect(repeated.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
-    expect(emptyState.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
+    expect(empty.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
+    expect(repeated.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe(empty.state.squads.find((squad) => squad.id === "squad-1")?.sector);
     expect(phaseTrace(emptyPhase.events)).toEqual(phaseTrace(actualPhase.events));
     expect(repeated.actions).toHaveLength(12);
     expect(repeated.actions.every((action) => ["MOVE", "ATTACK", "HOLD"].includes(action.kind))).toBe(true);
     expect(repeated.actions.every((action) => action.from && action.to && action.squadId.startsWith("enemy-"))).toBe(true);
+    expect(empty.actions).toHaveLength(12);
+    expect(repeated.actions).toEqual(empty.actions);
     for (let offset = 0; offset < repeated.actions.length; offset += 3) {
       const phase = repeated.actions.slice(offset, offset + 3);
       expect(phase).toEqual([...phase].sort((a, b) => a.squadId.localeCompare(b.squadId)));
