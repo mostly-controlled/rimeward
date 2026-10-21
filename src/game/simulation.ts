@@ -604,8 +604,8 @@ const rememberedGuardTarget = (
         target === destination ||
         state.squads.some(
           (squad) =>
-            squad.sector === target &&
             squad.strength > 0 &&
+            squad.sector === target &&
             squad.class === remembered.class,
         )
       );
