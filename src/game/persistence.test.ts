@@ -68,6 +68,16 @@ describe("campaign persistence", () => {
     expect(validateSave(payload)).toBe(true);
     expect(verifyReplay(payload).status).toBe("unsupported");
   });
+  it("uses campaign journal limits and preserves historical squad ids", () => {
+    const game = createNewCampaign(77);
+    const order = { squadId: "squad-1", type: "hold" as const };
+    const turns = Array.from({ length: 18 }, () => ({ type: "orders" as const, orders: [order] }));
+    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: turns })).toBe(true);
+    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [...turns, turns[0]] })).toBe(false);
+    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: Array.from({ length: 7 }, () => ({ type: "research" as const, branch: "Logistics" as const })) })).toBe(false);
+    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [{ type: "orders" as const, orders: Array.from({ length: 6 }, (_, index) => ({ squadId: `squad-${index + 1}`, type: "hold" as const })) }] })).toBe(false);
+    expect(validateSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [{ type: "orders" as const, orders: [{ squadId: "squad-1", type: "hold" as const }] }] })).toBe(true);
+  });
 });
 
 import { advanceResearch, resolveCombat, resolveEnemyTurn, resolveTurn } from "./simulation";
