@@ -581,7 +581,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             <h3>GOAL</h3>
             <p>
               {game.terminal === "active"
-                ? `Secure ${campaignObjectives.find((objective) => objective.status === "REQUIRED")?.label ?? "the frontier"}.`
+                ? `Win by securing all three relays, then capturing the enemy HQ at ${enemyHq?.name ?? game.hq.enemy}; ${campaignObjectives.filter((objective) => objective.status === "REQUIRED").map((objective) => objective.label).join(", ") || "all objectives are complete"} remain. Objectives need not be reachable this turn.`
                 : game.terminal === "victory"
                   ? "The frontier is secure."
                   : "The campaign has ended."}
@@ -597,7 +597,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   <strong>CHOOSE {selectedAction.toUpperCase()}</strong> —{" "}
                   {selectedAction === "attack"
                     ? "ATTACK is available only when a legal target exists; choose one below."
-                    : "pick a highlighted legal destination below."}
+                    : "choosing an action only selects it; it does not queue an order. Click a highlighted map target below to queue MOVE or ATTACK."}
                 </li>
                 <li>
                   <strong>
@@ -622,19 +622,22 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   </strong>{" "}
                   —{" "}
                   {orders.length
-                    ? `${guideQueue}. Cancel an order to revise, then EXECUTE TURN.`
-                    : "select a highlighted destination to queue it."}
+                    ? `${guideQueue}. ${unassignedSquads.length} living squad${unassignedSquads.length === 1 ? " is" : "s are"} still unassigned. Choose another squad or HOLD UNASSIGNED to avoid +1 fatigue, then EXECUTE TURN resolves player orders followed by the enemy phase.`
+                    : `select a highlighted map target to queue it; action selection alone does not queue MOVE or ATTACK. ${unassignedSquads.length} living squad${unassignedSquads.length === 1 ? " is" : "s are"} unassigned.`}
                 </li>
               </ol>
             ) : (
               <p className="muted">
-                Terminal state: {game.terminal.toUpperCase()}. Orders are
-                disabled.
+                Terminal state: {game.terminal.toUpperCase()}. The campaign is
+                over; use RESTART or NEW SEED above to replay or begin a new
+                campaign. No further planning is available.
               </p>
             )}
             <p className="muted">
-              STR = strength. FTG = fatigue. HOLD lowers FTG by 1. RECOVER
-              restores STR and lowers FTG when supplied.
+              STR = strength. FTG = fatigue. HOLD is free and lowers FTG by 1;
+              unassigned squads gain 1 fatigue. Supplied RECOVER costs the
+              shown metal + 2 energy, restores strength, and lowers fatigue;
+              it is unavailable when unsupplied.
             </p>
           </section>
 
