@@ -445,6 +445,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     const warning = persist(nextGame, [], [], []);
   };
   const continueCampaign = () => {
+    setLoadedReplayUnsupported(false);
     setPendingSaveChoice(false);
     setSaveStatus(`CONTINUING SAVED CAMPAIGN — SEED ${game.seed} · TURN ${game.turn}`);
     setError("");

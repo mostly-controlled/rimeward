@@ -2044,7 +2044,7 @@ describe("Editable turn plan", () => {
     await act(async () => reloaded.unmount());
   });
 
-  it("preserves unsupported save metadata and state when continuing", async () => {
+  it("continues an unsupported snapshot into ordinary journal-unavailable saving", async () => {
     const game = { ...createNewCampaign(88), turn: 4 };
     writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] });
     const before = localStorage.getItem(SAVE_KEY);
@@ -2054,7 +2054,21 @@ describe("Editable turn plan", () => {
     await act(async () => (document.querySelector('button') as HTMLButtonElement).click());
     expect(localStorage.getItem(SAVE_KEY)).toBe(before);
     expect(readSave()?.game).toEqual(game);
+    await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
+    expect(readSave()?.game.turn).toBe(5);
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).journal).toBeUndefined();
+    expect(document.body.textContent).toContain("saved");
     await act(async () => root.unmount());
+
+    document.body.innerHTML = '<div id="root"></div>';
+    const reloaded = createRoot(document.getElementById("root")!);
+    await act(async () => reloaded.render(<App />));
+    expect(document.body.textContent).toContain("SAVED CAMPAIGN AVAILABLE — SEED 88 · TURN 5");
+    await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent === "CONTINUE") as HTMLButtonElement).click());
+    await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent === "VERIFY REPLAY") as HTMLButtonElement).click());
+    expect(document.body.textContent).toContain("REPLAY UNAVAILABLE — this older campaign has no action journal.");
+    await act(async () => reloaded.unmount());
   });
 
   it("writes a current supported empty journal on explicit reset", async () => {
