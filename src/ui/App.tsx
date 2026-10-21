@@ -24,6 +24,10 @@ import {
 } from "../game/persistence";
 
 type RailEvent = { turn: number; message: string };
+export const displayRailMessage = (message: string, signals: number) =>
+  signals > 0 || !message.startsWith("TURN ")
+    ? message
+    : message.replace(/\nENEMY PHASE OBSERVED:.*(?=\n|$)/, "\nENEMY PHASE OBSERVED: movement withheld — Signals 0");
 
 const queuedCost = (orders: Order[], state: GameState) =>
   orders.reduce(
@@ -68,6 +72,10 @@ export const battleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captur
         ? "captured"
         : "won; not captured"
       : "lost";
+export const enemyBattleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captured">) =>
+  report.captured ? "captured" : report.winner === "player" ? "repelled; sector retained" : report.winner === "enemy" ? "enemy won; sector retained" : "held; sector retained";
+const squadLabel = (squad: { class: string; id: string }) =>
+  `${squad.class} ${squad.id.replace(/^squad-/, "#")}`;
 const pos: Record<string, [number, number]> = {
   "sector-0": [95, 170],
   "sector-1": [180, 95],
@@ -295,23 +303,31 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const phaseReports = [...combat.reports, ...enemy.reports];
       const name = (id?: SectorId) => id ? before.sectors.find((sector) => sector.id === id)?.name ?? id : "unknown sector";
       const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
-      const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const afterStrength = after?.strength ?? 0; const afterFatigue = after?.fatigue ?? unit.fatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? "cost 6 metal + 2 energy" : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; return unit.class + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — STR " + unit.strength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
-      const battleLines = phaseReports.map((report) => name(report.target) + ": " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
-      const enemyLines = enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
+      const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const playerAfter = combat.nextState.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const playerStrength = playerAfter?.strength ?? 0; const afterStrength = after?.strength ?? 0; const playerFatigue = playerAfter?.fatigue ?? unit.fatigue; const afterFatigue = after?.fatigue ?? playerFatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? `cost ${recoveryMetalCost(before)} metal + 2 energy` : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; if (order.type === "hold" && afterStrength === unit.strength && afterFatigue === unit.fatigue && !control) return null; return squadLabel(unit) + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — before → your orders → enemy response; STR " + unit.strength + "→" + playerStrength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + playerFatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
+      const playerBattleLines = combat.reports.map((report) => name(report.target) + ": " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
+      const enemyBattleLines = enemy.reports.map((report) => name(report.target) + ": enemy assault — " + enemyBattleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
+      const enemyLines = before.researchLevels.Signals > 0 && enemy.events.length ? enemy.events.map((event) => event.message.replace(/sector-\d+/g, (id) => name(id as SectorId))) : [];
       const relayLines = before.objectives.map((objective) => {
         const sector = before.sectors.find((candidate) => candidate.id === objective.sector);
         const after = sector && enemy.nextState.sectors.find((candidate) => candidate.id === sector.id);
-        return sector && after && after.owner !== sector.owner ? `${sector.name}: ${sector.owner} → ${after.owner}` : null;
+        const playerPhase = sector && combat.nextState.sectors.find((candidate) => candidate.id === sector.id);
+        return sector && after && (playerPhase?.owner !== sector.owner || after.owner !== playerPhase?.owner) ? `${sector.name}: ${sector.owner} → ${playerPhase?.owner ?? sector.owner} → ${after.owner}` : null;
       }).filter(Boolean) as string[];
+      const beforeIncome = calculateIncome(before);
+      const afterIncome = calculateIncome(enemy.nextState);
+      const beforeConnected = connectedOwnedSectors(before);
+      const afterConnected = connectedOwnedSectors(enemy.nextState);
+      const connectedDelta = `${beforeConnected.length} sectors (${beforeConnected.map((sector) => sector.name).join(", ") || "none"}) → ${afterConnected.length} sectors (${afterConnected.map((sector) => sector.name).join(", ") || "none"})`;
+      const incomeLine = `HQ-CONNECTED INCOME/SUPPLY: ${beforeIncome.metal}M ${beforeIncome.energy}E ${beforeIncome.intelligence}I / cap ${before.supplyCapacity} → ${afterIncome.metal}M ${afterIncome.energy}E ${afterIncome.intelligence}I / cap ${enemy.nextState.supplyCapacity}; connected ${connectedDelta}`;
       const unassignedFatigue = before.squads.map((unit) => {
         if (orders.some((order) => order.squadId === unit.id) || unit.strength <= 0) return null;
         const after = enemy.nextState.squads.find((candidate) => candidate.id === unit.id);
-        return after && after.fatigue !== unit.fatigue ? `${unit.class} at ${name(unit.sector)}: FTG ${unit.fatigue} → ${after.fatigue}` : null;
+        return after && after.fatigue !== unit.fatigue ? `${squadLabel(unit)} at ${name(unit.sector)}: FTG ${unit.fatigue} → ${after.fatigue}` : null;
       }).filter(Boolean) as string[];
       const squadLosses = before.squads.map((unit) => {
         const after = enemy.nextState.squads.find((candidate) => candidate.id === unit.id);
         const afterStrength = after?.strength ?? 0;
-        return afterStrength < unit.strength ? `${unit.class}: STR ${unit.strength} → ${afterStrength}${afterStrength <= 0 ? " (DEAD)" : ""}` : null;
+        return afterStrength < unit.strength ? `${squadLabel(unit)}: STR ${unit.strength} → ${afterStrength}${afterStrength <= 0 ? " (DEAD)" : ""}` : null;
       }).filter(Boolean) as string[];
       const survivingSquads = enemy.nextState.squads.filter((unit) => unit.strength > 0);
       const nextChoices = enemy.nextState.terminal !== "active"
@@ -325,24 +341,27 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         const unit = before.squads.find((candidate) => candidate.id === order.squadId);
         if (!unit) return null;
         if (unit.strength <= 1 || unit.fatigue >= 3) {
-          return `${unit.class} at ${name(unit.sector)} attacked at STR ${unit.strength}, FTG ${unit.fatigue}: ATTACK risks losing this squad; HOLD reduces fatigue by 1, while RECOVER costs 6 metal + 2 energy for strength/fatigue recovery when available`;
+          return `${squadLabel(unit)} at ${name(unit.sector)} attacked at STR ${unit.strength}, FTG ${unit.fatigue}: ATTACK risks losing this squad; HOLD reduces fatigue by 1, while RECOVER costs ${recoveryMetalCost(before)} metal + 2 energy for strength/fatigue recovery when available`;
         }
         return `${unit.class} at ${name(unit.sector)} attacked at STR ${unit.strength}, FTG ${unit.fatigue}: weigh ATTACK's 2 metal + 3 energy cost against HOLD fatigue reduction or RECOVER's strength recovery`;
       }).filter(Boolean) as string[];
       const debrief = [
         `TURN ${before.turn} DEBRIEF`,
-        `WHAT CHANGED: ${playerLines.length ? playerLines.join("; ") : "no surviving ordered squads"}`,
-        `RELAY CONTROL: ${relayLines.length ? relayLines.join("; ") : "no ownership change observed"}`,
-        `UNASSIGNED FATIGUE: ${unassignedFatigue.length ? unassignedFatigue.join("; ") : "no unassigned fatigue change"}`,
-        `SQUAD LOSSES: ${squadLosses.length ? squadLosses.join("; ") : "no squad strength loss observed"}`,
+        `WHAT CHANGED: ${playerLines.length ? playerLines.join("; ") : "no ordered squad change"}`,
+        ...(relayLines.length ? [`RELAY CONTROL: ${relayLines.join("; ")}`] : []),
+        ...(unassignedFatigue.length ? [`UNASSIGNED FATIGUE: ${unassignedFatigue.join("; ")}`] : []),
+        ...(squadLosses.length ? [`SQUAD LOSSES: ${squadLosses.join("; ")}`] : []),
         delta,
-        `PLAYER RESULT: ${battleLines.length ? battleLines.join("; ") : "no battle observed"}`,
-        `ENEMY PHASE OBSERVED: ${enemyLines.length ? enemyLines.join("; ") : "none"}`,
-        `WHY: ${attackChoices.length ? attackChoices.join("; ") : "observed state/events above determine the result"}`,
+        incomeLine,
+        `PLAYER RESULT: ${playerBattleLines.length ? playerBattleLines.join("; ") : "no player assault observed"}`,
+        ...(enemyBattleLines.length ? [`ENEMY RESULT: ${enemyBattleLines.join("; ")}`] : []),
+        `ENEMY PHASE OBSERVED: ${enemyLines.length ? enemyLines.join("; ") : before.researchLevels.Signals > 0 ? "no movement observed" : "movement withheld — Signals 0"}`,
+        `WHY: ${attackChoices.length ? attackChoices.join("; ") : "orders resolve before enemy actions; outcomes reflect strength, fatigue, terrain, and capture state"}`,
         `NEXT: ${nextChoices}`,
       ].join("\n");
       setGame(enemy.nextState);
       const nextReports = phaseReports.length ? phaseReports : reports;
+      const visibleEnemyEvents = before.researchLevels.Signals > 0 ? enemy.events.map((e) => e.message) : [];
       const nextEvents = (
         [
           ...[
@@ -350,7 +369,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               (report) =>
                 `${report.target} ${report.winner} — ${report.playerCasualties} Ward casualties · ${report.enemyCasualties} hostile casualties ${report.casualties.length} casualty entries`,
             ),
-            ...enemy.events.map((e) => e.message),
+            ...visibleEnemyEvents,
             ...turn.events.map((e) => e.message),
             debrief
           ].map((message) => ({
@@ -537,7 +556,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 <li>
                   <strong>CHOOSE {selectedAction.toUpperCase()}</strong> — {selectedAction === "attack"
                     ? "choose a legal target below to queue ATTACK."
-                    : "choose a highlighted target below to queue MOVE."}
+                    : "MOVE is free relocation: it claims an unheld legal destination, cannot dislodge defenders, and the enemy acts afterward and may reverse the gain."}
                 </li>
                 <li>
                   <strong>{legalTargets.length ? "HIGHLIGHTED LEGAL DESTINATION" : "NO LEGAL TARGETS"}</strong> — {legalTargets.length
@@ -622,7 +641,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               <h2>WHAT CHANGED / WHY</h2>
               <span className="muted">LAST TURN</span>
             </div>
-            {latestDebrief ? latestDebrief.message.split("\n").map((line) => <p key={line.slice(0, 40)}>{line}</p>) : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+            {latestDebrief ? (() => { const lines = displayRailMessage(latestDebrief.message, game.researchLevels.Signals).split("\n"); const priority = ["PLAYER RESULT:", "ENEMY RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:"]; const next = lines.find((line) => line.startsWith("NEXT:")); const summary = [...priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 4), next].filter(Boolean) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
           </section>
           <div className="battle-layout">
             <section className="map-panel card">
@@ -1032,8 +1051,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 {assaultForecasts.length > 0 && (
                   <section className="expected-losses" aria-label="Expected assault losses">
                     <h3>ASSAULT FORECAST</h3>
-                    {assaultForecasts.map(({ target, knownDefenders, hiddenDefenders }) => (
-                      <p key={target}>
+                    {assaultForecasts.map(({ target, knownDefenders, hiddenDefenders }, index) => (
+                      <p key={`${target}-${index}`}>
                         {sectorName(target)}: {hiddenDefenders
                           ? "Defenders unknown; outcome and losses are uncertain."
                           : knownDefenders.length
@@ -1137,10 +1156,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   <span className="muted">RECENT</span>
                 </div>
                 {events.length ? (
-                  events.map((event, i) => (
+                  events.filter((event) => game.researchLevels.Signals > 0 || !/^enemy-\d+\b/.test(event.message)).map((event, i) => (
                     <p key={i}>
                       <span>{event.turn.toString().padStart(2, "0")}</span>
-                      {event.message}
+                      {displayRailMessage(event.message, game.researchLevels.Signals)}
                     </p>
                   ))
                 ) : (

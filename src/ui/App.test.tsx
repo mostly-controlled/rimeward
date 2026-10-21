@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, battleOutcomeLabel } from "./App";
+import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel } from "./App";
 import {
   readSave,
   SAVE_KEY,
@@ -28,6 +28,95 @@ describe("App interactions", () => {
     await act(async () => root.render(<App initialGame={initialGame} />));
     return root;
   };
+
+  it("sanitizes persisted legacy enemy debriefs without Signals", () => {
+    const legacy = "TURN 4 DEBRIEF\nENEMY PHASE OBSERVED: enemy-1 move sector-3";
+    expect(displayRailMessage(legacy, 0)).toContain("movement withheld — Signals 0");
+    expect(displayRailMessage(legacy, 0)).not.toContain("enemy-1");
+    expect(displayRailMessage(legacy, 1)).toBe(legacy);
+  });
+
+  it("renders a real temporary relay capture and enemy recapture", async () => {
+    const campaign = createNewCampaign(42024);
+    const initialGame = {
+      ...campaign,
+      squads: campaign.squads.map((unit) => unit.id === "squad-2" ? { ...unit, sector: "sector-2" as const, strength: 1 } : unit),
+      enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, sector: "sector-4" as const, strength: 9 } : enemy),
+    };
+    const orders = [{ squadId: "squad-2", type: "attack" as const, target: "sector-3" as const }];
+    const turn = resolveTurn(initialGame, orders);
+    const combat = resolveCombat(turn.nextState, turn.events);
+    const enemy = resolveEnemyTurn(combat.nextState);
+    expect(initialGame.sectors.find((sector) => sector.id === "sector-3")?.owner).toBe("neutral");
+    expect(combat.nextState.sectors.find((sector) => sector.id === "sector-3")?.owner).toBe("player");
+    expect(enemy.nextState.sectors.find((sector) => sector.id === "sector-3")?.owner).toBe("enemy");
+    expect(enemy.reports.some((report) => report.target === "sector-3" && report.winner === "enemy" && report.captured)).toBe(true);
+
+    const root = await renderApp(initialGame);
+    await act(async () => (document.querySelectorAll(".squad-card")[1] as HTMLButtonElement).click());
+    await act(async () => (document.querySelector("button[aria-pressed=\"true\"]") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('[role="button"][aria-label*="Northstar"]') as SVGGElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    const debrief = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    expect(debrief).toContain("Northstar: neutral → player → enemy");
+    expect(debrief).toContain("SQUAD LOSSES:");
+    await act(async () => root.unmount());
+  });
+
+  it("sanitizes a persisted legacy debrief through App render and reload", async () => {
+    const game = createNewCampaign(42024);
+    writeSave({
+      version: SAVE_VERSION,
+      game,
+      events: [{ turn: 4, message: "TURN 4 DEBRIEF\nENEMY PHASE OBSERVED: enemy-1 move sector-3" }],
+      reports: [],
+    });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    const details = document.querySelector("details summary") as HTMLElement;
+    await act(async () => details.click());
+    const firstRender = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    expect(firstRender).toContain("movement withheld — Signals 0");
+    expect(firstRender).not.toContain("enemy-1");
+    await act(async () => root.unmount());
+    document.body.innerHTML = '<div id="root"></div>';
+    const reloaded = createRoot(document.getElementById("root")!);
+    await act(async () => reloaded.render(<App />));
+    const reloadDetails = document.querySelector("details summary") as HTMLElement;
+    await act(async () => reloadDetails.click());
+    const secondRender = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    expect(secondRender).not.toContain("enemy-1");
+    await act(async () => reloaded.unmount());
+  });
+
+  it("renders the proven T4 recovery as before, player phase, and enemy response", async () => {
+    const step = (state: ReturnType<typeof createNewCampaign>, orders: Parameters<typeof resolveTurn>[1]) => {
+      const player = resolveTurn(state, orders);
+      const combat = resolveCombat(player.nextState, player.events);
+      return { state: resolveEnemyTurn(combat.nextState).nextState, combat, enemy: resolveEnemyTurn(combat.nextState) };
+    };
+    let state = createNewCampaign(42024);
+    const holdAll = () => state.squads.filter((unit) => unit.strength > 0).map((unit) => ({ squadId: unit.id, type: "hold" as const }));
+    state = step(state, holdAll()).state;
+    state = step(state, [{ squadId: "squad-2", type: "move", target: "sector-1" }, { squadId: "squad-3", type: "move", target: "sector-11" }, ...state.squads.filter((unit) => !["squad-2", "squad-3"].includes(unit.id) && unit.strength > 0).map((unit) => ({ squadId: unit.id, type: "hold" as const }))]).state;
+    const t3 = step(state, [{ squadId: "squad-2", type: "attack", target: "sector-2" }, ...state.squads.filter((unit) => unit.id !== "squad-2" && unit.strength > 0).map((unit) => ({ squadId: unit.id, type: "hold" as const }))]);
+    expect(t3.enemy.reports.some((report) => report.winner === "enemy" && !report.captured)).toBe(true);
+    const before = t3.state;
+    const t4 = step(before, [{ squadId: "squad-2", type: "recover" }, ...before.squads.filter((unit) => unit.id !== "squad-2" && unit.strength > 0).map((unit) => ({ squadId: unit.id, type: "hold" as const }))]);
+    const root = await renderApp(before);
+    await act(async () => (document.querySelectorAll(".squad-card")[1] as HTMLButtonElement).click());
+    await act(async () => (document.querySelectorAll(".order-buttons button")[1] as HTMLButtonElement).click());
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    const debrief = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    const playerStrength = t4.combat.nextState.squads.find((unit) => unit.id === "squad-2")?.strength;
+    const finalStrength = t4.state.squads.find((unit) => unit.id === "squad-2")?.strength;
+    const beforeStrength = before.squads.find((unit) => unit.id === "squad-2")?.strength;
+    expect(playerStrength).toBeGreaterThan(beforeStrength!);
+    expect(finalStrength).toBeLessThan(playerStrength!);
+    expect(debrief).toContain(`STR ${beforeStrength}→${playerStrength}→${finalStrength}`);
+    await act(async () => root.unmount());
+  });
 
   it("cycles NEXT UNASSIGNED past assigned and dead squads, including roster wrap", async () => {
     const campaign = createNewCampaign(42024);
@@ -586,12 +675,8 @@ describe("App interactions", () => {
       rail.filter((message) => message.includes("squad-2 move Whiteplain")),
     ).toHaveLength(1);
     const enemyEvents = rail.filter((message) => message.includes("enemy") && !message.includes("DEBRIEF"));
-    expect(enemyEvents).toEqual(
-      expectedEnemy.events.map((event) =>
-        expect.stringContaining(event.message.replace(/sector-\d+/g, (id) => ({ "sector-3": "Northstar", "sector-9": "Vesper", "sector-6": "Ashenfall" } as Record<string, string>)[id] ?? id)),
-      ),
-    );
-    expect(enemyEvents).toHaveLength(expectedEnemy.events.length);
+    expect(enemyEvents).toEqual([]);
+    expect(document.querySelector(".event-rail")?.textContent).toContain("movement withheld — Signals 0");
     expect(document.querySelector(".turn-readout strong")?.textContent).toBe(
       "02",
     );
@@ -815,10 +900,10 @@ describe("App interactions", () => {
     await act(async () => root.render(<App />));
     await executeTarget("Whiteplain");
     const firstTurn = entries();
-    expect(firstTurn.length).toBeGreaterThanOrEqual(3);
+    expect(firstTurn.length).toBeGreaterThanOrEqual(2);
     expect(firstTurn.every((entry) => entry.turn === "01")).toBe(true);
     expect(firstTurn.some((entry) => entry.message?.startsWith("enemy-"))).toBe(
-      true,
+      false,
     );
     expect(firstTurn).toContainEqual({
       turn: "01",
@@ -828,7 +913,7 @@ describe("App interactions", () => {
     await executeTarget("Glassway");
     expect(
       entries()
-        .slice(0, 4)
+        .slice(0, 2)
         .every((entry) => entry.turn === "02"),
     ).toBe(true);
     expect(entries().filter((entry) => entry.turn === "01")).toEqual(firstTurn);
@@ -842,18 +927,13 @@ describe("App interactions", () => {
     await executeTarget("Ashenfall");
     const battleTurn = entries();
     expect(battleTurn[0].message).toMatch(/^Ashenfall .* casualty entries$/);
-    expect(battleTurn.slice(0, Math.min(4, battleTurn.length)).every((entry) => entry.turn === "03")).toBe(
+    expect(battleTurn.slice(0, Math.min(3, battleTurn.length)).every((entry) => entry.turn === "03")).toBe(
       true,
     );
     const retainedFirstTurnEnemies = battleTurn.filter(
       (entry) => entry.turn === "01" && entry.message?.startsWith("enemy-"),
     );
-    expect(retainedFirstTurnEnemies.length).toBeGreaterThan(0);
-    expect(
-      retainedFirstTurnEnemies.every((entry) =>
-        firstTurn.some((original) => original.message === entry.message),
-      ),
-    ).toBe(true);
+    expect(retainedFirstTurnEnemies).toEqual([]);
 
     await act(async () =>
       (
@@ -881,7 +961,7 @@ describe("App interactions", () => {
       entries().some(
         (entry) => entry.turn === "04" && entry.message?.startsWith("enemy-"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(document.querySelector(".turn-readout strong")?.textContent).toBe(
       "05",
     );
@@ -951,10 +1031,18 @@ describe("App interactions", () => {
     expect(debrief).toContain("ENEMY PHASE OBSERVED:");
     expect(debrief).toContain("NEXT:");
     expect(document.querySelector('[aria-label="Last turn debrief"]')).not.toBe(document.querySelector(".event-rail"));
-    expect(debrief).toContain("RELAY CONTROL:");
+    expect(debrief).not.toContain("RELAY CONTROL:");
     expect(debrief).toContain("UNASSIGNED FATIGUE:");
     expect(debrief).toContain("SQUAD LOSSES:");
     expect(debrief).toMatch(/WHY: .*STR 1, FTG 3.*ATTACK risks losing this squad.*HOLD.*RECOVER/);
+    expect(document.querySelector(".debrief-what-changed")?.textContent).toContain("WHAT CHANGED:");
+    expect(document.querySelector(".debrief-player-result")?.textContent).toContain("PLAYER RESULT:");
+    expect(document.querySelector(".debrief-next")?.textContent).toContain("NEXT:");
+    const summary = document.querySelector(".debrief-summary")?.textContent ?? "";
+    expect(summary).toContain("PLAYER RESULT:");
+    expect(document.querySelector(".debrief-what-changed")?.textContent).not.toContain("HOLD");
+    expect(document.querySelector(".debrief-summary")?.firstElementChild?.textContent).toContain("PLAYER RESULT:");
+    expect(debrief).toContain("connected");
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".map-panel") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect((document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement).compareDocumentPosition(document.querySelector(".orders") as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const debriefElement = document.querySelector('[aria-label="Last turn debrief"]') as HTMLElement;
