@@ -1363,12 +1363,15 @@ export const resolveTurn = (
   const observations: AdaptiveObservation[] = playerOrders.flatMap((order) => {
     if (order.type !== "move" && order.type !== "attack") return [];
     const squad = state.squads.find((item) => item.id === order.squadId);
+    const observedSector = order.type === "move" ? order.target : squad?.sector;
     if (
       !squad ||
       squad.strength <= 0 ||
       !state.enemySquads.some(
         (enemy) =>
-          enemy.strength > 0 && adjacentOrSame(state, squad.sector, enemy.sector),
+          enemy.strength > 0 &&
+          observedSector !== undefined &&
+          adjacentOrSame(state, observedSector, enemy.sector),
       )
     )
       return [];

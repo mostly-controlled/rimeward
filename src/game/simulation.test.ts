@@ -141,6 +141,38 @@ describe("campaign simulation", () => {
     expect(hidden.adaptiveHistory).not.toEqual(observed.adaptiveHistory);
   });
 
+  it("learns a legal move on arrival when the destination is adjacent to a living enemy", () => {
+    const base = createNewCampaign(42024);
+    const state = {
+      ...base,
+      squads: base.squads.map((squad, index) =>
+        index === 0 ? { ...squad, sector: "sector-0" as const } : { ...squad, strength: 0 },
+      ),
+      enemySquads: base.enemySquads.map((enemy, index) =>
+        index === 0 ? { ...enemy, sector: "sector-2" as const, strength: 10 } : { ...enemy, strength: 0 },
+      ),
+      revealedEnemySquads: [],
+    };
+    const next = resolveTurn(state, [{ squadId: "squad-1", type: "move", target: "sector-1" }]).nextState;
+    expect(next.adaptiveHistory).toEqual([{ turn: 1, observations: [expect.objectContaining({ kind: "move", from: "sector-0", to: "sector-1" })] }]);
+  });
+
+  it("does not learn a move when both origin and destination are hidden", () => {
+    const base = createNewCampaign(42024);
+    const state = {
+      ...base,
+      squads: base.squads.map((squad, index) =>
+        index === 0 ? { ...squad, sector: "sector-0" as const } : { ...squad, strength: 0 },
+      ),
+      enemySquads: base.enemySquads.map((enemy, index) =>
+        index === 0 ? { ...enemy, sector: "sector-6" as const, strength: 10 } : { ...enemy, strength: 0 },
+      ),
+      revealedEnemySquads: [],
+    };
+    const next = resolveTurn(state, [{ squadId: "squad-1", type: "move", target: "sector-1" }]).nextState;
+    expect(next.adaptiveHistory).toEqual([{ turn: 1, observations: [] }]);
+  });
+
   it("requires distinct turns for style and makes repeat-vs-feint decisions from player observations", () => {
     const base = createNewCampaign(7);
     const board = {
