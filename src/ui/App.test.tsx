@@ -323,7 +323,8 @@ describe("App interactions", () => {
     expect(guide.compareDocumentPosition(resources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(guide.compareDocumentPosition(objectives) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(guide.textContent).toContain("Hold all relays AND enemy HQ; defend Frostgate.");
-    expect(guide.textContent).toContain("Relays: Northstar, Ashenfall, Vesper. HQ: Ashenfall");
+    expect(guide.textContent).toContain("Remaining relays: Northstar, Ashenfall, Vesper. HQ: Ashenfall REQUIRED");
+    expect(guide.textContent).toContain("Objectives may not be reachable this turn.");
     await act(async () => root.unmount());
   });
 
@@ -333,7 +334,9 @@ describe("App interactions", () => {
     const hold = [...document.querySelectorAll("button")].find((button) => button.textContent === "HOLD UNASSIGNED") as HTMLButtonElement;
     await act(async () => hold.click());
     const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
-    expect(guide).toContain("0 unassigned squads; EXECUTE TURN resolves assigned orders without requiring all squads.");
+    expect(guide).toContain("0 unassigned squads;");
+    expect(guide).toContain("Player orders resolve first, then the enemy phase.");
+    expect(guide).toContain("EXECUTE TURN resolves assigned orders without requiring all squads.");
     expect(guide).not.toContain("HOLD UNASSIGNED");
     expect(guide).not.toContain("HOLD ALL");
     expect(guide).not.toContain("MOVE is queued for the selected squad");
@@ -987,6 +990,9 @@ describe("App interactions", () => {
     const root = await renderApp(createNewCampaign(42024));
     expect(document.querySelector(".queued-orders")?.textContent).toContain("No orders queued");
     expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(true);
+    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).not.toContain("EXECUTE");
+    expect(guide).toContain("Queue orders for your squads.");
     await act(async () => root.unmount());
   });
 
@@ -1006,7 +1012,8 @@ describe("App interactions", () => {
       squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-6" as const } : { ...unit, strength: 0 }),
     });
     const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
-    expect(guide).toContain("no unoccupied friendly destination is reachable; use HOLD or RECOVER");
+    expect(guide).toContain("no unoccupied friendly destination is reachable; use HOLD or change squad");
+    expect(guide).not.toContain("use HOLD or RECOVER");
     await act(async () => root.unmount());
   });
 
@@ -1014,8 +1021,8 @@ describe("App interactions", () => {
     const campaign = createNewCampaign(42024);
     const root = await renderApp({ ...campaign, objectives: campaign.objectives.map((objective) => ({ ...objective, controlled: true })) });
     const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
-    expect(guide).toContain("Relays: none");
-    expect(guide).not.toContain("Relays: Northstar");
+    expect(guide).toContain("Remaining relays: none");
+    expect(guide).not.toContain("Remaining relays: Northstar");
     await act(async () => root.unmount());
   });
 

@@ -524,7 +524,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             <h3>GOAL</h3>
             <p>
               {game.terminal === "active"
-                ? `Hold all relays AND enemy HQ; defend ${playerHq?.name ?? game.hq.player}. Remaining relays: ${requiredRelayLabels.join(", ") || "none"}. (Relays: ${requiredRelayLabels.join(", ") || "none"}. HQ: ${enemyHq?.name ?? game.hq.enemy} ${enemyHq?.owner === "player" ? "CAPTURED" : "REQUIRED"}.) Reachability depends on the selected squad's current sector and links.`
+                ? `Hold all relays AND enemy HQ; defend ${playerHq?.name ?? game.hq.player}. Remaining relays: ${requiredRelayLabels.join(", ") || "none"}. HQ: ${enemyHq?.name ?? game.hq.enemy} ${enemyHq?.owner === "player" ? "CAPTURED" : "REQUIRED"}. Objectives may not be reachable this turn.`
                 : game.terminal === "victory"
                   ? "The frontier is secure."
                   : "The campaign has ended."}
