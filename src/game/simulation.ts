@@ -665,6 +665,14 @@ const intentForEnemy = (
     );
     return occupied && (sector?.owner === "player" || relay);
   });
+  const rememberedTarget = rememberedGuardTarget(
+    state,
+    enemy,
+    occupiedPlayerTargets.filter((target) => attackIsViable(state, enemy, target, excluded)),
+    excluded,
+  );
+  if (rememberedTarget)
+    return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: rememberedTarget };
   const occupiedPlayerTarget = choosePressureTarget(
     state,
     occupiedPlayerTargets.filter((target) =>
@@ -672,20 +680,6 @@ const intentForEnemy = (
     ),
     phaseTurn,
   );
-  const rememberedTarget = rememberedGuardTarget(
-    state,
-    enemy,
-    occupiedPlayerTargets,
-    excluded,
-  );
-  if (rememberedTarget)
-    return {
-      squadId: enemy.id,
-      kind: "attack",
-      from: enemy.sector,
-      to: enemy.sector,
-      target: rememberedTarget,
-    };
   if (occupiedPlayerTarget)
     return {
       squadId: enemy.id,

@@ -228,7 +228,7 @@ describe("campaign simulation", () => {
       }
       return { state, actions };
     };
-    const corridor = ["sector-1", "sector-5", "sector-1", "sector-5"] as const;
+    const corridor = ["sector-1", "sector-5", "sector-1", "sector-5", "sector-1", "sector-5"] as const;
     const repeated = play(corridor, true);
     const empty = play(corridor, false);
     const actualPhase = resolveEnemyTurn(repeated.state);
@@ -238,11 +238,11 @@ describe("campaign simulation", () => {
     expect(empty.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
     expect(repeated.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe(empty.state.squads.find((squad) => squad.id === "squad-1")?.sector);
     expect(phaseTrace(emptyPhase.events)).toEqual(phaseTrace(actualPhase.events));
-    expect(repeated.actions).toHaveLength(12);
+    expect(repeated.actions).toHaveLength(18);
     expect(repeated.actions.every((action) => ["MOVE", "ATTACK", "HOLD"].includes(action.kind))).toBe(true);
     expect(repeated.actions.every((action) => action.from && action.to && action.squadId.startsWith("enemy-"))).toBe(true);
-    expect(empty.actions).toHaveLength(12);
-    expect(repeated.actions).toEqual(empty.actions);
+    expect(empty.actions).toHaveLength(18);
+    expect(repeated.actions).not.toEqual(empty.actions);
     for (let offset = 0; offset < repeated.actions.length; offset += 3) {
       const phase = repeated.actions.slice(offset, offset + 3);
       expect(phase).toEqual([...phase].sort((a, b) => a.squadId.localeCompare(b.squadId)));
