@@ -22,6 +22,59 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  const renderApp = async (initialGame = createNewCampaign(42024)) => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={initialGame} />));
+    return root;
+  };
+
+  it("cycles NEXT UNASSIGNED past assigned and dead squads, including roster wrap", async () => {
+    const campaign = createNewCampaign(42024);
+    const initialGame = { ...campaign, squads: campaign.squads.map((unit, index) => index === 1 ? { ...unit, strength: 0 } : unit) };
+    const root = await renderApp(initialGame);
+    const next = () => document.querySelector(".queued-orders button:nth-of-type(2)") as HTMLButtonElement;
+    await act(async () => (document.querySelectorAll(".squad-card")[0] as HTMLButtonElement).click());
+    await act(async () => next().click());
+    expect(document.querySelector(".squad-card.chosen")?.textContent).toContain("RECON");
+    await act(async () => next().click());
+    expect(document.querySelector(".squad-card.chosen")?.textContent).toContain("ARTILLERY");
+    await act(async () => next().click());
+    expect(document.querySelector(".squad-card.chosen")?.textContent).toContain("SENTINEL // 05");
+    await act(async () => next().click());
+    expect(document.querySelector(".squad-card.chosen")?.textContent).toContain("SENTINEL // 01");
+    await act(async () => root.unmount());
+  });
+
+  it("retains the sole eligible squad and disables NEXT UNASSIGNED when all are assigned", async () => {
+    const campaign = createNewCampaign(42024);
+    const only = { ...campaign, squads: campaign.squads.map((unit, index) => ({ ...unit, strength: index === 2 ? 5 : 0 })) };
+    const root = await renderApp(only);
+    const next = document.querySelector(".queued-orders button:nth-of-type(2)") as HTMLButtonElement;
+    await act(async () => next.click());
+    expect(document.querySelector(".squad-card.chosen")?.textContent).toContain("RECON");
+    expect(next.disabled).toBe(false);
+    await act(async () => root.unmount());
+    const assignedRoot = await renderApp(campaign);
+    await act(async () => (document.querySelector(".queued-orders button") as HTMLButtonElement).click());
+    expect((document.querySelector(".queued-orders button:nth-of-type(2)") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => assignedRoot.unmount());
+  });
+
+  it("restores canceled eligibility and disables NEXT UNASSIGNED in terminal state", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await renderApp(campaign);
+    await act(async () => (document.querySelector(".order-buttons button") as HTMLButtonElement).click());
+    const next = document.querySelector(".queued-orders button:nth-of-type(2)") as HTMLButtonElement;
+    expect(next.disabled).toBe(false);
+    await act(async () => (document.querySelector("button[aria-label^=\"Cancel\"]") as HTMLButtonElement).click());
+    expect(next.disabled).toBe(false);
+    await act(async () => root.unmount());
+    const terminalRoot = await renderApp({ ...campaign, terminal: "victory", terminalReason: "done" });
+    expect((document.querySelector(".queued-orders button:nth-of-type(2)") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => terminalRoot.unmount());
+  });
+
   it("shows grouped living Ward counts at actual sectors with an accessible legend", async () => {
     const campaign = createNewCampaign(42024);
     const sector = campaign.squads[0].sector;
