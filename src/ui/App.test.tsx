@@ -22,6 +22,13 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  const renderApp = async (initialGame = createNewCampaign(42024)) => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={initialGame} />));
+    return root;
+  };
+
   it("sanitizes persisted legacy enemy debriefs without Signals", () => {
     const legacy = "TURN 4 DEBRIEF\nENEMY PHASE OBSERVED: enemy-1 move sector-3";
     expect(displayRailMessage(legacy, 0)).toContain("movement withheld — Signals 0");
@@ -65,13 +72,6 @@ describe("App interactions", () => {
     expect(report?.captured).toBe(false);
     expect(enemyBattleOutcomeLabel(report!)).toBe("enemy won; sector retained");
   });
-
-  const renderApp = async (initialGame = createNewCampaign(42024)) => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = createRoot(document.getElementById("root")!);
-    await act(async () => root.render(<App initialGame={initialGame} />));
-    return root;
-  };
 
   it("cycles NEXT UNASSIGNED past assigned and dead squads, including roster wrap", async () => {
     const campaign = createNewCampaign(42024);
