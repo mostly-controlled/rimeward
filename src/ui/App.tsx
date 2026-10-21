@@ -1389,6 +1389,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   .join(" · ")}
               </small>
             )}
+            {game.adaptiveCue && <small> · {game.adaptiveCue}</small>}
           </section>
           <section
             className="research-effects card"
