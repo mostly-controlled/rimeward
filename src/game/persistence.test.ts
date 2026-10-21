@@ -61,6 +61,7 @@ describe("campaign persistence", () => {
     expect(validateSave({ ...baseline, journal: [{ type: "orders", orders: [] }] })).toBe(false);
     expect(validateSave({ ...baseline, journal: [{ type: "orders", orders: [{ squadId: "squad-1", type: "hold" }, { squadId: "squad-1", type: "move" }] }] })).toBe(false);
     expect(verifyReplay({ ...baseline, journal: [{ type: "orders", orders: [{ squadId: "squad-1", type: "nonsense" as never }] }] })).toMatchObject({ status: "corrupt" });
+    expect(verifyReplay({ ...baseline, journal: [null as never, { malformed: true } as never] })).toMatchObject({ status: "corrupt" });
   });
   it("loads valid campaigns with unsupported replay metadata", () => {
     const game = createNewCampaign(77);

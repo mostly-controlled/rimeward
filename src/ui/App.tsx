@@ -19,8 +19,9 @@ import {
 import {
   readSave,
   readSaveNotice,
-  JOURNAL_VERSION,
   REPLAY_RULES_VERSION,
+  JOURNAL_VERSION,
+  readSaveUnavailableNotice,
   SAVE_VERSION,
   verifyReplay,
   writeSave,
@@ -109,7 +110,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>(
     () => loaded?.reports ?? [],
   );
-  const [journal, setJournal] = useState<JournalAction[] | undefined>(() => loaded ? loaded.journal : []);
+  const loadedReplaySupported = !!loaded && loaded.rulesVersion === REPLAY_RULES_VERSION && loaded.journalVersion === JOURNAL_VERSION;
+  const loadedReplayUnsupported = !!loaded?.journal && !loadedReplaySupported;
+  const [journal, setJournal] = useState<JournalAction[] | undefined>(() => loaded ? (loaded.journal === undefined || loadedReplaySupported ? loaded.journal ?? [] : undefined) : initialGame ? [] : undefined);
   const [saveStatus, setSaveStatus] = useState(
     !initialGame
       ? loaded
@@ -118,13 +121,27 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       : "",
   );
   const [error, setError] = useState("");
+  const [storageWarning, setStorageWarning] = useState("");
   const verify = () => {
-    const result = verifyReplay({ version: SAVE_VERSION, game, events, reports, rulesVersion: journal ? REPLAY_RULES_VERSION : loaded?.rulesVersion, journalVersion: journal ? JOURNAL_VERSION : loaded?.journalVersion, journal });
-    setSaveStatus(result.message);
+    if (storageWarning) {
+      setSaveStatus(storageWarning);
+      return;
+    }
+    const stored = readSave();
+    if (!stored) {
+      setSaveStatus(readSaveUnavailableNotice() || "SAVE UNAVAILABLE — no stored campaign is available for replay verification.");
+      return;
+    }
+    setSaveStatus(verifyReplay(stored).message);
   };
   const latestDebrief = events.find((event) => event.message.startsWith("TURN ") && event.message.includes(" DEBRIEF"));
   const persist = (nextGame: GameState, nextEvents = events, nextReports = reports, nextJournal = journal) => {
     if (!storageEnabled) return null;
+    if (loadedReplayUnsupported) {
+      const warning = "REPLAY UNAVAILABLE — this campaign uses an unsupported replay version; the stored snapshot was not changed.";
+      setSaveStatus(warning);
+      return warning;
+    }
     const warning = writeSave({
       version: SAVE_VERSION,
       game: nextGame,
@@ -133,8 +150,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       ...(nextJournal ? { rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: nextJournal } : {}),
     });
     if (warning) {
+      setStorageWarning(warning);
       setSaveStatus(warning);
     } else {
+      setStorageWarning("");
       setSaveStatus(SAVE_SUCCESS);
     }
     return warning;
