@@ -48,8 +48,7 @@ describe("campaign persistence", () => {
   });
   it("replays accepted research and turns against the saved snapshot", () => {
     const game = createNewCampaign(77);
-    const research = { ...game, resources: { ...game.resources, metal: 12 } };
-    const next = advanceResearchForTest(research);
+    const next = advanceResearchForTest(game);
     const turn = resolveTurnForTest(next);
     const payload = { version: SAVE_VERSION, game: turn.game, events: [], reports: turn.reports, rulesVersion: REPLAY_RULES_VERSION, journalVersion: JOURNAL_VERSION, journal: [{ type: "research" as const, branch: "Logistics" as const }, { type: "orders" as const, orders: [{ squadId: "squad-1", type: "hold" as const }] }] };
     expect(verifyReplay(payload)).toMatchObject({ status: "match" });
