@@ -53,6 +53,7 @@ const queuedCost = (orders: Order[], state: GameState) =>
 
 const SEED = 42024;
 const SAVE_SUCCESS = "Completed turns and research saved; queued orders are not saved.";
+const nextCampaignSeed = (seed: number) => (seed * 1664525 + 1013904223) >>> 0;
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
     Logistics: [
@@ -102,6 +103,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [game, setGame] = useState<GameState>(
     () => initialGame ?? loaded?.game ?? createNewCampaign(SEED),
   );
+  const [pendingSaveChoice, setPendingSaveChoice] = useState(() => Boolean(loaded));
   const [selectedSquad, setSelectedSquad] = useState("squad-1");
   const [selectedAction, setSelectedAction] =
     useState<Extract<OrderType, "move" | "attack">>("move");
@@ -117,7 +119,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [saveStatus, setSaveStatus] = useState(
     !initialGame
       ? loaded
-        ? `RESUMED SAVED CAMPAIGN — ${SAVE_SUCCESS}`
+        ? `SAVED CAMPAIGN AVAILABLE — SEED ${loaded.game.seed} · TURN ${loaded.game.turn}`
         : readSaveNotice()
       : "",
   );
@@ -443,9 +445,50 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     const warning = persist(nextGame, [], [], []);
   };
   const continueCampaign = () => {
-    setSaveStatus("CONTINUING SAVED CAMPAIGN — " + SAVE_SUCCESS);
+    setPendingSaveChoice(false);
+    setSaveStatus(`CONTINUING SAVED CAMPAIGN — SEED ${game.seed} · TURN ${game.turn}`);
     setError("");
   };
+  const resetSameSeed = () => {
+    const nextGame = createNewCampaign(game.seed);
+    setPendingSaveChoice(false);
+    setGame(nextGame);
+    setSelectedSquad("squad-1");
+    setOrders([]);
+    setEvents([]);
+    setReports([]);
+    setJournal([]);
+    setError("");
+    persist(nextGame, [], [], []);
+  };
+  const newCampaign = () => {
+    const nextGame = createNewCampaign(nextCampaignSeed(game.seed));
+    setPendingSaveChoice(false);
+    setGame(nextGame);
+    setSelectedSquad("squad-1");
+    setOrders([]);
+    setEvents([]);
+    setReports([]);
+    setJournal([]);
+    setError("");
+    persist(nextGame, [], [], []);
+  };
+  if (pendingSaveChoice && loaded) {
+    return (
+      <main className="command-shell">
+        <section className="notes card">
+          <p className="eyebrow">RIMEWARD // NORTHERN FRONTIER</p>
+          <h1>THE WHITE LINE</h1>
+          <h2>SAVED CAMPAIGN AVAILABLE</h2>
+          <p>SEED {loaded.game.seed} · TURN {loaded.game.turn}</p>
+          {saveStatus && <p className="save-status" role="status">{saveStatus}</p>}
+          <button className="primary" onClick={continueCampaign}>CONTINUE</button>
+          <button onClick={resetSameSeed}>RESET SAME SEED · {loaded.game.seed}</button>
+          <button onClick={newCampaign}>NEW CAMPAIGN · NEW SEED</button>
+        </section>
+      </main>
+    );
+  }
   if (!game.squads.length)
     return (
       <main className="command-shell">
@@ -460,20 +503,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             </p>
           )}
           <button onClick={verify}>VERIFY REPLAY</button>
-          {loaded && <button onClick={continueCampaign}>CONTINUE</button>}
-          <button className="primary" onClick={reset}>
-            RESTART / RESET · SEED {game.seed}
+          {loaded && pendingSaveChoice && <button onClick={continueCampaign}>CONTINUE</button>}
+          <button className="primary" onClick={resetSameSeed}>
+            RESET SAME SEED · {game.seed}
           </button>
-          <button onClick={() => {
-            const nextGame = createNewCampaign(SEED);
-            setGame(nextGame);
-            setEvents([]);
-            setReports([]);
-            setJournal([]);
-            setOrders([]);
-            setError("");
-            persist(nextGame, [], [], []);
-          }}>NEW CAMPAIGN</button>
+          <button onClick={newCampaign}>NEW CAMPAIGN · NEW SEED</button>
         </section>
       </main>
     );
@@ -489,7 +523,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
           <span>TURN</span>
           <strong>{game.turn.toString().padStart(2, "0")}</strong>
           <span>OPERATION THAWLINE</span>
-          <button onClick={reset}>NEW CAMPAIGN</button>
+          <button onClick={newCampaign}>NEW CAMPAIGN · NEW SEED</button>
         </div>
       </header>
       <nav aria-label="Main navigation">
@@ -559,8 +593,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             </p>
           )}
           <button onClick={verify}>VERIFY REPLAY</button>
-          {loaded && <button onClick={continueCampaign}>CONTINUE</button>}
-          <button onClick={reset}>RESET</button>
+          {loaded && pendingSaveChoice && <button onClick={continueCampaign}>CONTINUE</button>}
+          <button onClick={resetSameSeed}>RESET SAME SEED · {game.seed}</button>
           {game.terminal !== "active" && (
             <section className="terminal card">
               <p className="eyebrow">CAMPAIGN TERMINAL</p>
@@ -572,20 +606,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     : "DEFEAT"}
               </h2>
               <p>{game.terminalReason}</p>
-              <button className="primary" onClick={reset}>
-                RESTART / RESET · SEED {game.seed}
+              <button className="primary" onClick={resetSameSeed}>
+                RESET SAME SEED · {game.seed}
               </button>
               <button
                 onClick={() => {
-                  const seed = (game.seed * 1664525 + 1013904223) >>> 0;
-                  const nextGame = createNewCampaign(seed);
-                  setGame(nextGame);
-                  setOrders([]);
-                  setEvents([]);
-                  setReports([]);
-                  setJournal([]);
-                  setError("");
-                  persist(nextGame, [], [], []);
+                  newCampaign();
                 }}
               >
                 NEW CAMPAIGN · NEW SEED
