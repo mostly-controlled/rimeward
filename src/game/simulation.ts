@@ -689,6 +689,27 @@ const intentForEnemy = (
     );
     return occupied && (sector?.owner === "player" || relay);
   });
+  const relayHasImmediateWardThreat =
+    state.objectives.some(
+      (objective) => objective.sector === enemy.sector && !objective.controlled,
+    ) &&
+    state.squads.some((squad) => {
+      if (squad.strength <= 0) return false;
+      const squadSector = state.sectors.find((sector) => sector.id === squad.sector);
+      return squadSector?.links.includes(enemy.sector);
+    });
+  if (relayHasImmediateWardThreat) {
+    const rememberedRelayTarget = rememberedGuardTarget(
+      state,
+      enemy,
+      occupiedPlayerTargets.filter((target) =>
+        attackIsViable(state, enemy, target, excluded),
+      ),
+      excluded,
+    );
+    if (rememberedRelayTarget)
+      return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: rememberedRelayTarget };
+  }
   const occupiedPlayerTarget = choosePressureTarget(
     state,
     occupiedPlayerTargets.filter((target) =>
@@ -703,6 +724,13 @@ const intentForEnemy = (
       from: enemy.sector,
       to: enemy.sector,
       target: occupiedPlayerTarget,
+    };
+  if (relayHasImmediateWardThreat)
+    return {
+      squadId: enemy.id,
+      kind: "hold",
+      from: enemy.sector,
+      to: enemy.sector,
     };
   // A live guard on an approach contests a captured relay before stale HQ
   // pursuit. This uses only a real adjacent tile and a finite actor.
@@ -752,29 +780,6 @@ const intentForEnemy = (
       };
     }
   }
-  const relayHasImmediateWardThreat =
-    state.objectives.some(
-      (objective) => objective.sector === enemy.sector && !objective.controlled,
-    ) &&
-    state.squads.some((squad) => {
-      if (squad.strength <= 0) return false;
-      const squadSector = state.sectors.find((sector) => sector.id === squad.sector);
-      return squadSector?.links.includes(enemy.sector);
-    });
-  if (relayHasImmediateWardThreat && !occupiedPlayerTarget) {
-    const rememberedRelayTarget = rememberedGuardTarget(state, enemy, occupiedPlayerTargets.filter((target) => attackIsViable(state, enemy, target, excluded)), excluded);
-    if (rememberedRelayTarget)
-      return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: rememberedRelayTarget };
-    return {
-      squadId: enemy.id,
-      kind: "hold",
-      from: enemy.sector,
-      to: enemy.sector,
-    };
-  }
-  const guardsRelay = state.objectives.some(
-    (objective) => objective.sector === enemy.sector && !objective.controlled,
-  );
   const exposedSupplyApproach = (current?.links ?? []).find((target) => {
     const sector = state.sectors.find((item) => item.id === target);
     return (
@@ -817,10 +822,10 @@ const intentForEnemy = (
         supplied(state, sector.id),
     )
     .sort((a, b) => a.id.localeCompare(b.id))[0];
+  const guardsRelay = state.objectives.some(
+    (objective) => objective.sector === enemy.sector && !objective.controlled,
+  );
   if (guardsRelay && !depot) {
-    const rememberedRelayTarget = rememberedGuardTarget(state, enemy, occupiedPlayerTargets.filter((target) => attackIsViable(state, enemy, target, excluded)), excluded);
-    if (rememberedRelayTarget)
-      return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: rememberedRelayTarget };
     return {
       squadId: enemy.id,
       kind: "hold",
