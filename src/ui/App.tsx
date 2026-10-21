@@ -237,6 +237,15 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     id ? (game.sectors.find((sector) => sector.id === id)?.name ?? id) : "—";
   const enemyHq = game.sectors.find((sector) => sector.id === game.hq.enemy);
   const playerHq = game.sectors.find((sector) => sector.id === game.hq.player);
+  const wardStrengthBySector = useMemo(() => {
+    const counts = new Map<SectorId, { squads: number; strength: number }>();
+    for (const unit of game.squads) {
+      if (unit.strength <= 0) continue;
+      const current = counts.get(unit.sector) ?? { squads: 0, strength: 0 };
+      counts.set(unit.sector, { squads: current.squads + 1, strength: current.strength + unit.strength });
+    }
+    return counts;
+  }, [game.squads]);
   const campaignObjectives = [
     ...game.objectives.map((objective) => ({
       key: objective.id,
@@ -707,6 +716,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 </g>
                 {game.sectors.map((s) => {
                   const [x, y] = pos[s.id];
+                  const wardPresence = wardStrengthBySector.get(s.id);
                   const active = s.id === squad.sector;
                   const occupied = game.enemySquads.some(
                     (enemy) => enemy.sector === s.id,
@@ -763,6 +773,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       >
                         {s.name}
                       </text>
+                      {wardPresence && (
+                        <g className="ward-strength-badge" aria-label={`${wardPresence.squads} living Ward squad${wardPresence.squads === 1 ? "" : "s"}, strength ${wardPresence.strength}`}>
+                          <rect x={x - 27} y={y + 57} width="54" height="16" rx="3" />
+                          <text x={x} y={y + 68} textAnchor="middle">WARD {wardPresence.squads} · {wardPresence.strength}</text>
+                        </g>
+                      )}
                       {game.objectives.some((o) => o.sector === s.id) && (
                         <rect
                           x={x + 18}
@@ -800,6 +816,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   UNHELD
                 </span>
                 <span>◈ RELAY</span>
+                <span className="ward-legend" aria-label="Ward strength badge legend">WARD N · S = living Ward squad count and combined strength</span>
                 <span className="plan-key" aria-label="Planned order key">
                   <i className="plan-line move" />
                   PLAN · MOVE

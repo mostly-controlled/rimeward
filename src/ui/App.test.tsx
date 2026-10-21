@@ -22,6 +22,23 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("shows grouped living Ward strength at actual sectors with an accessible legend", async () => {
+    const campaign = createNewCampaign(42024);
+    const sector = campaign.squads[0].sector;
+    const initialGame = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index < 2 ? { ...unit, sector, strength: index === 0 ? 4 : 6 } : { ...unit, strength: 0 }),
+    };
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App initialGame={initialGame} />));
+    const badge = document.querySelector(".ward-strength-badge");
+    expect(badge?.textContent).toContain("WARD 2 · 10");
+    expect(badge?.getAttribute("aria-label")).toBe("2 living Ward squads, strength 10");
+    expect(document.querySelectorAll(".ward-strength-badge")).toHaveLength(1);
+    expect(document.querySelector(".ward-legend")?.textContent).toContain("combined strength");
+    await act(async () => root.unmount());
+  });
   it("reports a winning attack without capture truthfully", () => {
     expect(battleOutcomeLabel({ winner: "player", captured: false })).toBe("won; not captured");
     expect(battleOutcomeLabel({ winner: "player", captured: true })).toBe("captured");
