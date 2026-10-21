@@ -136,7 +136,7 @@ describe("App interactions", () => {
     );
     expect(
       document.querySelector('[aria-label="Turn guide"]')?.textContent,
-    ).toContain("QUEUED — NOT EXECUTED");
+    ).toContain("QUEUED (1)");
     const cancel = [...document.querySelectorAll("button")].find(
       (button) => button.textContent === "CANCEL",
     ) as HTMLButtonElement;
@@ -194,8 +194,8 @@ describe("App interactions", () => {
     const guide =
       document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
     expect(guide).toContain("TURN 5");
-    expect(guide).toContain("QUEUED — NOT EXECUTED");
-    expect(guide).toContain("SENTINEL 1 · MOVE");
+    expect(guide).toContain("QUEUED (1)");
+    expect(guide).toContain("4 unassigned squads; choose another or HOLD UNASSIGNED to avoid fatigue");
     await act(async () => root.unmount());
   });
 
@@ -247,7 +247,7 @@ describe("App interactions", () => {
     const map = document.querySelector(".battle-layout")!;
     const telemetry = document.querySelector(".income")!;
     expect(
-      objectives.compareDocumentPosition(guide) &
+      guide.compareDocumentPosition(objectives) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
@@ -309,10 +309,33 @@ describe("App interactions", () => {
     );
     const guide =
       document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
-    expect(guide).toContain(
-      "ATTACK is available only when a legal target exists",
-    );
+    expect(guide).toContain("choose a legal target below to queue ATTACK");
     expect(guide).not.toContain("objective is adjacent");
+    await act(async () => root.unmount());
+  });
+
+  it("places the guide first and states the relay/HQ roles", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await renderApp(campaign);
+    const guide = document.querySelector('[aria-label="Turn guide"]')!;
+    const resources = document.querySelector(".resource-strip")!;
+    const objectives = document.querySelector(".campaign-objectives")!;
+    expect(guide.compareDocumentPosition(resources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(guide.compareDocumentPosition(objectives) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(guide.textContent).toContain("Hold all relays AND enemy HQ; defend Frostgate.");
+    expect(guide.textContent).toContain("Relays: Northstar, Ashenfall. HQ: Ashenfall");
+    await act(async () => root.unmount());
+  });
+
+  it("uses the zero-unassigned completion guidance and selected HOLD action", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await renderApp(campaign);
+    const hold = [...document.querySelectorAll("button")].find((button) => button.textContent === "HOLD UNASSIGNED") as HTMLButtonElement;
+    await act(async () => hold.click());
+    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).toContain("All squads assigned. EXECUTE TURN resolves your orders, then enemy.");
+    expect(guide).not.toContain("HOLD ALL");
+    expect(guide).not.toContain("MOVE is queued for the selected squad");
     await act(async () => root.unmount());
   });
 
