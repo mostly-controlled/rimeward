@@ -205,6 +205,22 @@ describe("campaign simulation", () => {
     // Class continuity is independent of the observed corridor: this remains
     // a defensive class pattern even though the route changed after turn 1.
     expect(adaptiveStyle(feint)).toBe("DEFENSIVE");
+    const switchedPattern = {
+      ...repeat,
+      adaptiveHistory: repeat.adaptiveHistory.map((bucket) => ({
+        ...bucket,
+        observations: bucket.observations.map((observation) => ({
+          ...observation,
+          class: bucket.turn === 2 ? ("Recon" as const) : ("Artillery" as const),
+          from: bucket.turn === 2 ? ("sector-8" as const) : ("sector-10" as const),
+          ...(observation.kind === "move"
+            ? { to: bucket.turn === 2 ? ("sector-9" as const) : ("sector-11" as const) }
+            : { target: bucket.turn === 2 ? ("sector-9" as const) : ("sector-11" as const) }),
+        })),
+      })),
+    };
+    expect(adaptiveStyle(switchedPattern)).toBe("UNSET");
+    expect(adaptiveStyleCue(switchedPattern)).toContain("response uncertain");
     const repeatIntents = decideEnemyIntents(repeat);
     const feintIntents = decideEnemyIntents(feint);
     const repeatPhase = resolveEnemyTurn(repeat);
