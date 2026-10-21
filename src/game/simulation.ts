@@ -54,9 +54,6 @@ export type GameState = {
   revealedEnemySquads: string[];
   scoutedEnemyRoutes: string[];
   supplyCapacity: number;
-  commanderStyle: CommanderStyle;
-  adaptiveHistory: AdaptiveObservation[][];
-  adaptiveCue?: string;
 };
 export type Order = { squadId: string; type: OrderType; target?: SectorId };
 export type GameEvent = {
@@ -87,8 +84,6 @@ export type AdaptiveHistoryBucket = {
   observations: AdaptiveObservation[];
 };
 export type StrategicTarget = { squadId: string; destination: SectorId };
-export type CommanderStyle = "aggressive raider" | "defensive planner";
-export type AdaptiveObservation = { turn: number; enemyId: string; corridor: string; playerClass: UnitClass; action: OrderType };
 export type BattleReport = {
   target: SectorId;
   terrain: Terrain;
@@ -192,7 +187,7 @@ export const createNewCampaign = (seed: number): GameState => {
     strength: 7 + Math.floor(random() * 3),
     sector: id([6, 8, 10][i]),
   }));
-  const initial: GameState = {
+  const initial = {
     seed: seed >>> 0,
     turn: 1,
     sectors,
@@ -218,8 +213,6 @@ export const createNewCampaign = (seed: number): GameState => {
     revealedEnemySquads: [],
     scoutedEnemyRoutes: [],
     supplyCapacity: 10,
-    commanderStyle: (seed >>> 0) % 2 === 0 ? "aggressive raider" : "defensive planner",
-    adaptiveHistory: [],
   };
   initial.income = calculateIncome(initial);
   return initial;
@@ -575,15 +568,13 @@ const intentForEnemy = (
 ): EnemyIntent | undefined => {
   const current = state.sectors.find((sector) => sector.id === enemy.sector);
   const recentMoves = state.enemyHistory
-    .filter((item) => item.squadId === enemy.id && item.kind === "move" && item.from !== item.to)
+    .filter(
+      (item) =>
+        item.squadId === enemy.id &&
+        item.kind === "move" &&
+        item.from !== item.to,
+    )
     .slice(-4);
-  const observed = state.adaptiveHistory.flat().filter((item) => item.enemyId === enemy.id);
-  const repeated = observed.length >= 2 && observed.slice(-2).every((item) => item.corridor === observed[observed.length - 1].corridor && item.playerClass === observed[observed.length - 1].playerClass);
-  const adjacentObserved = (current?.links ?? []).find((sectorId) => state.squads.some((squad) => squad.sector === sectorId && squad.strength > 0 && (!repeated || squad.class === observed[observed.length - 1].playerClass)));
-  if (repeated && adjacentObserved && state.commanderStyle === "aggressive raider" && attackIsViable(state, enemy, adjacentObserved, excluded))
-    return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: adjacentObserved };
-  if (repeated && adjacentObserved && state.commanderStyle === "defensive planner")
-    return { squadId: enemy.id, kind: "hold", from: enemy.sector, to: enemy.sector };
   if (enemy.sector === state.hq.enemy) {
     const hqCounterTarget = (current?.links ?? [])
       .filter((target) =>
@@ -1286,13 +1277,6 @@ export const resolveTurn = (
   validateOrders(state, playerOrders);
   const nextState = clone(state);
   const events: GameEvent[] = [];
-  const observations: AdaptiveObservation[] = [];
-  for (const order of playerOrders) {
-    const squad = state.squads.find((item) => item.id === order.squadId);
-    if (!squad || state.revealedEnemySquads.length === 0) continue;
-    const enemy = state.enemySquads.find((candidate) => state.revealedEnemySquads.includes(candidate.id) && (candidate.sector === squad.sector || candidate.sector === order.target || state.sectors.find((sector) => sector.id === candidate.sector)?.links.includes(squad.sector)));
-    if (enemy) observations.push({ turn: state.turn, enemyId: enemy.id, corridor: `${squad.sector}>${order.target ?? squad.sector}`, playerClass: squad.class, action: order.type });
-  }
   for (const order of playerOrders) {
     const squad = nextState.squads.find((item) => item.id === order.squadId);
     if (!squad || squad.strength <= 0) continue;
@@ -1342,15 +1326,6 @@ export const resolveTurn = (
   }));
   nextState.turn += 1;
   nextState.orderHistory = [...nextState.orderHistory, clone(playerOrders)];
-  if (observations.length) {
-    nextState.adaptiveHistory = [...nextState.adaptiveHistory, observations].slice(-3);
-    const flat = nextState.adaptiveHistory.flat();
-    const a = flat.at(-1)!;
-    const b = flat.at(-2);
-    nextState.adaptiveCue = b && a.corridor === b.corridor && a.playerClass === b.playerClass
-      ? `Adaptation: repeated ${a.playerClass} pressure on ${a.corridor}.`
-      : "Adaptation confidence reduced: observed corridor/class changed.";
-  }
   return { nextState, events };
 };
 
