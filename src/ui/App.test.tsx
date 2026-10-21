@@ -535,8 +535,8 @@ describe("App interactions", () => {
     const plannedOrders = [...document.querySelectorAll(".planned-order")];
     expect(plannedOrders).toHaveLength(2);
     expect(plannedOrders.map((order) => order.getAttribute("aria-label"))).toEqual([
-      "PLAN · MOVE · SENTINEL to Whiteplain, marker 1 of 2",
-      "PLAN · MOVE · RAIDER to Whiteplain, marker 2 of 2",
+      "PLAN · MOVE · SENTINEL M1 to Whiteplain",
+      "PLAN · MOVE · RAIDER M2 to Whiteplain",
     ]);
     expect(document.querySelectorAll(".planned-marker")).toHaveLength(2);
     expect(document.querySelector('[aria-label="Planned orders legend"]')?.textContent).toContain(
@@ -1954,8 +1954,8 @@ describe("Editable turn plan", () => {
     expect(new Set([...document.querySelectorAll(".planned-route")].map((item) => `${item.getAttribute("x1")},${item.getAttribute("y1")},${item.getAttribute("x2")},${item.getAttribute("y2")}`))).toHaveLength(2);
     expect(document.querySelector(".planned-arrow-move")?.getAttribute("fill")).toBe("#f0dda1");
     expect(document.querySelector(".planned-arrow-move")?.getAttribute("stroke")).toBe("#071114");
-    expect(document.querySelectorAll(".planned-label")[0].textContent).toMatch(/^M\d+$/);
-    expect(document.querySelectorAll(".planned-label")[0].textContent).not.toContain("RESOLVED");
+    expect(document.querySelectorAll(".planned-label")).toHaveLength(0);
+    expect(document.querySelectorAll(".planned-marker text")[0].textContent).toMatch(/^M\d+$/);
     await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
     expect(document.querySelectorAll(".planned-order")).toHaveLength(1);
     await act(async () => (document.querySelector('.queued-order button') as HTMLButtonElement).click());
@@ -2028,7 +2028,7 @@ describe("Editable turn plan", () => {
     };
     for (let index = 0; index < 5; index += 1) await choose(index);
     expect(document.querySelectorAll(".planned-marker")).toHaveLength(5);
-    expect([...document.querySelectorAll(".planned-marker text")].map((item) => item.textContent)).toEqual(["1", "2", "3", "4", "5"]);
+    expect([...document.querySelectorAll(".planned-marker text")].map((item) => item.textContent)).toEqual(["M1", "M2", "M3", "M4", "M5"]);
     expect(document.querySelector(".plan-legend")?.textContent).toContain("PLAN = queued order");
     expect(document.querySelectorAll('.planned-marker[role="img"]')).toHaveLength(5);
     expect(document.querySelectorAll(".plan-entry")).toHaveLength(5);

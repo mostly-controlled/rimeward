@@ -710,7 +710,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       const endY = markerY;
                       const labelX = (startX + endX) / 2 + nx * 12;
                       const labelY = (startY + endY) / 2 + ny * 12;
-                      const markerNumber = sharedOrders.length > 1 ? sharedIndex + 1 : undefined;
                       const orderLabel = `PLAN · ${order.type.toUpperCase()} · ${unit.class.toUpperCase()}`;
                       const squadNumber = unit.id.match(/(\d+)$/)?.[1] ?? unit.id;
                       const conciseLabel = `${order.type === "move" ? "M" : "A"}${squadNumber}`;
@@ -719,10 +718,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                           className="planned-order"
                           data-order-id={order.squadId}
                           data-target={target}
-                          aria-label={`${orderLabel} to ${sectorName(target)}${markerNumber ? `, marker ${markerNumber} of ${sharedOrders.length}` : ""}`}
+                          aria-label={`${orderLabel} ${conciseLabel} to ${sectorName(target)}`}
                           key={`${order.squadId}-${order.type}-${target}`}
                         >
-                          <title>{`${orderLabel} → ${sectorName(target)}${markerNumber ? ` · shared target marker ${markerNumber} of ${sharedOrders.length}` : ""}`}</title>
+                          <title>{`${orderLabel} ${conciseLabel} → ${sectorName(target)}`}</title>
                           <line
                             className={`planned-route planned-${order.type}`}
                             x1={startX}
@@ -731,17 +730,14 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                             y2={endY}
                             markerEnd={`url(#planned-arrow-${order.type})`}
                           />
-                          <text className="planned-label" x={labelX} y={labelY} textAnchor="middle">
-                            {conciseLabel}
-                          </text>
-                          {markerNumber && (
+                          {sharedOrders.length > 1 && (
                             <g
-                              className={`planned-marker planned-marker-${markerNumber}`}
+                              className={`planned-marker planned-marker-${squadNumber}`}
                               role="img"
                               aria-label={`${orderLabel} to ${sectorName(target)}`}
                             >
                               <circle cx={endX} cy={endY} r="9" />
-                              <text x={endX} y={endY + 3} textAnchor="middle">{markerNumber}</text>
+                              <text x={endX} y={endY + 3} textAnchor="middle">{conciseLabel}</text>
                             </g>
                           )}
                         </g>
@@ -852,7 +848,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 <span>◈ RELAY</span>
                 <span className="ward-legend" aria-label="Ward squad badge legend">Ward squads</span>
                 <span className="plan-key plan-legend" aria-label="Planned orders legend">
-                  PLAN = queued order; M/MOVE and A/ATTACK; marker numbers map to queued order details
+                  PLAN = queued order; M/MOVE and A/ATTACK; endpoint markers use the same squad token as each queued-order detail
                 </span>
                 <span className="plan-key" aria-label="Planned move key">
                   <i className="plan-line move" />
@@ -869,7 +865,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     aria-label={"Queued order " + order.squadId + " " + order.type + " " + sectorName(order.target)}
                   >
                     <i className={"plan-line " + order.type} />
-                    {order.squadId} · {order.type.toUpperCase()} →{" "}
+                    {order.type === "move" ? "M" : "A"}{order.squadId.match(/(\d+)$/)?.[1] ?? order.squadId} · {order.squadId} · {order.type.toUpperCase()} →{" "}
                     {sectorName(order.target)}
                   </span>
                 ))}
