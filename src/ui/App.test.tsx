@@ -76,6 +76,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement | null)?.click());
     const details = document.querySelector("details summary") as HTMLElement;
     await act(async () => details.click());
     const firstRender = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
@@ -271,6 +272,7 @@ describe("App interactions", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
     await act(async () => root.render(<App />));
+    await act(async () => (document.querySelector('button') as HTMLButtonElement | null)?.click());
     const target = document.querySelector(
       '[role="button"][aria-label*="Whiteplain"]',
     ) as SVGGElement;

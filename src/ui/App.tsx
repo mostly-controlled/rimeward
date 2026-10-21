@@ -103,7 +103,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [game, setGame] = useState<GameState>(
     () => initialGame ?? loaded?.game ?? createNewCampaign(SEED),
   );
-  const [pendingSaveChoice, setPendingSaveChoice] = useState(() => Boolean(loaded));
+  const [pendingSaveChoice, setPendingSaveChoice] = useState(() => Boolean(loaded?.journal));
   const [selectedSquad, setSelectedSquad] = useState("squad-1");
   const [selectedAction, setSelectedAction] =
     useState<Extract<OrderType, "move" | "attack">>("move");
