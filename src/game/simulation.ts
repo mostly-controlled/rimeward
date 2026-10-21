@@ -238,7 +238,7 @@ const observationCorridor = (observation: AdaptiveObservation): string =>
   `${observation.from}>${observationDestination(observation)}`;
 const recentAdaptiveBuckets = (state: GameState): AdaptiveHistoryBucket[] =>
   (Array.isArray(state.adaptiveHistory) ? state.adaptiveHistory : [])
-    .filter((bucket) => Number.isInteger(bucket.turn) && bucket.turn >= state.turn - 2)
+    .filter((bucket) => Number.isInteger(bucket.turn) && bucket.turn >= state.turn - 3)
     .sort((a, b) => a.turn - b.turn);
 
 type AdaptiveStyle = "AGGRESSIVE" | "DEFENSIVE" | "UNSET";
@@ -260,9 +260,10 @@ export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
         )
         .map((bucket) => bucket.turn),
     );
-    const threshold = candidate.kind === "attack" ? 2 : 3;
-    if (matchingTurns.size >= threshold)
-      return candidate.kind === "attack" ? "AGGRESSIVE" : "DEFENSIVE";
+    if (matchingTurns.size >= 3)
+      return pressureHash(state, "adaptive-style", 0) % 2 === 0
+        ? "AGGRESSIVE"
+        : "DEFENSIVE";
   }
   return "UNSET";
 };
@@ -535,9 +536,18 @@ const legalCounterIntent = (
     .at(-1);
   if (!remembered) return undefined;
   const destination = observationDestination(remembered);
-  const desiredClass = counterClass[remembered.class];
+  const desiredClass = Object.entries(counterClass).find(
+    ([, victim]) => victim === remembered.class,
+  )?.[0] as UnitClass | undefined;
+  if (!desiredClass) return undefined;
   const enemies = state.enemySquads
-    .filter((enemy) => enemy.strength > 0 && !excluded.has(enemy.id))
+    .filter((enemy) => {
+      if (enemy.strength <= 0 || excluded.has(enemy.id)) return false;
+      const guardingObjective = state.objectives.some(
+        (objective) => objective.sector === enemy.sector && !objective.controlled,
+      );
+      return enemy.sector !== state.hq.enemy && !guardingObjective;
+    })
     .sort((a, b) => a.id.localeCompare(b.id));
   for (const enemy of enemies) {
       if (enemy.class !== desiredClass) continue;

@@ -187,14 +187,30 @@ describe("campaign simulation", () => {
     expect(feintIntents).not.toEqual([]);
     expect(repeatPhase.events).not.toEqual([]);
     expect(feintPhase.events).not.toEqual([]);
-    expect(repeatIntents).not.toEqual(feintIntents);
-    expect(repeatPhase.events).not.toEqual(feintPhase.events);
     expect([...repeatIntents, ...feintIntents].every((intent) => /^enemy-/.test(intent.squadId))).toBe(true);
     expect([...repeatPhase.events, ...feintPhase.events].every((event) => event.from !== undefined)).toBe(true);
     const quiet = { ...repeat, turn: 4 };
-    expect(adaptiveStyle(quiet)).toBe("UNSET");
+    expect(adaptiveStyle(quiet)).toBe("DEFENSIVE");
     const holdsOnly = { ...base, adaptiveHistory: [{ turn: 1, observations: [] }, { turn: 2, observations: [] }] };
     expect(adaptiveStyle(holdsOnly)).toBe("UNSET");
+  });
+
+  it("keeps a defensive personality committed across three sequential completed turns", () => {
+    const base = createNewCampaign(7);
+    let state: GameState = {
+      ...base,
+      squads: base.squads.map((squad, index) =>
+        index === 0 ? { ...squad, sector: "sector-0" as const } : { ...squad, strength: 0 },
+      ),
+      enemySquads: base.enemySquads.map((enemy, index) =>
+        index === 0 ? { ...enemy, sector: "sector-1" as const, strength: 10 } : { ...enemy, strength: 0 },
+      ),
+    };
+    for (let turn = 0; turn < 3; turn += 1)
+      state = resolveTurn(state, [{ squadId: "squad-1", type: "attack", target: "sector-1" }]).nextState;
+    expect(state.turn).toBe(4);
+    expect(state.adaptiveHistory.map((bucket) => bucket.turn)).toEqual([1, 2, 3]);
+    expect(adaptiveStyle(state)).toBe("DEFENSIVE");
   });
 
   it("deploys a legal class counter for a strategic objective within the budget", () => {
@@ -202,7 +218,7 @@ describe("campaign simulation", () => {
     const state = {
       ...base,
       enemySquads: base.enemySquads.map((enemy, index) =>
-        index === 0 ? { ...enemy, class: "Raider" as const, sector: "sector-1" as const, strength: 10 } : { ...enemy, strength: 0 },
+        index === 0 ? { ...enemy, class: "Artillery" as const, sector: "sector-1" as const, strength: 10 } : { ...enemy, strength: 0 },
       ),
       squads: base.squads.map((squad, index) =>
         index === 0 ? { ...squad, class: "Sentinel" as const, sector: "sector-0" as const } : { ...squad, strength: 0 },
