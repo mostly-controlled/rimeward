@@ -597,7 +597,6 @@ const rememberedGuardTarget = (
     : undefined;
   if (!remembered) return undefined;
   const destination = observationDestination(remembered);
-  const inverseCounterClass = counterClass[remembered.class];
   return targets.find(
     (target) => {
       if (!attackIsViable(state, enemy, target, excluded)) return false;
@@ -605,8 +604,7 @@ const rememberedGuardTarget = (
         (squad) => squad.sector === target && squad.strength > 0,
       );
       return (
-        (target === destination || occupant?.class === remembered.class) &&
-        !(target === destination && occupant?.class === inverseCounterClass)
+        target === destination || occupant?.class === remembered.class
       );
     },
   );
