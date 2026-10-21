@@ -1390,7 +1390,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   .join(" · ")}
               </small>
             )}
-            {game.adaptiveCue && <small> · {game.adaptiveCue}</small>}
             <span className="adaptive-cue" aria-label="Enemy style cue">
               · ENEMY STYLE CUE: {adaptiveStyleCue(game)} · LOCAL OBSERVATIONS ONLY
             </span>
