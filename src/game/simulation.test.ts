@@ -4263,5 +4263,7 @@ describe("campaign simulation", () => {
     expect(actual).not.toEqual(empty);
     const resolved = resolveEnemyTurn(snapshot);
     expect(resolved.events.filter((event) => event.type === "attack").map((event) => event.target)).toEqual(expect.arrayContaining(["sector-7", "sector-5"]));
+    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 8 });
+    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 6 });
   });
 });
