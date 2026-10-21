@@ -36,6 +36,33 @@ describe("App interactions", () => {
     expect(displayRailMessage(legacy, 1)).toBe(legacy);
   });
 
+  it("renders a real temporary relay capture and enemy recapture", async () => {
+    const campaign = createNewCampaign(42024);
+    const initialGame = {
+      ...campaign,
+      squads: campaign.squads.map((unit) => unit.id === "squad-2" ? { ...unit, sector: "sector-2" as const, strength: 1 } : unit),
+      enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, sector: "sector-4" as const, strength: 9 } : enemy),
+    };
+    const orders = [{ squadId: "squad-2", type: "attack" as const, target: "sector-3" as const }];
+    const turn = resolveTurn(initialGame, orders);
+    const combat = resolveCombat(turn.nextState, turn.events);
+    const enemy = resolveEnemyTurn(combat.nextState);
+    expect(initialGame.sectors.find((sector) => sector.id === "sector-3")?.owner).toBe("neutral");
+    expect(combat.nextState.sectors.find((sector) => sector.id === "sector-3")?.owner).toBe("player");
+    expect(enemy.nextState.sectors.find((sector) => sector.id === "sector-3")?.owner).toBe("enemy");
+    expect(enemy.reports.some((report) => report.target === "sector-3" && report.winner === "enemy" && report.captured)).toBe(true);
+
+    const root = await renderApp(initialGame);
+    await act(async () => (document.querySelectorAll(".squad-card")[1] as HTMLButtonElement).click());
+    await act(async () => (document.querySelector("button[aria-pressed=\"true\"]") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('[role="button"][aria-label*="Northstar"]') as SVGGElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    const debrief = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    expect(debrief).toContain("Northstar: neutral → player → enemy");
+    expect(debrief).toContain("SQUAD LOSSES:");
+    await act(async () => root.unmount());
+  });
+
   it("sanitizes a persisted legacy debrief through App render and reload", async () => {
     const game = createNewCampaign(42024);
     writeSave({
