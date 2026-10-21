@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel, occupationLabel } from "./App";
 import {
   readSave,
+  REPLAY_RULES_VERSION,
+  JOURNAL_VERSION,
   SAVE_KEY,
   SAVE_VERSION,
   writeSave,
@@ -2113,8 +2115,8 @@ describe("Editable turn plan", () => {
     await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent?.startsWith("RESET SAME SEED")) as HTMLButtonElement).click());
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
     expect(saved.version).toBe(SAVE_VERSION);
-    expect(saved.rulesVersion).toBe(1);
-    expect(saved.journalVersion).toBe(1);
+    expect(saved.rulesVersion).toBe(REPLAY_RULES_VERSION);
+    expect(saved.journalVersion).toBe(JOURNAL_VERSION);
     expect(saved.journal).toEqual([]);
     expect(saved.game.seed).toBe(99);
     expect(saved.game.turn).toBe(1);
