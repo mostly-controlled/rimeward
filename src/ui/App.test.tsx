@@ -2388,5 +2388,15 @@ describe("Editable turn plan", () => {
     expect(execute().disabled).toBe(true);
     await act(async () => root.unmount());
   });
+
+  it("announces the resolved turn and exposes non-blocking visual feedback", async () => {
+    const root = await mount();
+    await target("Whiteplain");
+    await click(execute());
+    expect(document.querySelector('.debrief-panel [aria-live="polite"]')?.textContent).toContain("WHAT CHANGED");
+    expect(document.querySelector(".map")?.getAttribute("class")).toContain("map-feedback");
+    expect(document.querySelector("style")?.textContent).toContain("prefers-reduced-motion");
+    await act(async () => root.unmount());
+  });
 });
 });

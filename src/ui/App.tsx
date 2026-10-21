@@ -124,6 +124,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       : "",
   );
   const [error, setError] = useState("");
+  const [actionFeedback, setActionFeedback] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
   const verify = () => {
     if (storageWarning) {
@@ -331,8 +332,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       const turn = resolveTurn(game, orders);
       const combat = resolveCombat(turn.nextState, turn.events);
       const enemy = resolveEnemyTurn(combat.nextState);
-      const phaseReports = [...combat.reports, ...enemy.reports];
       const name = (id?: SectorId) => id ? before.sectors.find((sector) => sector.id === id)?.name ?? id : "unknown sector";
+      const phaseReports = [...combat.reports, ...enemy.reports];
+      const visibleFeedback = phaseReports.length
+        ? `Resolved ${phaseReports.length} visible battle${phaseReports.length === 1 ? "" : "s"}: ${phaseReports.map((report) => name(report.target)).join(", ")}.`
+        : "Turn resolved: no visible battles.";
       const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
       const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const playerAfter = combat.nextState.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const playerStrength = playerAfter?.strength ?? 0; const afterStrength = after?.strength ?? 0; const playerFatigue = playerAfter?.fatigue ?? unit.fatigue; const afterFatigue = after?.fatigue ?? playerFatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? `cost ${recoveryMetalCost(before)} metal + 2 energy` : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; if (order.type === "hold" && afterStrength === unit.strength && afterFatigue === unit.fatigue && !control) return null; return squadLabel(unit) + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — before → your orders → enemy response; STR " + unit.strength + "→" + playerStrength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + playerFatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
       const playerBattleLines = combat.reports.map((report) => name(report.target) + ": " + battleOutcomeLabel(report) + "; Ward −" + report.playerCasualties + ", hostile −" + report.enemyCasualties);
@@ -412,6 +416,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       ) as RailEvent[];
       if (phaseReports.length) setReports(phaseReports);
       setEvents(nextEvents);
+      setActionFeedback(visibleFeedback);
       const nextJournal = journal ? [...journal, { type: "orders" as const, orders: orders.map((order) => ({ ...order })) }] : undefined;
       setJournal(nextJournal);
       const warning = persist(enemy.nextState, nextEvents, nextReports, nextJournal);
@@ -516,6 +521,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     );
   return (
     <main className="command-shell">
+      <style>{`\n        .map-feedback { animation: map-feedback .45s ease-out; }\n        .debrief-panel[aria-label="Last turn debrief"] { animation: debrief-arrival .35s ease-out; }\n        .map:focus-visible, button:focus-visible, summary:focus-visible, [role="button"]:focus-visible { outline: 2px solid #f0dda1; outline-offset: 3px; }\n        @keyframes map-feedback { from { filter: brightness(1.35); } to { filter: brightness(1); } }\n        @keyframes debrief-arrival { from { transform: translateY(-4px); opacity: .7; } to { transform: translateY(0); opacity: 1; } }\n        @media (prefers-reduced-motion: reduce) { .map-feedback, .debrief-panel[aria-label="Last turn debrief"] { animation: none; } }\n      `}</style>
       <header className="topbar">
         <div>
           <p className="eyebrow">RIMEWARD // NORTHERN FRONTIER</p>
@@ -724,7 +730,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               <h2>WHAT CHANGED / WHY</h2>
               <span className="muted">LAST TURN</span>
             </div>
-            {latestDebrief ? (() => { const lines = displayRailMessage(latestDebrief.message, game.researchLevels.Signals).split("\n"); const priority = ["PLAYER RESULT:", "ENEMY RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:"]; const next = lines.find((line) => line.startsWith("NEXT:")); const summary = [...priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 4), next].filter(Boolean) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+            <div aria-live="polite" aria-atomic="true">
+              {actionFeedback && <p className="action-feedback" role="status">{actionFeedback}</p>}
+              {latestDebrief ? (() => { const lines = displayRailMessage(latestDebrief.message, game.researchLevels.Signals).split("\n"); const priority = ["PLAYER RESULT:", "ENEMY RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:"]; const next = lines.find((line) => line.startsWith("NEXT:")); const summary = [...priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 4), next].filter(Boolean) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+            </div>
           </section>
           <div className="battle-layout">
             <section className="map-panel card">
@@ -736,7 +745,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 <span className="status-dot">LIVE FEED</span>
               </div>
               <svg
-                className="map"
+                className={`map ${latestDebrief ? "map-feedback" : ""}`}
                 viewBox="0 0 780 440"
                 role="img"
                 aria-label="Tactical sector map"
@@ -961,10 +970,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     <article key={`${report.target}-${report.winner}-${index}`}>
                       <h3>
                         {game.sectors.find((s) => s.id === report.target)?.name}{" "}
-                        · {report.winner.toUpperCase()}
+                        · ENGAGEMENT: {report.winner.toUpperCase()}
                       </h3>
                       <p>
-                        ATTACKER{" "}
+                        FACTION: WARD · ATTACKERS{" "}
                         {report.attackers
                           .map(
                             (unit) =>
@@ -973,13 +982,19 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                           .join(", ")}
                       </p>
                       <p>
-                        DEFENDER{" "}
+                        FACTION: HOSTILE · DEFENDERS{" "}
                         {report.defenders
                           .map(
                             (unit) =>
                               `${unit.class} ${unit.units}/${unit.strength}`,
                           )
                           .join(", ") || "NONE"}
+                      </p>
+                      <p>
+                        CASUALTIES: Ward {report.playerCasualties} · hostile {report.enemyCasualties} · SURVIVORS: Ward {Math.max(0, report.attackers.reduce((total, unit) => total + unit.strength, 0) - report.playerCasualties)} · hostile {Math.max(0, report.defenders.reduce((total, unit) => total + unit.strength, 0) - report.enemyCasualties)}
+                      </p>
+                      <p>
+                        OCCUPATION: {report.captured ? "Ward captured sector" : report.relayControlled ? "Ward holds sector" : "sector not captured"}
                       </p>
                       <p>
                         Terrain {report.terrain} ×{report.terrainMultiplier} ·
@@ -1041,6 +1056,16 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   {game.sectors.find((s) => s.id === squad.sector)?.name} ·
                   choose an action
                 </p>
+                {selectedAction === "attack" && (
+                  <div className="legal-targets" aria-label="Named legal attack targets">
+                    <h3>LEGAL TARGETS</h3>
+                    {legalTargets.length ? legalTargets.map((target) => (
+                      <button type="button" className="legal-target" key={target.id} onClick={() => setOrder("attack", target.id)}>
+                        ATTACK {target.name}
+                      </button>
+                    )) : <p className="muted">No legal attack targets in range.</p>}
+                  </div>
+                )}
                 <div className="order-buttons">
                   {(["hold", "recover", "move", "attack"] as OrderType[]).map(
                     (type) => (
