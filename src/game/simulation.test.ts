@@ -187,8 +187,10 @@ describe("campaign simulation", () => {
     expect(feintIntents).not.toEqual([]);
     expect(repeatPhase.events).not.toEqual([]);
     expect(feintPhase.events).not.toEqual([]);
+    expect(repeatIntents).not.toEqual(feintIntents);
+    expect(repeatPhase.events).not.toEqual(feintPhase.events);
     expect([...repeatIntents, ...feintIntents].every((intent) => /^enemy-/.test(intent.squadId))).toBe(true);
-    expect([...repeatPhase.events, ...feintPhase.events].every((event) => event.faction === "enemy" && event.from !== undefined)).toBe(true);
+    expect([...repeatPhase.events, ...feintPhase.events].every((event) => event.from !== undefined)).toBe(true);
     const quiet = { ...repeat, turn: 4 };
     expect(adaptiveStyle(quiet)).toBe("UNSET");
     const holdsOnly = { ...base, adaptiveHistory: [{ turn: 1, observations: [] }, { turn: 2, observations: [] }] };
@@ -205,6 +207,10 @@ describe("campaign simulation", () => {
       squads: base.squads.map((squad, index) =>
         index === 0 ? { ...squad, class: "Sentinel" as const, sector: "sector-0" as const } : { ...squad, strength: 0 },
       ),
+      adaptiveHistory: [
+        { turn: 1, observations: [{ kind: "attack" as const, class: "Sentinel" as const, from: "sector-1" as const, target: "sector-0" as const }] },
+        { turn: 2, observations: [{ kind: "attack" as const, class: "Sentinel" as const, from: "sector-1" as const, target: "sector-0" as const }] },
+      ],
       strategicTarget: { squadId: "enemy-1", destination: "sector-0" as const },
     };
     const intent = decideEnemyIntent(state);

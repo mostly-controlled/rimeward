@@ -525,19 +525,22 @@ const nextLegalStep = (
 
 const legalCounterIntent = (
   state: GameState,
-  destination: SectorId,
   excluded = new Set<string>(),
 ): EnemyIntent | undefined => {
-  const defenders = state.squads
-    .filter((squad) => squad.strength > 0 && squad.sector === destination)
-    .sort((a, b) => a.id.localeCompare(b.id));
-  if (!defenders.length) return undefined;
+  // Counterdeployment is based only on the remembered visible observation.
+  // Current player positions at the remembered destination are intentionally
+  // not consulted; only local adjacent attack viability is allowed below.
+  const remembered = recentAdaptiveBuckets(state)
+    .flatMap((bucket) => bucket.observations)
+    .at(-1);
+  if (!remembered) return undefined;
+  const destination = observationDestination(remembered);
+  const desiredClass = counterClass[remembered.class];
   const enemies = state.enemySquads
     .filter((enemy) => enemy.strength > 0 && !excluded.has(enemy.id))
     .sort((a, b) => a.id.localeCompare(b.id));
-  for (const defender of defenders) {
-    for (const enemy of enemies) {
-      if (counterClass[enemy.class] !== defender.class) continue;
+  for (const enemy of enemies) {
+      if (enemy.class !== desiredClass) continue;
       const current = state.sectors.find((sector) => sector.id === enemy.sector);
       if (current?.links.includes(destination) && attackIsViable(state, enemy, destination, excluded))
         return {
@@ -555,7 +558,6 @@ const legalCounterIntent = (
           from: enemy.sector,
           to: step,
         };
-    }
   }
   return undefined;
 };
@@ -1001,8 +1003,8 @@ export const decideEnemyIntent = (
             pressureHash(state, `${b.squadId}:${b.target}`, phaseTurn) ||
           a.squadId.localeCompare(b.squadId),
       )[0];
-  const strategicCounter = state.strategicTarget && adaptiveStyle(state) !== "UNSET"
-    ? legalCounterIntent(state, state.strategicTarget.destination, excluded)
+  const strategicCounter = adaptiveStyle(state) !== "UNSET"
+    ? legalCounterIntent(state, excluded)
     : undefined;
   if (strategicCounter) return strategicCounter;
   if (state.strategicTarget) {
