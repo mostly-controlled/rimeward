@@ -36,6 +36,33 @@ describe("App interactions", () => {
     expect(displayRailMessage(legacy, 1)).toBe(legacy);
   });
 
+  it("sanitizes a persisted legacy debrief through App render and reload", async () => {
+    const game = createNewCampaign(42024);
+    writeSave({
+      version: SAVE_VERSION,
+      game,
+      events: [{ turn: 4, message: "TURN 4 DEBRIEF\nENEMY PHASE OBSERVED: enemy-1 move sector-3" }],
+      reports: [],
+    });
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = createRoot(document.getElementById("root")!);
+    await act(async () => root.render(<App />));
+    const details = document.querySelector("details summary") as HTMLElement;
+    await act(async () => details.click());
+    const firstRender = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    expect(firstRender).toContain("movement withheld — Signals 0");
+    expect(firstRender).not.toContain("enemy-1");
+    await act(async () => root.unmount());
+    document.body.innerHTML = '<div id="root"></div>';
+    const reloaded = createRoot(document.getElementById("root")!);
+    await act(async () => reloaded.render(<App />));
+    const reloadDetails = document.querySelector("details summary") as HTMLElement;
+    await act(async () => reloadDetails.click());
+    const secondRender = document.querySelector('[aria-label="Last turn debrief"]')?.textContent ?? "";
+    expect(secondRender).not.toContain("enemy-1");
+    await act(async () => reloaded.unmount());
+  });
+
   it("renders the proven T4 recovery as before, player phase, and enemy response", async () => {
     const step = (state: ReturnType<typeof createNewCampaign>, orders: Parameters<typeof resolveTurn>[1]) => {
       const player = resolveTurn(state, orders);
