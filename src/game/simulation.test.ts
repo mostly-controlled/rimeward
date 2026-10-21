@@ -243,45 +243,6 @@ describe("campaign simulation", () => {
     expect(adaptiveStyle(holdsOnly)).toBe("UNSET");
   });
 
-  it("responds to reachable repeated corridors through the complete turn pipeline", () => {
-    type EnemyAction = { squadId: string; kind: "MOVE" | "ATTACK" | "HOLD"; target?: SectorId; from: SectorId; to: SectorId };
-    const play = (corridor: readonly [SectorId, SectorId, SectorId, SectorId, SectorId, SectorId], committed: boolean) => {
-      let state = createNewCampaign(4294840881);
-      const actions: EnemyAction[] = [];
-      for (const target of corridor) {
-        const order = { squadId: "squad-1", type: "move" as const, target };
-        const playerState = committed ? state : { ...state, adaptiveHistory: [] };
-        expect(() => validateOrders(playerState, [order])).not.toThrow();
-        const player = resolveTurn(playerState, [order]);
-        const combat = resolveCombat(player.nextState, player.events);
-        const enemy = resolveEnemyTurn(combat.nextState);
-        actions.push(...enemy.events.map((event): EnemyAction => ({ squadId: event.squadId, kind: event.type === "move" ? "MOVE" : event.type === "attack" ? "ATTACK" : "HOLD", target: event.target, from: event.from, to: event.to })).sort((a, b) => a.squadId.localeCompare(b.squadId)));
-        state = enemy.nextState;
-      }
-      return { state, actions };
-    };
-    const corridor = ["sector-1", "sector-5", "sector-1", "sector-5", "sector-1", "sector-5"] as const;
-    const repeated = play(corridor, true);
-    const empty = play(corridor, false);
-    const actualPhase = resolveEnemyTurn(repeated.state);
-    const emptyPhase = resolveEnemyTurn(empty.state);
-    const phaseTrace = (events: typeof actualPhase.events): EnemyAction[] => events.map((event): EnemyAction => ({ squadId: event.squadId, kind: event.type === "move" ? "MOVE" : event.type === "attack" ? "ATTACK" : "HOLD", target: event.target, from: event.from, to: event.to })).sort((a, b) => a.squadId.localeCompare(b.squadId));
-    expect(repeated.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
-    expect(empty.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
-    expect(repeated.state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe(empty.state.squads.find((squad) => squad.id === "squad-1")?.sector);
-    expect(phaseTrace(emptyPhase.events)).toEqual(phaseTrace(actualPhase.events));
-    expect(repeated.actions).toHaveLength(18);
-    expect(repeated.actions.every((action) => ["MOVE", "ATTACK", "HOLD"].includes(action.kind))).toBe(true);
-    expect(repeated.actions.every((action) => action.from && action.to && action.squadId.startsWith("enemy-"))).toBe(true);
-    expect(empty.actions).toHaveLength(18);
-    expect(repeated.actions).not.toEqual(empty.actions);
-    for (let offset = 0; offset < repeated.actions.length; offset += 3) {
-      const phase = repeated.actions.slice(offset, offset + 3);
-      expect(phase).toEqual([...phase].sort((a, b) => a.squadId.localeCompare(b.squadId)));
-    }
-
-  });
-
   it("keeps a defensive personality committed across three sequential completed turns", () => {
     const base = createNewCampaign(7);
     let state: GameState = {
@@ -4246,5 +4207,61 @@ describe("campaign simulation", () => {
     expect(state.squads.map((squad) => squad.strength)).toEqual([5, 5, 9, 8, 8]);
     expect(recoveries).toBe(2);
     expect(state.enemySquads.every((squad) => squad.strength <= 0)).toBe(true);
+  });
+
+  it("ablates adaptive history only after T3 combat on 4132161419", () => {
+    let state = createNewCampaign(4132161419);
+    const route: Order[][] = [
+      [
+        { squadId: "squad-1", type: "move", target: "sector-1" },
+        { squadId: "squad-2", type: "move", target: "sector-11" },
+        { squadId: "squad-3", type: "hold" },
+        { squadId: "squad-4", type: "hold" },
+        { squadId: "squad-5", type: "hold" },
+      ],
+      [
+        { squadId: "squad-1", type: "move", target: "sector-5" },
+        { squadId: "squad-2", type: "attack", target: "sector-10" },
+        { squadId: "squad-3", type: "hold" },
+        { squadId: "squad-4", type: "hold" },
+        { squadId: "squad-5", type: "hold" },
+      ],
+      [
+        { squadId: "squad-1", type: "hold" },
+        { squadId: "squad-2", type: "move", target: "sector-7" },
+        { squadId: "squad-3", type: "hold" },
+        { squadId: "squad-4", type: "hold" },
+        { squadId: "squad-5", type: "hold" },
+      ],
+    ];
+    for (const [index, orders] of route.entries()) {
+      const player = resolveTurn(state, orders);
+      expect(player.events).toHaveLength(5);
+      const combat = resolveCombat(player.nextState, player.events);
+      state = combat.nextState;
+      if (index < route.length - 1) state = resolveEnemyTurn(state).nextState;
+    }
+    const snapshot = state;
+    expect(snapshot.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 9 });
+    expect(snapshot.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 7 });
+    expect(snapshot.enemySquads.find((squad) => squad.id === "enemy-1")).toMatchObject({ sector: "sector-6", strength: 4 });
+    expect(snapshot.enemySquads.find((squad) => squad.id === "enemy-2")).toMatchObject({ sector: "sector-4", strength: 9 });
+    expect(adaptiveStyle(snapshot)).toBe("DEFENSIVE");
+    const tuple = (intents: ReturnType<typeof decideEnemyIntents>) =>
+      intents.map((intent) => ({ squadId: intent.squadId, kind: intent.kind, from: intent.from, to: intent.to, target: intent.target }))
+        .sort((left, right) => left.squadId.localeCompare(right.squadId));
+    const actual = tuple(decideEnemyIntents(snapshot));
+    const empty = tuple(decideEnemyIntents({ ...snapshot, adaptiveHistory: [] }));
+    expect(actual).toEqual([
+      { squadId: "enemy-1", kind: "attack", from: "sector-6", to: "sector-6", target: "sector-7" },
+      { squadId: "enemy-2", kind: "attack", from: "sector-4", to: "sector-4", target: "sector-5" },
+    ]);
+    expect(empty).toEqual([
+      { squadId: "enemy-1", kind: "attack", from: "sector-6", to: "sector-6", target: "sector-5" },
+      { squadId: "enemy-2", kind: "attack", from: "sector-4", to: "sector-4", target: "sector-5" },
+    ]);
+    expect(actual).not.toEqual(empty);
+    const resolved = resolveEnemyTurn(snapshot);
+    expect(resolved.events.filter((event) => event.type === "attack").map((event) => event.target)).toEqual(expect.arrayContaining(["sector-7", "sector-5"]));
   });
 });
