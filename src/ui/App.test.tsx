@@ -2422,7 +2422,9 @@ describe("Editable turn plan", () => {
     await target("Whiteplain");
     await click(execute());
     expect(document.querySelector('.debrief-panel [aria-live="polite"]')?.textContent).toContain("WHAT CHANGED");
-    expect(document.querySelector(".map")?.getAttribute("class")).toContain("map-feedback");
+    expect(document.querySelector('[aria-label="Resolved actions for turn 1"]')).toBeTruthy();
+    expect(document.querySelector(".resolved-route")).toBeTruthy();
+    expect(document.querySelector(".resolved-route")?.getAttribute("class")).toContain("resolved-move");
     expect(document.querySelector("style")?.textContent).toContain("prefers-reduced-motion");
     await act(async () => root.unmount());
   });

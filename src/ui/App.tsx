@@ -82,6 +82,15 @@ export const battleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captur
 export const enemyBattleOutcomeLabel = (report: Pick<BattleReport, "winner" | "captured">) =>
   report.captured ? "captured" : report.winner === "player" ? "repelled; sector retained" : report.winner === "enemy" ? "enemy won; sector retained" : "held; sector retained";
 export const occupationLabel = (report: Pick<BattleReport, "captured" | "relayControlled">) => report.captured ? "occupation: captured" : report.relayControlled ? "occupation: sector held" : "occupation: no change";
+const inferReportPhase = (report: BattleReport, seed: number): ReportEntry["phase"] => {
+  const seeded = createNewCampaign(seed);
+  const playerIds = new Set(seeded.squads.map((unit) => unit.id));
+  const enemyIds = new Set(seeded.enemySquads.map((unit) => unit.id));
+  const ids = report.attackers.map((unit) => unit.squadId);
+  if (ids.length && ids.every((id) => enemyIds.has(id))) return "enemy";
+  if (ids.length && ids.every((id) => playerIds.has(id))) return "player";
+  return "unknown";
+};
 const squadLabel = (squad: { class: string; id: string }) =>
   `${squad.class} ${squad.id.replace(/^squad-/, "#")}`;
 const pos: Record<string, [number, number]> = {
@@ -115,7 +124,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const [reports, setReports] = useState<BattleReport[]>(
     () => loaded?.reports ?? [],
   );
-  const [reportEntries, setReportEntries] = useState<ReportEntry[]>(() => (loaded?.reports ?? []).map((report) => ({ ...report, phase: "unknown" })));
+  const [reportEntries, setReportEntries] = useState<ReportEntry[]>(() => (loaded?.reports ?? []).map((report) => ({ ...report, phase: inferReportPhase(report, loaded?.game.seed ?? SEED) })));
   const loadedReplaySupported = !!loaded && loaded.rulesVersion === REPLAY_RULES_VERSION && loaded.journalVersion === JOURNAL_VERSION;
   const loadedReplayMetadata = !!loaded && (loaded.journal !== undefined || loaded.rulesVersion !== undefined || loaded.journalVersion !== undefined);
   const [loadedReplayUnsupported, setLoadedReplayUnsupported] = useState(() => loadedReplayMetadata && !loadedReplaySupported);
@@ -343,9 +352,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         ...combat.reports.map((report) => ({ ...report, phase: "player" as const })),
         ...enemy.reports.map((report) => ({ ...report, phase: "enemy" as const })),
       ];
-      const visibleFeedback = phaseReports.length
-        ? `Resolved ${phaseReports.length} visible battle${phaseReports.length === 1 ? "" : "s"}: ${phaseReports.map((report) => name(report.target)).join(", ")}.`
-        : "Turn resolved: no visible battles.";
       const resourceDelta = (key: "metal" | "energy" | "intelligence") => enemy.nextState.resources[key] - before.resources[key];
       const playerLines = orders.map((order) => { const unit = before.squads.find((item) => item.id === order.squadId); const playerAfter = combat.nextState.squads.find((item) => item.id === order.squadId); const after = enemy.nextState.squads.find((item) => item.id === order.squadId); if (!unit) return null; const playerStrength = playerAfter?.strength ?? 0; const afterStrength = after?.strength ?? 0; const playerFatigue = playerAfter?.fatigue ?? unit.fatigue; const afterFatigue = after?.fatigue ?? playerFatigue; const cost = order.type === "attack" ? "cost 2 metal + 3 energy" : order.type === "recover" ? `cost ${recoveryMetalCost(before)} metal + 2 energy` : "free"; const target = order.target ? enemy.nextState.sectors.find((sector) => sector.id === order.target) : enemy.nextState.sectors.find((sector) => sector.id === (after?.sector ?? unit.sector)); const control = target && before.sectors.find((sector) => sector.id === target.id)?.owner !== target.owner ? `; control ${target.name}: ${target.owner}` : ""; if (order.type === "hold" && afterStrength === unit.strength && afterFatigue === unit.fatigue && !control) return null; return squadLabel(unit) + " at " + name(unit.sector) + ": " + order.type.toUpperCase() + " (" + cost + ") — before → your orders → enemy response; STR " + unit.strength + "→" + playerStrength + "→" + afterStrength + ", FTG " + unit.fatigue + "→" + playerFatigue + "→" + afterFatigue + (afterStrength <= 0 ? " (DEAD)" : "") + control; }).filter(Boolean) as string[];
       const playerBattleLines = combat.reports.map((report) => name(report.target) + ": engagement outcome: " + battleOutcomeLabel(report) + "; " + occupationLabel(report) + "; Ward casualties −" + report.playerCasualties + ", hostile casualties −" + report.enemyCasualties);
@@ -438,7 +444,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         setReportEntries(reportEntriesNext);
       }
       setEvents(nextEvents);
-      setActionFeedback(visibleFeedback);
       const nextJournal = journal ? [...journal, { type: "orders" as const, orders: orders.map((order) => ({ ...order })) }] : undefined;
       setJournal(nextJournal);
       const warning = persist(enemy.nextState, nextEvents, nextReports, nextJournal);
@@ -554,7 +559,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     );
   return (
     <main className="command-shell">
-      <style>{`\n        .map-feedback { animation: map-feedback .45s ease-out; }\n        .debrief-panel[aria-label="Last turn debrief"] { animation: debrief-arrival .35s ease-out; }\n        .map:focus-visible, button:focus-visible, summary:focus-visible, [role="button"]:focus-visible { outline: 2px solid #f0dda1; outline-offset: 3px; }\n        @keyframes map-feedback { from { filter: brightness(1.35); } to { filter: brightness(1); } }\n        @keyframes debrief-arrival { from { transform: translateY(-4px); opacity: .7; } to { transform: translateY(0); opacity: 1; } }\n        @media (prefers-reduced-motion: reduce) { .map-feedback, .debrief-panel[aria-label="Last turn debrief"] { animation: none; } }\n      `}</style>
+      <style>{`\n        .debrief-panel[aria-label="Last turn debrief"] { animation: debrief-arrival .35s ease-out; }\n        .map:focus-visible, button:focus-visible, summary:focus-visible, [role="button"]:focus-visible { outline: 2px solid #f0dda1; outline-offset: 3px; }\n        @keyframes debrief-arrival { from { transform: translateY(-4px); opacity: .7; } to { transform: translateY(0); opacity: 1; } }\n        @media (prefers-reduced-motion: reduce) { .debrief-panel[aria-label="Last turn debrief"] { animation: none; } }\n      `}</style>
       <header className="topbar">
         <div>
           <p className="eyebrow">RIMEWARD // NORTHERN FRONTIER</p>
@@ -779,7 +784,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 <span className="status-dot">LIVE FEED</span>
               </div>
               <svg
-                className={`map ${latestDebrief ? "map-feedback" : ""}`}
+                className="map"
                 viewBox="0 0 780 440"
                 role="img"
                 aria-label="Tactical sector map"
@@ -1007,12 +1012,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     <span className="muted">RESOLVED</span>
                   </div>
                   {reportEntries.map((report, index) => {
-                    const attackerFaction = report.phase === "enemy" ? "HOSTILE" : "WARD";
-                    const defenderFaction = report.phase === "enemy" ? "WARD" : "HOSTILE";
-                    const attackerLosses = report.phase === "enemy" ? report.enemyCasualties : report.playerCasualties;
-                    const defenderLosses = report.phase === "enemy" ? report.playerCasualties : report.enemyCasualties;
+                    const attackerFaction = report.phase === "enemy" ? "HOSTILE" : report.phase === "player" ? "WARD" : "UNKNOWN";
+                    const defenderFaction = report.phase === "enemy" ? "WARD" : report.phase === "player" ? "HOSTILE" : "UNKNOWN";
+                    const phaseLabel = report.phase === "enemy" ? "ENEMY PHASE" : report.phase === "player" ? "PLAYER PHASE" : "PHASE UNKNOWN";
                     return <article key={`${report.target}-${report.winner}-${index}`}>
-                      <h3>{game.sectors.find((s) => s.id === report.target)?.name} · {report.phase === "enemy" ? "ENEMY PHASE" : "PLAYER PHASE"}</h3>
+                      <h3>{game.sectors.find((s) => s.id === report.target)?.name} · {phaseLabel}</h3>
                       <p><strong>ENGAGEMENT OUTCOME:</strong> {report.phase === "enemy" ? enemyBattleOutcomeLabel(report) : battleOutcomeLabel(report)}</p>
                       <p><strong>OCCUPATION:</strong> {occupationLabel(report)}</p>
                       <p>{attackerFaction} ATTACKERS{" "}
@@ -1033,7 +1037,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                           .join(", ") || "NONE"}
                       </p>
                       <p>
-                        CASUALTIES: Ward −{report.playerCasualties} · hostile −{report.enemyCasualties} · POSTCOMBAT SURVIVORS: {attackerFaction} {Math.max(0, report.attackers.reduce((total, unit) => total + unit.units, 0) - attackerLosses)} · {defenderFaction} {Math.max(0, report.defenders.reduce((total, unit) => total + unit.units, 0) - defenderLosses)}
+                        CASUALTIES: Ward −{report.playerCasualties} · hostile −{report.enemyCasualties}
                       </p>
                       <p>
                         Terrain {report.terrain} ×{report.terrainMultiplier} ·
@@ -1046,7 +1050,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                           .join(" · ") || "No class counter"}{" "}
                         · {report.casualties.length} casualty entries
                       </p>
-                      <p><strong>SURVIVORS:</strong> Ward {report.attackers.reduce((sum, unit) => sum + unit.units, 0) - report.playerCasualties}; hostile {report.defenders.reduce((sum, unit) => sum + unit.units, 0) - report.enemyCasualties}</p>
+                      <p><strong>SURVIVORS:</strong> {attackerFaction} {report.attackers.reduce((sum, unit) => sum + unit.units, 0)}; {defenderFaction} {report.defenders.reduce((sum, unit) => sum + unit.units, 0)}</p>
                       <p>
                         {report.retreat.length
                           ? `Retreat: ${report.retreat.map((item) => item.to).join(", ")}`
@@ -1096,16 +1100,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   {game.sectors.find((s) => s.id === squad.sector)?.name} ·
                   choose an action
                 </p>
-                {selectedAction === "attack" && (
-                  <div className="legal-targets" aria-label="Named legal attack targets">
-                    <h3>LEGAL TARGETS</h3>
-                    {legalTargets.length ? legalTargets.map((target) => (
-                      <button type="button" className="legal-target" key={target.id} onClick={() => setOrder("attack", target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder("attack", target.id); } }}>
-                        ATTACK {target.name}
-                      </button>
-                    )) : <p className="muted">No legal attack targets in range.</p>}
-                  </div>
-                )}
                 <div className="order-buttons">
                   {(["hold", "recover", "move", "attack"] as OrderType[]).map(
                     (type) => (
