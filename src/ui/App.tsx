@@ -267,6 +267,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
       status: enemyHq?.owner === "player" ? "CAPTURED" : "REQUIRED",
     },
   ];
+  const requiredRelayLabels = campaignObjectives
+    .filter((objective) => objective.key !== "enemy-hq" && objective.status === "REQUIRED")
+    .map((objective) => objective.label);
   const setOrder = (type: OrderType, target?: SectorId) => {
     if (!selectedId || game.terminal !== "active") return;
     setError("");
@@ -521,7 +524,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             <h3>GOAL</h3>
             <p>
               {game.terminal === "active"
-                ? "Hold all relays AND enemy HQ; defend Frostgate. Relays: Northstar, Ashenfall. HQ: Ashenfall."
+                ? `Hold all relays AND enemy HQ; defend ${playerHq?.name ?? game.hq.player}. Relays: ${requiredRelayLabels.join(", ") || "none"}. HQ: ${enemyHq?.name ?? game.hq.enemy}.`
                 : game.terminal === "victory"
                   ? "The frontier is secure."
                   : "The campaign has ended."}
@@ -543,19 +546,16 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       ? recoverySupplied
                         ? "no enemy target is reachable; use HOLD or select another squad."
                         : "no enemy target is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."
-                      : recoverySupplied
-                        ? "no unoccupied friendly destination is reachable; use HOLD or RECOVER, or select ATTACK when an enemy-held destination is legal."
-                        : "no unoccupied friendly destination is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."}
+                      : "objectives may not be reachable this turn"}
                 </li>
                 <li>
-                  <strong>{orders.length ? `QUEUED (${orders.length})` : "NOT QUEUED"}</strong> — {unassignedSquads.length === 0
-                    ? "All squads assigned. EXECUTE TURN resolves your orders, then enemy."
-                    : `${selectedOrder ? `${selectedOrder.type.toUpperCase()} is queued for the selected squad. ` : ""}${unassignedSquads.length} unassigned squad${unassignedSquads.length === 1 ? "" : "s"}; choose another or HOLD UNASSIGNED to avoid fatigue.`}
+                  <strong>{orders.length ? `QUEUED (${orders.length}) — NOT EXECUTED` : "NOT QUEUED"}</strong> — {`${selectedOrder ? `${selectedOrder.type.toUpperCase()} is queued for the selected squad. ` : ""}${unassignedSquads.length} unassigned${unassignedSquads.length === 1 ? " squad" : " squads"}; ${unassignedSquads.length ? "choose another or HOLD UNASSIGNED to avoid fatigue. " : ""}EXECUTE TURN resolves assigned orders without requiring all squads.`}
                 </li>
               </ol>
             ) : (
               <p className="muted">Terminal state: {game.terminal.toUpperCase()}. The campaign is over; use RESTART or NEW SEED above to replay or begin a new campaign. No further planning is available.</p>
             )}
+            <p className="muted">Selecting MOVE/ATTACK does not queue; choose highlighted target.</p>
             <p className="muted">STR = strength. FTG = fatigue. HOLD is free and lowers FTG by 1; unassigned squads gain 1 fatigue. Supplied RECOVER costs the shown metal + 2 energy, restores strength, and lowers fatigue; it is unavailable when unsupplied.</p>
           </section>
           <section className="resource-strip">
@@ -1043,7 +1043,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   </p>
                 )}
                 <section className="queued-orders" aria-label="Queued orders">
-                  <h3>QUEUED ORDERS</h3>
+                  <h3>QUEUED ({orders.length}) — NOT EXECUTED</h3>
                   <p className="unassigned-count">
                     UNASSIGNED LIVING SQUADS: {unassignedSquads.length}
                   </p>

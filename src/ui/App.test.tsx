@@ -323,7 +323,7 @@ describe("App interactions", () => {
     expect(guide.compareDocumentPosition(resources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(guide.compareDocumentPosition(objectives) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(guide.textContent).toContain("Hold all relays AND enemy HQ; defend Frostgate.");
-    expect(guide.textContent).toContain("Relays: Northstar, Ashenfall. HQ: Ashenfall");
+    expect(guide.textContent).toContain("Relays: Northstar, Ashenfall, Vesper. HQ: Ashenfall");
     await act(async () => root.unmount());
   });
 
@@ -333,7 +333,8 @@ describe("App interactions", () => {
     const hold = [...document.querySelectorAll("button")].find((button) => button.textContent === "HOLD UNASSIGNED") as HTMLButtonElement;
     await act(async () => hold.click());
     const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
-    expect(guide).toContain("All squads assigned. EXECUTE TURN resolves your orders, then enemy.");
+    expect(guide).toContain("0 unassigned squads; EXECUTE TURN resolves assigned orders without requiring all squads.");
+    expect(guide).not.toContain("HOLD UNASSIGNED");
     expect(guide).not.toContain("HOLD ALL");
     expect(guide).not.toContain("MOVE is queued for the selected squad");
     await act(async () => root.unmount());
