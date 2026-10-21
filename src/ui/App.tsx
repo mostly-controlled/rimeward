@@ -222,6 +222,22 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   );
   const canHoldUnassigned =
     game.terminal === "active" && unassignedSquads.length > 0;
+  const nextUnassigned = (() => {
+    if (!unassignedSquads.length) return undefined;
+    const selectedIndex = game.squads.findIndex((unit) => unit.id === selectedId);
+    const start = selectedIndex < 0 ? 0 : (selectedIndex + 1) % game.squads.length;
+    for (let offset = 0; offset < game.squads.length; offset += 1) {
+      const candidate = game.squads[(start + offset) % game.squads.length];
+      if (candidate && unassignedSquads.some((unit) => unit.id === candidate.id)) return candidate;
+    }
+    return undefined;
+  })();
+  const canSelectNextUnassigned = game.terminal === "active" && Boolean(nextUnassigned);
+  const selectNextUnassigned = () => {
+    if (!canSelectNextUnassigned || !nextUnassigned) return;
+    setSelectedSquad(nextUnassigned.id);
+    setError("");
+  };
   const holdUnassigned = () => {
     if (!canHoldUnassigned) return;
     setError("");
@@ -1048,6 +1064,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     onClick={holdUnassigned}
                   >
                     HOLD UNASSIGNED
+                  </button>
+                  <button
+                    disabled={!canSelectNextUnassigned}
+                    onClick={selectNextUnassigned}
+                  >
+                    NEXT UNASSIGNED
                   </button>
                   {game.terminal !== "active" ? (
                     <p className="muted">
