@@ -4,11 +4,11 @@
 .research-effects{display:flex;gap:14px;flex-wrap:wrap;padding:10px 14px;margin-top:10px;color:#b8cfc8;font-size:.68rem}.research-effects span{border-left:2px solid #6f9b91;padding-left:8px}.research-effects b{color:#e4d28f}.intel{padding:10px 14px;margin-top:10px;color:#b8e2d4;font-size:.68rem;letter-spacing:.08em}.intel b{color:#e4d28f}.income{display:flex;gap:14px;flex-wrap:wrap;padding:10px 14px;margin-top:10px;color:#a9c4bc;font-size:.68rem}.income b{color:#e4d28f}.income strong{margin-left:auto;color:#b8e2d4}.terminal{padding:18px;margin-bottom:14px;border-color:#d8c37d}.terminal h2{margin:0 0 6px}.terminal button{margin-right:16px}.research{border-top:1px solid #294148;margin-top:16px;padding-top:12px}.research h3{font-size:.68rem;letter-spacing:.12em;margin:0 0 8px;color:#86b1ae}.research button{display:grid;grid-template-columns:1fr auto;gap:2px;width:100%;text-align:left;border-top:1px solid #294148;font-size:.68rem}.research button small{grid-column:1 / -1;color:#708d89;font-size:.58rem}.research button:disabled{opacity:.45;cursor:not-allowed}
 .planned-arrow{stroke:#071114;stroke-width:.8px}.planned-arrow-move{fill:#f0dda1}.planned-arrow-attack{fill:#e39b88}
 /* Keep planned-route labels readable when the 780px SVG scales down on narrow screens. */
-.legend{align-items:center}
-.plan-key{display:inline-flex;align-items:center;gap:6px;color:#c8c0a0;white-space:nowrap}
+.legend{align-items:center;flex-wrap:wrap;min-width:0}
+.plan-key{display:inline-flex;align-items:center;gap:6px;color:#c8c0a0;white-space:normal;min-width:0}
 .plan-line{display:inline-block;width:20px;border-top:3px dashed #f0dda1}
 .plan-line.attack{border-color:#e39b88}
-.plan-entry{color:#d7e3dd}
+.plan-entry{color:#d7e3dd;flex:1 1 220px}
 .ward-strength-badge rect{fill:#071114;stroke:#b8e2d4;stroke-width:1.5}
 .ward-strength-badge text{fill:#f4fff8;font-size:16px;font-weight:900;letter-spacing:0}
 .ward-legend{color:#dff5e9}
