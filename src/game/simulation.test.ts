@@ -231,7 +231,34 @@ describe("campaign simulation", () => {
 
     const repeated = play(["sector-1", "sector-5", "sector-1", "sector-5"]);
     const changed = play(["sector-1", "sector-5", "sector-4", "sector-5"]);
-    expect(repeated).not.toEqual(changed);
+    expect(repeated).toEqual([
+      "enemy-1:sector-6->sector-6",
+      "enemy-2:sector-8->sector-3",
+      "enemy-3:sector-10->sector-9",
+      "enemy-1:sector-6->sector-6",
+      "enemy-2:sector-3->sector-3",
+      "enemy-3:sector-9->sector-9",
+      "enemy-1:sector-6->sector-6",
+      "enemy-2:sector-3->sector-3",
+      "enemy-3:sector-9->sector-9",
+      "enemy-1:sector-6->sector-6",
+      "enemy-2:sector-3->sector-3",
+      "enemy-3:sector-9->sector-9",
+    ]);
+    expect(changed).toEqual([
+      "enemy-1:sector-6->sector-6",
+      "enemy-2:sector-8->sector-3",
+      "enemy-3:sector-10->sector-9",
+      "enemy-1:sector-6->sector-6",
+      "enemy-2:sector-3->sector-3",
+      "enemy-3:sector-9->sector-9",
+      "enemy-1:sector-6->sector-6",
+      "enemy-2:sector-3->sector-3",
+      "enemy-3:sector-9->sector-9",
+      "enemy-1:sector-6->sector-6",
+      "enemy-2:sector-3->sector-4",
+      "enemy-3:sector-9->sector-9",
+    ]);
   });
 
   it("keeps a defensive personality committed across three sequential completed turns", () => {
