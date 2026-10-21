@@ -51,7 +51,7 @@ const queuedCost = (orders: Order[], state: GameState) =>
   );
 
 const SEED = 42024;
-const SAVE_SUCCESS = "Campaign saved locally; queued orders are not saved.";
+const SAVE_SUCCESS = "Completed turns and research saved; queued orders are not saved.";
 const researchEffect = (branch: ResearchBranch, level: number) =>
   ({
     Logistics: [
@@ -422,6 +422,10 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
     setError("");
     const warning = persist(nextGame, [], [], []);
   };
+  const continueCampaign = () => {
+    setSaveStatus("CONTINUING SAVED CAMPAIGN — " + SAVE_SUCCESS);
+    setError("");
+  };
   if (!game.squads.length)
     return (
       <main className="command-shell">
@@ -436,9 +440,20 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             </p>
           )}
           <button onClick={verify}>VERIFY REPLAY</button>
+          {loaded && <button onClick={continueCampaign}>CONTINUE</button>}
           <button className="primary" onClick={reset}>
-            NEW CAMPAIGN · SEED {game.seed}
+            RESTART / RESET · SEED {game.seed}
           </button>
+          <button onClick={() => {
+            const nextGame = createNewCampaign(SEED);
+            setGame(nextGame);
+            setEvents([]);
+            setReports([]);
+            setJournal([]);
+            setOrders([]);
+            setError("");
+            persist(nextGame, [], [], []);
+          }}>NEW CAMPAIGN</button>
         </section>
       </main>
     );
@@ -524,6 +539,8 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             </p>
           )}
           <button onClick={verify}>VERIFY REPLAY</button>
+          {loaded && <button onClick={continueCampaign}>CONTINUE</button>}
+          <button onClick={reset}>RESET</button>
           {game.terminal !== "active" && (
             <section className="terminal card">
               <p className="eyebrow">CAMPAIGN TERMINAL</p>
@@ -536,7 +553,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               </h2>
               <p>{game.terminalReason}</p>
               <button className="primary" onClick={reset}>
-                RESTART · SEED {game.seed}
+                RESTART / RESET · SEED {game.seed}
               </button>
               <button
                 onClick={() => {
@@ -551,7 +568,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   persist(nextGame, [], [], []);
                 }}
               >
-                NEW SEED
+                NEW CAMPAIGN · NEW SEED
               </button>
             </section>
           )}
