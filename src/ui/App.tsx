@@ -769,11 +769,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               <span className="muted">LAST TURN</span>
             </div>
             <div aria-live="polite" aria-atomic="true">
-              {actionFeedback && <p className="action-feedback" role="status">{actionFeedback}</p>}
+
               {latestDebrief ? (() => { const lines = displayRailMessage(latestDebrief.message, game.researchLevels.Signals).split("\n"); const priority = ["PLAYER RESULT:", "ENEMY RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:"]; const next = lines.find((line) => line.startsWith("NEXT:")); const summary = [...priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 4), next].filter(Boolean) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
             </div>
           </section>
-          <p className="action-feedback" role="status" aria-live="polite">{actionFeedback}</p>
+          {actionFeedback && <p className="action-feedback" role="status" aria-live="polite">{actionFeedback}</p>}
           <div className="battle-layout">
             <section className="map-panel card">
               <div className="panel-heading">
@@ -872,7 +872,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     })}
                 </g>
                 {resolvedFeedback?.turn === game.turn - 1 && (
-                  <g className="resolved-feedback" aria-label={`Resolved actions for turn ${resolvedFeedback.turn}`}>
+                  <g className="resolved-feedback" aria-label={`Resolved actions for turn ${resolvedFeedback.turn}`} key={resolvedFeedback.turn}>
                     {resolvedFeedback.routes.map((route, index) => <line key={`resolved-route-${index}`} className={`resolved-route resolved-${route.type}`} x1={pos[route.from][0]} y1={pos[route.from][1]} x2={pos[route.to][0]} y2={pos[route.to][1]} />)}
                     {resolvedFeedback.casualties.map((marker, index) => <g key={`casualty-${index}`} className={`casualty-marker casualty-${marker.side}`} transform={`translate(${pos[marker.target][0]},${pos[marker.target][1]})`} aria-label={`${marker.side} casualty at ${sectorName(marker.target)}`}><circle r="10" /><text textAnchor="middle" y="4">×</text></g>)}
                   </g>
@@ -1035,9 +1035,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                               `${unit.class} ${unit.units}/${unit.strength}`,
                           )
                           .join(", ") || "NONE"}
-                      </p>
-                      <p>
-                        CASUALTIES: Ward −{report.playerCasualties} · hostile −{report.enemyCasualties}
                       </p>
                       <p>
                         Terrain {report.terrain} ×{report.terrainMultiplier} ·

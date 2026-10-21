@@ -24,6 +24,7 @@ const storage = globalThis as typeof globalThis & {
 describe("App interactions", () => {
   it("preserves the seeded Raider move/attack reports with faction-correct enemy labels", async () => {
     const root = await renderApp(createNewCampaign(58386330));
+    expect(document.querySelector(".action-feedback")).toBeNull();
     const named = (label: string) => [...document.querySelectorAll("button")].find((button) => button.textContent?.includes(label)) as HTMLButtonElement;
     const execute = async () => await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
 
@@ -31,6 +32,8 @@ describe("App interactions", () => {
     await act(async () => named("Whiteplain").click());
     await execute();
     expect(document.querySelector(".turn-readout")?.textContent).toContain("02");
+    expect(document.querySelector(".action-feedback")?.textContent).toBeTruthy();
+    expect(document.querySelector('[aria-label="Resolved actions for turn 1"]')).toBeTruthy();
 
     await act(async () => named("ATTACK").click());
     const attackTarget = named("Cairnwatch");
@@ -39,9 +42,11 @@ describe("App interactions", () => {
     await execute();
     const report = document.querySelector(".reports")?.textContent ?? "";
     expect(report).toContain("Cairnwatch");
-    expect(report).toMatch(/WARD.*9\/10|Ward.*9\/10/s);
-    expect(report).toMatch(/HOSTILE.*5\/8|hostile.*5\/8/s);
-    expect(report).toMatch(/survivor|SURVIVOR/);
+    expect(report).toContain("WARD DEFENDERS Sentinel 9/10");
+    expect(report).toContain("HOSTILE ATTACKERS Artillery 5/8");
+    expect(report).toContain("SURVIVORS: HOSTILE 5; WARD 9");
+    expect(document.querySelector('[aria-label="Resolved actions for turn 1"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Resolved actions for turn 2"]')).toBeTruthy();
     await act(async () => root.unmount());
   });
 
