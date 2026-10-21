@@ -546,7 +546,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                       ? recoverySupplied
                         ? "no enemy target is reachable; use HOLD or select another squad."
                         : "no enemy target is reachable; use HOLD or change squad (RECOVER is unavailable outside supplied territory)."
-                      : "objectives may not be reachable this turn"}
+                      : "no unoccupied friendly destination is reachable; use HOLD or RECOVER, or select ATTACK when an enemy-held destination is legal."}
                 </li>
                 <li>
                   <strong>{orders.length ? `QUEUED (${orders.length}) — NOT EXECUTED` : "NOT QUEUED"}</strong> — {`${selectedOrder ? `${selectedOrder.type.toUpperCase()} is queued for the selected squad. ` : ""}${unassignedSquads.length} unassigned${unassignedSquads.length === 1 ? " squad" : " squads"}; ${unassignedSquads.length ? "choose another or HOLD UNASSIGNED to avoid fatigue. " : ""}EXECUTE TURN resolves assigned orders without requiring all squads.`}
@@ -555,7 +555,9 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             ) : (
               <p className="muted">Terminal state: {game.terminal.toUpperCase()}. The campaign is over; use RESTART or NEW SEED above to replay or begin a new campaign. No further planning is available.</p>
             )}
-            <p className="muted">Selecting MOVE/ATTACK does not queue; choose highlighted target.</p>
+            {game.terminal === "active" && (
+              <p className="muted">Selecting MOVE/ATTACK does not queue; choose highlighted target.</p>
+            )}
             <p className="muted">STR = strength. FTG = fatigue. HOLD is free and lowers FTG by 1; unassigned squads gain 1 fatigue. Supplied RECOVER costs the shown metal + 2 energy, restores strength, and lowers fatigue; it is unavailable when unsupplied.</p>
           </section>
           <section className="resource-strip">

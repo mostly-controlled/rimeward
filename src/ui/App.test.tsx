@@ -983,6 +983,42 @@ describe("App interactions", () => {
     await act(async () => root.unmount());
   });
 
+  it("keeps an empty queue explicit and disables execute", async () => {
+    const root = await renderApp(createNewCampaign(42024));
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("No orders queued");
+    expect((document.querySelector(".execute") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
+
+  it("does not show a highlighted-target prompt after the campaign ends", async () => {
+    const root = await renderApp({ ...createNewCampaign(42024), terminal: "victory", terminalReason: "secured" });
+    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).toContain("Terminal state: VICTORY");
+    expect(guide).not.toContain("highlighted target");
+    await act(async () => root.unmount());
+  });
+
+  it("gives MOVE a usable fallback when no target is reachable", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await renderApp({
+      ...campaign,
+      sectors: campaign.sectors.map((sector) => sector.id === "sector-6" ? { ...sector, links: [] } : sector),
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-6" as const } : { ...unit, strength: 0 }),
+    });
+    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).toContain("no unoccupied friendly destination is reachable; use HOLD or RECOVER");
+    await act(async () => root.unmount());
+  });
+
+  it("omits owned relays from the required relay prompt", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await renderApp({ ...campaign, objectives: campaign.objectives.map((objective) => ({ ...objective, controlled: true })) });
+    const guide = document.querySelector('[aria-label="Turn guide"]')?.textContent ?? "";
+    expect(guide).toContain("Relays: none");
+    expect(guide).not.toContain("Relays: Northstar");
+    await act(async () => root.unmount());
+  });
+
   it("does not offer impossible next choices when the last squad is dead", async () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
