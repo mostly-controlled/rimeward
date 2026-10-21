@@ -596,6 +596,8 @@ const rememberedGuardTarget = (
     ? committedObservation(rememberedBucket)
     : undefined;
   if (!remembered) return undefined;
+  const destination = observationDestination(remembered);
+  const inverseCounterClass = counterClass[remembered.class];
   return targets.find(
     (target) => {
       if (!attackIsViable(state, enemy, target, excluded)) return false;
@@ -603,8 +605,8 @@ const rememberedGuardTarget = (
         (squad) => squad.sector === target && squad.strength > 0,
       );
       return (
-        target === observationDestination(remembered) ||
-        occupant?.class === remembered.class
+        (target === destination || occupant?.class === remembered.class) &&
+        !(target === destination && occupant?.class === inverseCounterClass)
       );
     },
   );
@@ -686,14 +688,6 @@ const intentForEnemy = (
     );
     return occupied && (sector?.owner === "player" || relay);
   });
-  const rememberedTarget = rememberedGuardTarget(
-    state,
-    enemy,
-    occupiedPlayerTargets.filter((target) => attackIsViable(state, enemy, target, excluded)),
-    excluded,
-  );
-  if (rememberedTarget)
-    return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: rememberedTarget };
   const occupiedPlayerTarget = choosePressureTarget(
     state,
     occupiedPlayerTargets.filter((target) =>
@@ -766,13 +760,17 @@ const intentForEnemy = (
       const squadSector = state.sectors.find((sector) => sector.id === squad.sector);
       return squadSector?.links.includes(enemy.sector);
     });
-  if (relayHasImmediateWardThreat && !occupiedPlayerTarget)
+  if (relayHasImmediateWardThreat && !occupiedPlayerTarget) {
+    const rememberedRelayTarget = rememberedGuardTarget(state, enemy, occupiedPlayerTargets.filter((target) => attackIsViable(state, enemy, target, excluded)), excluded);
+    if (rememberedRelayTarget)
+      return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: rememberedRelayTarget };
     return {
       squadId: enemy.id,
       kind: "hold",
       from: enemy.sector,
       to: enemy.sector,
     };
+  }
   const guardsRelay = state.objectives.some(
     (objective) => objective.sector === enemy.sector && !objective.controlled,
   );
@@ -818,13 +816,17 @@ const intentForEnemy = (
         supplied(state, sector.id),
     )
     .sort((a, b) => a.id.localeCompare(b.id))[0];
-  if (guardsRelay && !depot)
+  if (guardsRelay && !depot) {
+    const rememberedRelayTarget = rememberedGuardTarget(state, enemy, occupiedPlayerTargets.filter((target) => attackIsViable(state, enemy, target, excluded)), excluded);
+    if (rememberedRelayTarget)
+      return { squadId: enemy.id, kind: "attack", from: enemy.sector, to: enemy.sector, target: rememberedRelayTarget };
     return {
       squadId: enemy.id,
       kind: "hold",
       from: enemy.sector,
       to: enemy.sector,
     };
+  }
   if (depot) {
     const depotOccupied = state.squads.some(
       (squad) => squad.sector === depot.id && squad.strength > 0,
