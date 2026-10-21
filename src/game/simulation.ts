@@ -600,11 +600,14 @@ const rememberedGuardTarget = (
   return targets.find(
     (target) => {
       if (!attackIsViable(state, enemy, target, excluded)) return false;
-      const occupant = state.squads.find(
-        (squad) => squad.sector === target && squad.strength > 0,
-      );
       return (
-        target === destination || occupant?.class === remembered.class
+        target === destination ||
+        state.squads.some(
+          (squad) =>
+            squad.sector === target &&
+            squad.strength > 0 &&
+            squad.class === remembered.class,
+        )
       );
     },
   );
@@ -626,22 +629,6 @@ const intentForEnemy = (
     )
     .slice(-4);
   if (enemy.sector === state.hq.enemy) {
-    const hqCounterTarget = (current?.links ?? [])
-      .filter((target) =>
-        state.squads.some((squad) => squad.sector === target && squad.strength > 0),
-      )
-      .sort()[0];
-    if (
-      hqCounterTarget &&
-      attackIsViable(state, enemy, hqCounterTarget, excluded)
-    )
-      return {
-        squadId: enemy.id,
-        kind: "attack",
-        from: enemy.sector,
-        to: enemy.sector,
-        target: hqCounterTarget,
-      };
     const rememberedHqTarget = rememberedGuardTarget(
       state,
       enemy,
@@ -658,6 +645,22 @@ const intentForEnemy = (
         from: enemy.sector,
         to: enemy.sector,
         target: rememberedHqTarget,
+      };
+    const hqCounterTarget = (current?.links ?? [])
+      .filter((target) =>
+        state.squads.some((squad) => squad.sector === target && squad.strength > 0),
+      )
+      .sort()[0];
+    if (
+      hqCounterTarget &&
+      attackIsViable(state, enemy, hqCounterTarget, excluded)
+    )
+      return {
+        squadId: enemy.id,
+        kind: "attack",
+        from: enemy.sector,
+        to: enemy.sector,
+        target: hqCounterTarget,
       };
     return {
       squadId: enemy.id,
