@@ -94,6 +94,62 @@ const inferReportPhase = (report: BattleReport, seed: number): ReportEntry["phas
 };
 const squadLabel = (squad: { class: string; id: string }) =>
   `${squad.class} ${squad.id.replace(/^squad-/, "#")}`;
+const objectiveContext = (state: GameState, target: SectorId): string | null => {
+  const destination = state.sectors.find((sector) => sector.id === target);
+  if (!destination) return null;
+  const relay = state.objectives.find((objective) => objective.sector === target);
+  if (relay) {
+    return `OBJECTIVE: ${relay.controlled ? "secured" : "secure"} relay at ${destination.name}`;
+  }
+  if (target === state.hq.enemy) return `OBJECTIVE: capture enemy HQ at ${destination.name}`;
+  if (target === state.hq.player) return `HQ: defend Ward HQ at ${destination.name}`;
+
+  const adjacentRelay = state.objectives.find(
+    (objective) => !objective.controlled && destination.links.includes(objective.sector),
+  );
+  if (adjacentRelay) {
+    const relayName = state.sectors.find((sector) => sector.id === adjacentRelay.sector)?.name ?? adjacentRelay.sector;
+    return `APPROACH: secure relay at ${relayName}`;
+  }
+  if (state.hq.enemy !== target && destination.links.includes(state.hq.enemy)) {
+    const hqName = state.sectors.find((sector) => sector.id === state.hq.enemy)?.name ?? state.hq.enemy;
+    return `APPROACH: enemy HQ at ${hqName}`;
+  }
+  if (state.hq.player !== target && destination.links.includes(state.hq.player)) {
+    const hqName = state.sectors.find((sector) => sector.id === state.hq.player)?.name ?? state.hq.player;
+    return `APPROACH: defend Ward HQ at ${hqName}`;
+  }
+  return null;
+};
+const incomeContext = (state: GameState, target: SectorId): string => {
+  const currentIncome = calculateIncome(state);
+  const currentConnected = new Set(connectedOwnedSectors(state).map((sector) => sector.id));
+  const destination = state.sectors.find((sector) => sector.id === target);
+  if (!destination || destination.owner === "player") {
+    return "INCOME if held after enemy response: +0M +0E +0I · already owned; no new capture gain";
+  }
+  const projected = {
+    ...state,
+    sectors: state.sectors.map((sector) =>
+      sector.id === target ? { ...sector, owner: "player" as const } : sector,
+    ),
+  };
+  const projectedIncome = calculateIncome(projected);
+  const projectedConnected = new Set(connectedOwnedSectors(projected).map((sector) => sector.id));
+  const delta = {
+    metal: projectedIncome.metal - currentIncome.metal,
+    energy: projectedIncome.energy - currentIncome.energy,
+    intelligence: projectedIncome.intelligence - currentIncome.intelligence,
+  };
+  if (!projectedConnected.has(target)) {
+    return "INCOME if held after enemy response: +0M +0E +0I · unconnected";
+  }
+  const reconnected = [...projectedConnected].filter((id) => id !== target && !currentConnected.has(id));
+  const reconnection = reconnected.length
+    ? ` · reconnects ${reconnected.length} owned ${reconnected.length === 1 ? "sector" : "sectors"}`
+    : "";
+  return `INCOME if held after enemy response: ${delta.metal >= 0 ? "+" : ""}${delta.metal}M ${delta.energy >= 0 ? "+" : ""}${delta.energy}E ${delta.intelligence >= 0 ? "+" : ""}${delta.intelligence}I${reconnection}`;
+};
 const pos: Record<string, [number, number]> = {
   "sector-0": [95, 170],
   "sector-1": [180, 95],
@@ -1173,7 +1229,22 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 {(selectedAction === "move" || selectedAction === "attack") && (
                   <div className="legal-targets" aria-label={`Legal ${selectedAction} targets`}>
                     <h3>LEGAL {selectedAction.toUpperCase()} TARGETS</h3>
-                    {legalTargets.length ? legalTargets.map((target) => <span className="target-choice" key={target.id}><button disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button><span className="target-consequence">{selectedAction === "move" ? "Claims this unheld sector; the enemy phase may reverse the gain." : "Contests this sector; combat outcome and losses resolve after orders."}</span>{(selectedAction === "move" || selectedAction === "attack") && scoutedWarning(target.id)}{selectedAction === "attack" && canFreeAdvanceTo(target.id) && <><button className="free-advance" aria-label={`Replace attack with free advance to ${target.name}`} disabled={game.terminal !== "active"} onClick={() => setOrder("move", target.id)}>FREE ADVANCE · 0M + 0E</button><span className="target-consequence">Trade ATTACK for free relocation and no combat this turn.</span></>}</span>) : <p className="muted">No legal targets in reach.</p>}
+                    {legalTargets.length ? legalTargets.map((target) => <span className="target-choice" key={target.id}>
+                      <button disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button>
+                      {selectedAction === "move" ? <>
+                        <span className="target-consequence">Claims this unheld sector; the enemy phase may reverse the gain.</span>
+                        {objectiveContext(game, target.id) && <span className="target-consequence">{objectiveContext(game, target.id)}</span>}
+                        <span className="target-consequence">{incomeContext(game, target.id)}</span>
+                      </> : <span className="target-consequence">Contests this sector; combat outcome and losses resolve after orders.</span>}
+                      {(selectedAction === "move" || selectedAction === "attack") && scoutedWarning(target.id)}
+                      {selectedAction === "attack" && canFreeAdvanceTo(target.id) && <>
+                        <button className="free-advance" aria-label={`Replace attack with free advance to ${target.name}`} disabled={game.terminal !== "active"} onClick={() => setOrder("move", target.id)}>FREE ADVANCE · 0M + 0E</button>
+                        <span className="target-consequence">Trade ATTACK for free relocation and no combat this turn.</span>
+                        {objectiveContext(game, target.id) && <span className="target-consequence">{objectiveContext(game, target.id)}</span>}
+                        <span className="target-consequence">{incomeContext(game, target.id)}</span>
+                      </>}
+                    </span>) : <p className="muted">No legal targets in reach.</p>}
+                    {game.researchLevels.Signals === 0 && legalTargets.length > 0 && <p className="target-consequence">Enemy response unknown without Signals.</p>}
                     {selectedAction === "attack" && legalMoveTargets.length > 0 && <p className="muted">FREE ADVANCE replaces only this squad's ATTACK with MOVE. It relocates without dislodging defenders; the enemy phase still follows. ATTACK remains available for its normal combat resolution, including against an empty or neutral sector.</p>}
                   </div>
                 )}
@@ -1292,7 +1363,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                               <li className="queued-order" key={order.squadId}>
                                 {label}{" "}
                                 {order.type === "move" && scoutedWarning(order.target)}{" "}
-                                {order.type === "attack" && canFreeAdvanceFor(order.squadId, order.target) && <button className="free-advance" aria-label={`Replace queued attack with free advance to ${sectorName(order.target)}`} onClick={() => setOrder("move", order.target, order.squadId)}>FREE ADVANCE · 0M + 0E</button>}{" "}
+                                {order.type === "attack" && canFreeAdvanceFor(order.squadId, order.target) && <>
+                                  <button className="free-advance" aria-label={`Replace queued attack with free advance to ${sectorName(order.target)}`} onClick={() => setOrder("move", order.target, order.squadId)}>FREE ADVANCE · 0M + 0E</button>
+                                  {objectiveContext(game, order.target!) && <span className="target-consequence">{objectiveContext(game, order.target!)}</span>}
+                                  <span className="target-consequence">{incomeContext(game, order.target!)}</span>
+                                </>}{" "}
                                 <button
                                   aria-label={`Cancel ${label}`}
                                   onClick={() => cancelOrder(order.squadId)}
