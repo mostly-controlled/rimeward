@@ -42,12 +42,12 @@ describe("App interactions", () => {
       }],
     };
     expect(base.enemySquads).toHaveLength(4);
-    const hidden = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 0 }, revealedEnemySquads: ["enemy-1", "enemy-4"] });
+    const hidden = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 0 }, revealedEnemySquads: ["enemy-1", "enemy-3", "enemy-4"] });
     const hiddenTarget = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
     await act(async () => hiddenTarget.click());
     expect(document.querySelector(".scouted-warning")).toBeNull();
     await act(async () => hidden.unmount());
-    const visible = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 1 }, revealedEnemySquads: ["enemy-1", "enemy-4"] });
+    const visible = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 1 }, revealedEnemySquads: ["enemy-1", "enemy-3", "enemy-4"] });
     const target = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
     await act(async () => target.click());
     const warningText = [...document.querySelectorAll(".scouted-warning")].map((warning) => warning.textContent).join(" ");
