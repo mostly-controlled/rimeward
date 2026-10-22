@@ -23,11 +23,12 @@ Vite is configured with a relative asset base (`./`), so the generated `dist/` d
 can be served from a GitHub Pages project subpath without rewriting asset URLs. Pages is
 optional and is not required for the existing Vercel path.
 
-The live public URL is <https://rimeward-preview.vercel.app>. It serves the source accepted
-at `89c42aed`; the exact deployment receipt is `dpl_Ef8S4es1f92MfPK2xUtLs8mSFwRb READY`.
-A cookie-free public HTTP request returned `200`.
+Verified release receipt — 22 October 2026 (PR #50): the live public URL is
+<https://rimeward-preview.vercel.app>. This dated release was verified against source
+`69e084754d990771908e10887ba934d3c06837c1`; the exact deployment receipt is
+`dpl_Ef8S4es1f92MfPK2xUtLs8mSFwRb READY`. A cookie-free public HTTP request returned `200`.
 
-Hosted acceptance: a personally played hosted seed `42024` reached victory at T6. A
+Historical hosted acceptance: a personally played hosted seed `42024` reached victory at T6. A
 midrun refresh and terminal refresh both matched Continue/replay, and no console errors
 were observed. The trace for `4132161419` is **victory T6**: T1-T3 are the causal route,
 followed by the T4 switch. This is a victory-at-T6 trace, not a seed string with T6.
