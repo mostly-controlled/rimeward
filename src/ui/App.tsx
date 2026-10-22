@@ -1228,7 +1228,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 {(selectedAction === "move" || selectedAction === "attack") && (
                   <div className="legal-targets" aria-label={`Legal ${selectedAction} targets`}>
                     <h3>LEGAL {selectedAction.toUpperCase()} TARGETS</h3>
-                    {((selectedAction === "move" && legalTargets.length > 0) || (selectedAction === "attack" && legalMoveTargets.length > 0)) && <p className="target-scope">This move only; other orders and enemy response may change income.</p>}
+                    {((selectedAction === "move" && legalTargets.length > 0) || (selectedAction === "attack" && legalTargets.some((target) => canFreeAdvanceTo(target.id)))) && <p className="target-scope">This move only; other orders and enemy response may change income.</p>}
                     {legalTargets.length ? legalTargets.map((target) => <span className="target-choice" key={target.id}>
                       <button disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button>
                       {selectedAction === "move" && contextualLines(game, target.id).map((line) => <span className="target-context" key={line}>{line}</span>)}
