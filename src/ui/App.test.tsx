@@ -22,6 +22,56 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("filters scouted nearby warnings by Signals, reveal, strength, and destination adjacency", async () => {
+    const campaign = createNewCampaign(42024);
+    const base = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-0" as const } : { ...unit, strength: 0 }),
+      enemySquads: [...campaign.enemySquads.map((enemy, index) => index === 0
+        ? { ...enemy, class: "Recon" as const, sector: "sector-0" as const, strength: 5 }
+        : index === 1
+          ? { ...enemy, class: "Raider" as const, sector: "sector-0" as const, strength: 5 }
+          : index === 2
+            ? { ...enemy, class: "Sentinel" as const, sector: "sector-0" as const, strength: 0 }
+            : { ...enemy, strength: 0 }), {
+        ...campaign.enemySquads[0],
+        id: "enemy-4",
+        class: "Artillery" as const,
+        sector: "sector-3" as const,
+        strength: 5,
+      }],
+    };
+    expect(base.enemySquads).toHaveLength(4);
+    const hidden = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 0 }, revealedEnemySquads: ["enemy-1", "enemy-3", "enemy-4"] });
+    const hiddenTarget = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
+    await act(async () => hiddenTarget.click());
+    expect(document.querySelector(".scouted-warning")).toBeNull();
+    await act(async () => hidden.unmount());
+    const visible = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 1 }, revealedEnemySquads: ["enemy-1", "enemy-3", "enemy-4"] });
+    const target = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
+    await act(async () => target.click());
+    const warningText = [...document.querySelectorAll(".scouted-warning")].map((warning) => warning.textContent).join(" ");
+    expect(warningText).toContain("Recon at Frostgate");
+    expect(warningText).not.toContain("Raider");
+    expect(warningText).not.toContain("Sentinel");
+    expect(warningText).not.toContain("Artillery");
+    await act(async () => visible.unmount());
+  });
+
+  it("uses the queued MOVE target after selection changes and clears warnings on turn change", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = { ...campaign, researchLevels: { ...campaign.researchLevels, Signals: 1 }, revealedEnemySquads: ["enemy-1"], enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, sector: "sector-0" as const, strength: 5 }  : index === 2 ? { ...enemy, sector: "sector-3" as const, strength: 5 } : { ...enemy, strength: 0 }) };
+    const root = await renderApp(state);
+    await act(async () => (document.querySelector(".squad-card") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector(".order-buttons button") as HTMLButtonElement).click());
+    const target = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
+    await act(async () => target.click());
+    await act(async () => (document.querySelectorAll(".squad-card")[1] as HTMLButtonElement).click());
+    expect([...document.querySelectorAll(".queued-order")].some((entry) => entry.textContent?.includes("Scouted nearby: Recon at Frostgate"))).toBe(true);
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    expect(document.querySelector(".queued-order .scouted-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
   it("preserves the seeded Raider move/attack reports with faction-correct enemy labels", async () => {
     const root = await renderApp(createNewCampaign(58386330));
     expect(document.querySelector(".action-feedback")).toBeNull();
