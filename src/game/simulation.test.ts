@@ -34,13 +34,35 @@ describe("campaign simulation", () => {
     expect(adaptiveObservationFeedback(base)).toContain("gathering observations");
     const repeatedClass = { ...base, turn: 3, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-5")] };
     expect(adaptiveObservationFeedback(repeatedClass)).toContain("repeated observed class: Raider");
-    expect(adaptiveObservationFeedback(repeatedClass)).toContain("vary your approach");
     const repeatedCorridor = { ...base, turn: 3, adaptiveHistory: [observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-0", "sector-1")] };
     expect(adaptiveObservationFeedback(repeatedCorridor)).toContain("Whiteplain");
     expect(adaptiveObservationFeedback(repeatedCorridor)).toContain("repeated observed corridor");
-    const broken = { ...base, turn: 3, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Sentinel", "sector-1", "sector-2")] };
+    const broken = { ...base, turn: 4, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Sentinel", "sector-2", "sector-3")] };
     expect(adaptiveObservationFeedback(broken)).toContain("pattern broken");
     expect(adaptiveObservationFeedback(broken)).toContain("Cairnwatch");
+  });
+
+  it("uses the consecutive suffix for feedback and keeps mixed observations truthful", () => {
+    const base = createNewCampaign(42024);
+    const observation = (turn: number, className: "Sentinel" | "Raider", from: SectorId, to: SectorId) => ({
+      turn,
+      observations: [{ kind: "move" as const, class: className, from, to }],
+    });
+    const aggressiveSuffix = { ...base, turn: 4, adaptiveHistory: [observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Raider", "sector-2", "sector-3")] };
+    expect(adaptiveObservationFeedback(aggressiveSuffix)).toContain("repeated observed class: Raider");
+    expect(adaptiveObservationFeedback(aggressiveSuffix)).not.toContain("broken");
+    const broken = { ...base, turn: 4, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Sentinel", "sector-2", "sector-3")] };
+    expect(adaptiveObservationFeedback(broken)).toContain("pattern broken");
+    const mixed = { ...base, turn: 3, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Sentinel", "sector-2", "sector-3")] };
+    expect(adaptiveObservationFeedback(mixed)).toContain("mixed observations");
+    expect(adaptiveObservationFeedback(mixed)).not.toContain("vary");
+  });
+
+  it("keeps two observations uncommitted while three consecutive observations commit", () => {
+    const base = createNewCampaign(7);
+    const observation = (turn: number) => ({ turn, observations: [{ kind: "move" as const, class: "Raider" as const, from: "sector-0" as const, to: "sector-1" as const }] });
+    expect(adaptiveStyle({ ...base, turn: 3, adaptiveHistory: [observation(1), observation(2)] })).toBe("UNSET");
+    expect(adaptiveStyle({ ...base, turn: 4, adaptiveHistory: [observation(1), observation(2), observation(3)] })).toBe("DEFENSIVE");
   });
   const distanceBetweenForTest = (
     state: GameState,

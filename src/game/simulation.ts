@@ -248,17 +248,25 @@ const adaptiveObservationName = (state: GameState, id: SectorId): string =>
 
 export const adaptiveObservationFeedback = (state: GameState): string => {
   const observed = recentAdaptiveBuckets(state).filter((bucket) => bucket.observations.length > 0);
-  if (observed.length < 2) return "gathering observations · vary your approach as more is seen";
+  const style = adaptiveStyle(state);
+  const styleName = style === "AGGRESSIVE" ? "Aggressive raider" : style === "DEFENSIVE" ? "Defensive planner" : "Adaptive commander";
+  if (observed.length < 2)
+    return `${styleName} · gathering observations · ${style === "UNSET" ? "commitment pending" : "early commitment"}`;
   const committed = observed.map(committedObservation);
   const latest = committed.at(-1)!;
   const previous = committed.slice(0, -1);
-  const sameClass = previous.every((observation) => observation.class === latest.class);
+  const previousLatest = previous.at(-1)!;
+  const sameClass = previousLatest.class === latest.class;
   const latestCorridor = observationCorridor(latest);
-  const sameCorridor = previous.every((observation) => observationCorridor(observation) === latestCorridor);
-  if (sameClass) return `repeated observed class: ${latest.class} · vary your approach`;
-  if (sameCorridor)
-    return `repeated observed corridor: ${adaptiveObservationName(state, latest.from)} → ${adaptiveObservationName(state, observationDestination(latest))} · vary your approach`;
-  return `pattern broken after ${adaptiveObservationName(state, latest.from)} → ${adaptiveObservationName(state, observationDestination(latest))} · vary your approach`;
+  const sameCorridor = observationCorridor(previousLatest) === latestCorridor;
+  const priorClassRepeat = previous.length >= 2 && previous.at(-2)!.class === previousLatest.class;
+  const priorCorridorRepeat = previous.length >= 2 && observationCorridor(previous.at(-2)!) === observationCorridor(previousLatest);
+  const route = `${adaptiveObservationName(state, latest.from)} → ${adaptiveObservationName(state, observationDestination(latest))}`;
+  const stage = style === "UNSET" ? "commitment pending" : "committed";
+  if (sameClass) return `${styleName} · repeated observed class: ${latest.class} · ${stage}`;
+  if (sameCorridor) return `${styleName} · repeated observed corridor: ${route} · ${stage}`;
+  if (priorClassRepeat || priorCorridorRepeat) return `${styleName} · pattern broken at ${route} · ${stage}`;
+  return `${styleName} · mixed observations at ${route} · ${stage}`;
 };
 
 type AdaptiveStyle = "AGGRESSIVE" | "DEFENSIVE" | "UNSET";

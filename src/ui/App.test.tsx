@@ -113,7 +113,8 @@ describe("App interactions", () => {
     await act(async () => repeated.unmount());
     const broken = await renderApp({ ...campaign, turn: 3, adaptiveHistory: [
       { turn: 1, observations: [{ kind: "move", class: "Raider", from: "sector-1", to: "sector-2" }] },
-      { turn: 2, observations: [{ kind: "move", class: "Sentinel", from: "sector-2", to: "sector-3" }] },
+      { turn: 2, observations: [{ kind: "move", class: "Raider", from: "sector-2", to: "sector-3" }] },
+      { turn: 3, observations: [{ kind: "move", class: "Sentinel", from: "sector-3", to: "sector-4" }] },
     ] });
     expect(document.querySelector('[aria-label="Enemy style cue"]')?.textContent).toContain("pattern broken");
     await act(async () => broken.unmount());
@@ -139,7 +140,6 @@ describe("App interactions", () => {
     const root = await renderApp(initialGame);
     const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
     expect(cue).toContain("repeated observed class: Raider");
-    expect(cue).toContain("vary your approach");
     expect(cue).toContain("LOCAL OBSERVATIONS ONLY");
     await act(async () => root.unmount());
   });
