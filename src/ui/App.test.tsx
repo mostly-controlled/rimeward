@@ -50,6 +50,79 @@ describe("App interactions", () => {
     await act(async () => root.unmount());
   });
 
+  it("offers a legal free advance that replaces only the selected attack", async () => {
+    const root = await renderApp(createNewCampaign(42024));
+    const attack = [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement;
+    await act(async () => attack.click());
+    const target = document.querySelector('.legal-targets button:not(.free-advance)') as HTMLButtonElement;
+    expect(target).toBeTruthy();
+    expect(document.querySelectorAll(".free-advance").length).toBeGreaterThan(0);
+    await act(async () => target.click());
+    expect(document.querySelector(".queued-order")?.textContent).toContain("ATTACK");
+    const advance = document.querySelector('.queued-order .free-advance') as HTMLButtonElement;
+    expect(advance).toBeTruthy();
+    await act(async () => advance.click());
+    expect(document.querySelector(".queued-order")?.textContent).toContain("MOVE");
+    expect(document.querySelector(".queued-order")?.textContent).not.toContain("ATTACK");
+    expect(document.querySelector('[aria-label="queued resource budget"]')?.textContent).toContain("QUEUED 0M + 0E");
+    await act(async () => root.unmount());
+  });
+
+
+  it("replaces an earlier squad attack without changing the later squad order", async () => {
+    const root = await renderApp(createNewCampaign(42024));
+    const squad = (index: number) => document.querySelectorAll(".squad-card")[index] as HTMLButtonElement;
+    const action = (label: string) => [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === label) as HTMLButtonElement;
+    const target = (label: string) => [...document.querySelectorAll(".legal-targets button:not(.free-advance)")].find((button) => button.textContent === label) as HTMLButtonElement;
+
+    await act(async () => squad(0).click());
+    await act(async () => action("ATTACK").click());
+    await act(async () => target("ATTACK → Whiteplain").click());
+    await act(async () => squad(1).click());
+    await act(async () => action("ATTACK").click());
+    await act(async () => target("ATTACK → Whiteplain").click());
+
+    const queuedAttack = [...document.querySelectorAll(".queued-order")].find((entry) => entry.textContent?.includes("SENTINEL squad-1"))?.querySelector('[aria-label="Replace queued attack with free advance to Whiteplain"]') as HTMLButtonElement;
+    expect(queuedAttack).toBeTruthy();
+    await act(async () => queuedAttack.click());
+
+    expect([...document.querySelectorAll(".plan-entry")].map((entry) => entry.getAttribute("aria-label"))).toEqual([
+      "Queued order squad-2 attack Whiteplain",
+      "Queued order squad-1 move Whiteplain",
+    ]);
+    expect([...document.querySelectorAll(".planned-order")].map((order) => ({
+      orderId: order.getAttribute("data-order-id"),
+      target: order.getAttribute("data-target"),
+    }))).toEqual([
+      { orderId: "squad-2", target: "sector-1" },
+      { orderId: "squad-1", target: "sector-1" },
+    ]);
+    expect(document.querySelector('[aria-label="queued resource budget"]')?.textContent).toContain("QUEUED 2M + 3E");
+    expect(document.querySelector('.planned-marker-1')?.getAttribute("aria-label")).toContain("PLAN · MOVE · SENTINEL M1 to Whiteplain");
+    expect(document.querySelector('.planned-marker-1')?.querySelector("text")?.textContent).toBe("M1");
+    expect(document.querySelector('.planned-order[data-order-id="squad-1"] .planned-attack')).toBeNull();
+    expect(document.querySelector('.planned-order[data-order-id="squad-2"] .planned-attack')).toBeTruthy();
+    await act(async () => root.unmount());
+  });
+  it("does not offer free advance for occupied or illegal move targets and retains other orders", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-0" as const } : index === 1 ? { ...unit, sector: "sector-1" as const } : { ...unit, strength: 0 }),
+      enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, sector: "sector-1" as const } : { ...enemy, strength: 0 }),
+    };
+    const root = await renderApp(state);
+    await act(async () => (document.querySelectorAll(".squad-card")[1] as HTMLButtonElement).click());
+    await act(async () => (document.querySelector('.order-buttons button') as HTMLButtonElement).click());
+    await act(async () => (document.querySelectorAll(".squad-card")[0] as HTMLButtonElement).click());
+    await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement).click());
+    const occupiedTarget = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Whiteplain"));
+    expect(occupiedTarget?.querySelector(".free-advance")).toBeNull();
+    expect(document.querySelector(".queued-order")?.textContent).toContain("HOLD");
+    expect(document.querySelector('[aria-label="Legal attack targets"]')?.textContent).toContain("Whiteplain");
+    await act(async () => root.unmount());
+  });
+
   it("keeps engagement outcome separate from occupation", () => {
     expect(battleOutcomeLabel({ winner: "player", captured: false })).toBe("won; not captured");
     expect(occupationLabel({ captured: false, relayControlled: false })).toBe("occupation: no change");
