@@ -243,6 +243,24 @@ const recentAdaptiveBuckets = (state: GameState): AdaptiveHistoryBucket[] =>
 const committedObservation = (bucket: AdaptiveHistoryBucket): AdaptiveObservation =>
   bucket.observations.at(-1)!;
 
+const adaptiveObservationName = (state: GameState, id: SectorId): string =>
+  state.sectors.find((sector) => sector.id === id)?.name ?? id;
+
+export const adaptiveObservationFeedback = (state: GameState): string => {
+  const observed = recentAdaptiveBuckets(state).filter((bucket) => bucket.observations.length > 0);
+  if (observed.length < 2) return "gathering observations · vary your approach as more is seen";
+  const committed = observed.map(committedObservation);
+  const latest = committed.at(-1)!;
+  const previous = committed.slice(0, -1);
+  const sameClass = previous.every((observation) => observation.class === latest.class);
+  const latestCorridor = observationCorridor(latest);
+  const sameCorridor = previous.every((observation) => observationCorridor(observation) === latestCorridor);
+  if (sameClass) return `repeated observed class: ${latest.class} · vary your approach`;
+  if (sameCorridor)
+    return `repeated observed corridor: ${adaptiveObservationName(state, latest.from)} → ${adaptiveObservationName(state, observationDestination(latest))} · vary your approach`;
+  return `pattern broken after ${adaptiveObservationName(state, latest.from)} → ${adaptiveObservationName(state, observationDestination(latest))} · vary your approach`;
+};
+
 type AdaptiveStyle = "AGGRESSIVE" | "DEFENSIVE" | "UNSET";
 export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
   const buckets = recentAdaptiveBuckets(state);

@@ -4,6 +4,7 @@ import {
   advanceResearch,
   adaptiveStyle,
   adaptiveStyleCue,
+  adaptiveObservationFeedback,
   calculateIncome,
   connectedOwnedSectors,
   createNewCampaign,
@@ -24,6 +25,23 @@ import {
 } from "./simulation";
 
 describe("campaign simulation", () => {
+  it("turns the bounded observation window into gathering, repeated, or broken feedback", () => {
+    const base = createNewCampaign(42024);
+    const observation = (turn: number, className: "Sentinel" | "Raider", from: SectorId, to: SectorId) => ({
+      turn,
+      observations: [{ kind: "move" as const, class: className, from, to }],
+    });
+    expect(adaptiveObservationFeedback(base)).toContain("gathering observations");
+    const repeatedClass = { ...base, turn: 3, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-5")] };
+    expect(adaptiveObservationFeedback(repeatedClass)).toContain("repeated observed class: Raider");
+    expect(adaptiveObservationFeedback(repeatedClass)).toContain("vary your approach");
+    const repeatedCorridor = { ...base, turn: 3, adaptiveHistory: [observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-0", "sector-1")] };
+    expect(adaptiveObservationFeedback(repeatedCorridor)).toContain("Whiteplain");
+    expect(adaptiveObservationFeedback(repeatedCorridor)).toContain("repeated observed corridor");
+    const broken = { ...base, turn: 3, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Sentinel", "sector-1", "sector-2")] };
+    expect(adaptiveObservationFeedback(broken)).toContain("pattern broken");
+    expect(adaptiveObservationFeedback(broken)).toContain("Cairnwatch");
+  });
   const distanceBetweenForTest = (
     state: GameState,
     start: string,

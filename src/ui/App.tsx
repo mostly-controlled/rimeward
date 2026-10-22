@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   advanceResearch,
   adaptiveStyleCue,
+  adaptiveObservationFeedback,
   calculateIncome,
   connectedOwnedSectors,
   createNewCampaign,
@@ -1391,7 +1392,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
               </small>
             )}
             <span className="adaptive-cue" aria-label="Enemy style cue">
-              · ENEMY STYLE CUE: {adaptiveStyleCue(game)} · LOCAL OBSERVATIONS ONLY
+              · ENEMY STYLE CUE: {adaptiveStyleCue(game)} · {adaptiveObservationFeedback(game)} · LOCAL OBSERVATIONS ONLY
             </span>
           </section>
           <section
