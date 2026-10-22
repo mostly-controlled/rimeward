@@ -60,6 +60,47 @@ describe("campaign simulation", () => {
     expect(adaptiveStyle(defensiveClassOverCorridor)).toBe("DEFENSIVE");
     expect(adaptiveObservationFeedback(defensiveClassOverCorridor)).toContain("repeated observed class: Sentinel");
     expect(adaptiveObservationFeedback(defensiveClassOverCorridor)).not.toContain("repeated observed corridor");
+    const defensivePendingRepeatedClass = {
+      ...createNewCampaign(2244426087),
+      turn: 3,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Sentinel", "sector-1", "sector-2"),
+      ],
+    };
+    expect(adaptiveStyle(defensivePendingRepeatedClass)).toBe("UNSET");
+    expect(adaptiveObservationFeedback(defensivePendingRepeatedClass)).toContain("repeated observed class: Sentinel");
+    expect(adaptiveObservationFeedback(defensivePendingRepeatedClass)).toContain("commitment pending");
+    const defensivePendingRepeatedCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 3,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Raider", "sector-0", "sector-1"),
+      ],
+    };
+    expect(adaptiveStyle(defensivePendingRepeatedCorridor)).toBe("UNSET");
+    expect(adaptiveObservationFeedback(defensivePendingRepeatedCorridor)).toContain("repeated observed corridor: Frostgate → Whiteplain");
+    expect(adaptiveObservationFeedback(defensivePendingRepeatedCorridor)).toContain("commitment pending");
+    const defensiveRepeatedCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Raider", "sector-0", "sector-1"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(defensiveRepeatedCorridor)).not.toContain("pattern broken");
+    const defensiveBrokenAfterDifferentCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Raider", "sector-0", "sector-1"),
+        observation(3, "Recon" as "Sentinel" | "Raider", "sector-1", "sector-2"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(defensiveBrokenAfterDifferentCorridor)).toContain("pattern broken");
     const broken = { ...base, turn: 4, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Sentinel", "sector-2", "sector-3")] };
     expect(adaptiveObservationFeedback(broken)).toContain("pattern broken");
     expect(adaptiveObservationFeedback(broken)).toContain("Cairnwatch");
