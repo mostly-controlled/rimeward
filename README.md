@@ -26,7 +26,9 @@ optional and is not required for the existing Vercel path.
 Verified release receipt — 22 October 2026 (PR #50): the live public URL is
 <https://rimeward-preview.vercel.app>. This dated release was verified against source
 `69e084754d990771908e10887ba934d3c06837c1`; the exact deployment receipt is
-`dpl_Ef8S4es1f92MfPK2xUtLs8mSFwRb READY`. A cookie-free public HTTP request returned `200`.
+`dpl_3s8RL68w82AnZkNu3QxretRkYYtx READY`. A cookie-free public HTTP request returned `200`.
+
+Historical deployment for source `89c42aed`: `dpl_Ef8S4es1f92MfPK2xUtLs8mSFwRb READY`.
 
 Historical hosted acceptance: a personally played hosted seed `42024` reached victory at T6. A
 midrun refresh and terminal refresh both matched Continue/replay, and no console errors
