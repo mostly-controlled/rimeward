@@ -242,6 +242,44 @@ const recentAdaptiveBuckets = (state: GameState): AdaptiveHistoryBucket[] =>
     .sort((a, b) => a.turn - b.turn);
 const committedObservation = (bucket: AdaptiveHistoryBucket): AdaptiveObservation =>
   bucket.observations.at(-1)!;
+const observationSuffixCount = <T>(observations: T[], matches: (observation: T, previous: T) => boolean): number => {
+  if (!observations.length) return 0;
+  let count = 1;
+  for (let index = observations.length - 1; index > 0; index -= 1) {
+    if (!matches(observations[index], observations[index - 1])) break;
+    count += 1;
+  }
+  return count;
+};
+
+const adaptiveObservationName = (state: GameState, id: SectorId): string =>
+  state.sectors.find((sector) => sector.id === id)?.name ?? id;
+
+export const adaptiveObservationFeedback = (state: GameState): string => {
+  const observed = recentAdaptiveBuckets(state).filter((bucket) => bucket.observations.length > 0);
+  const style = adaptiveStyle(state);
+  const styleName = pressureHash(state, "adaptive-style", 0) % 2 === 0
+    ? "Aggressive raider"
+    : "Defensive planner";
+  if (observed.length < 2)
+    return `${styleName} · gathering observations · ${style === "UNSET" ? "commitment pending" : "early commitment"}`;
+  const committed = observed.map(committedObservation);
+  const latest = committed.at(-1)!;
+  const classSuffix = observationSuffixCount(committed, (observation, previous) => observation.class === previous.class);
+  const corridorSuffix = observationSuffixCount(committed, (observation, previous) => observationCorridor(observation) === observationCorridor(previous));
+  const previous = committed.slice(0, -1);
+  const priorClassSuffix = observationSuffixCount(previous, (observation, prior) => observation.class === prior.class);
+  const priorCorridorSuffix = observationSuffixCount(previous, (observation, prior) => observationCorridor(observation) === observationCorridor(prior));
+  const personalityCommitmentThreshold = style === "AGGRESSIVE" ? 2 : 3;
+  const route = `${adaptiveObservationName(state, latest.from)} → ${adaptiveObservationName(state, observationDestination(latest))}`;
+  const stage = style === "UNSET" ? "commitment pending" : "committed";
+  if (classSuffix >= personalityCommitmentThreshold) return `${styleName} · repeated observed class: ${latest.class} · ${stage}`;
+  if (corridorSuffix >= personalityCommitmentThreshold) return `${styleName} · repeated observed corridor: ${route} · ${stage}`;
+  if (classSuffix >= 2) return `${styleName} · repeated observed class: ${latest.class} · ${stage}`;
+  if (corridorSuffix >= 2) return `${styleName} · repeated observed corridor: ${route} · ${stage}`;
+  if (classSuffix < 2 && corridorSuffix < 2 && (priorClassSuffix >= 2 || priorCorridorSuffix >= 2)) return `${styleName} · pattern broken at ${route} · ${stage}`;
+  return `${styleName} · mixed observations at ${route} · ${stage}`;
+};
 
 type AdaptiveStyle = "AGGRESSIVE" | "DEFENSIVE" | "UNSET";
 export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
@@ -266,18 +304,6 @@ export const adaptiveStyle = (state: GameState): AdaptiveStyle => {
   if (classConfidence >= threshold || corridorConfidence >= threshold)
     return personality ? "AGGRESSIVE" : "DEFENSIVE";
   return "UNSET";
-};
-export const adaptiveStyleCue = (state: GameState): string => {
-  const buckets = recentAdaptiveBuckets(state);
-  const observed = buckets.filter((bucket) => bucket.observations.length > 0);
-  const latest = observed.at(-1) ? committedObservation(observed.at(-1)!) : undefined;
-  const styleName = pressureHash(state, "adaptive-style", 0) % 2 === 0
-    ? "Aggressive raider"
-    : "Defensive planner";
-  if (!latest) return `${styleName} · no pattern yet`;
-  if (adaptiveStyle(state) === "UNSET")
-    return `${styleName} · ${observed.length === 1 ? "pressure noticed" : "response uncertain"}`;
-  return `${styleName} · ${adaptiveStyle(state) === "AGGRESSIVE" ? "pressure noticed" : "response uncertain"}`;
 };
 const appendAdaptiveBucket = (
   state: GameState,

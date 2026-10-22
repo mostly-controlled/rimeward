@@ -80,7 +80,7 @@ describe("App interactions", () => {
     const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
     expect(cue).toContain("ENEMY STYLE CUE");
     expect(cue).toMatch(/Aggressive raider|Defensive planner/);
-    expect(cue).toContain("no pattern yet");
+    expect(cue).toContain("gathering observations");
     expect(cue).not.toMatch(/UNSET|enemy pattern|enemy order/i);
     await act(async () => root.unmount());
   });
@@ -95,9 +95,32 @@ describe("App interactions", () => {
     const root = await renderApp(state);
     const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
     expect(cue).toMatch(/Aggressive raider|Defensive planner/);
-    expect(cue).toContain("pressure noticed");
+    expect(cue).toContain("gathering observations");
     expect(cue).not.toContain("UNSET");
+    expect(cue).not.toContain("Adaptive commander");
+    expect(cue).not.toContain("response uncertain");
+    expect((cue.match(/Aggressive raider|Defensive planner/g) ?? [])).toHaveLength(1);
     await act(async () => root.unmount());
+  });
+
+  it("shows local observation feedback for collection, repetition, and a broken pattern", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await renderApp({ ...campaign, turn: 2, adaptiveHistory: [{ turn: 1, observations: [{ kind: "move", class: "Raider", from: "sector-1", to: "sector-2" }] }] });
+    expect(document.querySelector('[aria-label="Enemy style cue"]')?.textContent).toContain("gathering observations");
+    await act(async () => root.unmount());
+    const repeated = await renderApp({ ...campaign, turn: 3, adaptiveHistory: [
+      { turn: 1, observations: [{ kind: "move", class: "Raider", from: "sector-1", to: "sector-2" }] },
+      { turn: 2, observations: [{ kind: "attack", class: "Raider", from: "sector-1", target: "sector-0" }] },
+    ] });
+    expect(document.querySelector('[aria-label="Enemy style cue"]')?.textContent).toContain("repeated observed class: Raider");
+    await act(async () => repeated.unmount());
+    const broken = await renderApp({ ...campaign, turn: 3, adaptiveHistory: [
+      { turn: 1, observations: [{ kind: "move", class: "Raider", from: "sector-1", to: "sector-2" }] },
+      { turn: 2, observations: [{ kind: "move", class: "Raider", from: "sector-2", to: "sector-3" }] },
+      { turn: 3, observations: [{ kind: "move", class: "Sentinel", from: "sector-3", to: "sector-4" }] },
+    ] });
+    expect(document.querySelector('[aria-label="Enemy style cue"]')?.textContent).toContain("pattern broken");
+    await act(async () => broken.unmount());
   });
 
   it("sanitizes persisted legacy enemy debriefs without Signals", () => {
@@ -105,6 +128,23 @@ describe("App interactions", () => {
     expect(displayRailMessage(legacy, 0)).toContain("movement withheld — Signals 0");
     expect(displayRailMessage(legacy, 0)).not.toContain("enemy-1");
     expect(displayRailMessage(legacy, 1)).toBe(legacy);
+  });
+
+  it("shows human-readable local observation feedback with an actionable implication", async () => {
+    const campaign = createNewCampaign(42024);
+    const initialGame = {
+      ...campaign,
+      turn: 3,
+      adaptiveHistory: [
+        { turn: 1, observations: [{ kind: "move" as const, class: "Raider" as const, from: "sector-0" as const, to: "sector-1" as const }] },
+        { turn: 2, observations: [{ kind: "move" as const, class: "Raider" as const, from: "sector-1" as const, to: "sector-5" as const }] },
+      ],
+    };
+    const root = await renderApp(initialGame);
+    const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
+    expect(cue).toContain("repeated observed class: Raider");
+    expect(cue).toContain("LOCAL OBSERVATIONS ONLY");
+    await act(async () => root.unmount());
   });
 
   it("renders a real temporary relay capture and enemy recapture", async () => {

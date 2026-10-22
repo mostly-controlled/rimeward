@@ -3,7 +3,7 @@ import {
   advanceDay,
   advanceResearch,
   adaptiveStyle,
-  adaptiveStyleCue,
+  adaptiveObservationFeedback,
   calculateIncome,
   connectedOwnedSectors,
   createNewCampaign,
@@ -24,6 +24,143 @@ import {
 } from "./simulation";
 
 describe("campaign simulation", () => {
+  it("turns the bounded observation window into gathering, repeated, or broken feedback", () => {
+    const base = createNewCampaign(42024);
+    const observation = (turn: number, className: "Sentinel" | "Raider", from: SectorId, to: SectorId) => ({
+      turn,
+      observations: [{ kind: "move" as const, class: className, from, to }],
+    });
+    expect(adaptiveObservationFeedback(base)).toContain("gathering observations");
+    const repeatedClass = { ...base, turn: 3, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-5")] };
+    expect(adaptiveObservationFeedback(repeatedClass)).toContain("repeated observed class: Raider");
+    const repeatedCorridor = { ...base, turn: 3, adaptiveHistory: [observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-0", "sector-1")] };
+    expect(adaptiveObservationFeedback(repeatedCorridor)).toContain("Whiteplain");
+    expect(adaptiveObservationFeedback(repeatedCorridor)).toContain("repeated observed corridor");
+    const defensiveMixedCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Raider", "sector-0", "sector-1"),
+        observation(3, "Recon" as "Sentinel" | "Raider", "sector-0", "sector-1"),
+      ],
+    };
+    expect(adaptiveStyle(defensiveMixedCorridor)).toBe("DEFENSIVE");
+    expect(adaptiveObservationFeedback(defensiveMixedCorridor)).toContain("repeated observed corridor: Frostgate → Whiteplain");
+    expect(adaptiveObservationFeedback(defensiveMixedCorridor)).not.toContain("repeated observed class");
+    const defensiveClassOverCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Sentinel", "sector-1", "sector-2"),
+        observation(3, "Sentinel", "sector-1", "sector-2"),
+      ],
+    };
+    expect(adaptiveStyle(defensiveClassOverCorridor)).toBe("DEFENSIVE");
+    expect(adaptiveObservationFeedback(defensiveClassOverCorridor)).toContain("repeated observed class: Sentinel");
+    expect(adaptiveObservationFeedback(defensiveClassOverCorridor)).not.toContain("repeated observed corridor");
+    const defensivePendingRepeatedClass = {
+      ...createNewCampaign(2244426087),
+      turn: 3,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Sentinel", "sector-1", "sector-2"),
+      ],
+    };
+    expect(adaptiveStyle(defensivePendingRepeatedClass)).toBe("UNSET");
+    expect(adaptiveObservationFeedback(defensivePendingRepeatedClass)).toContain("repeated observed class: Sentinel");
+    expect(adaptiveObservationFeedback(defensivePendingRepeatedClass)).toContain("commitment pending");
+    const defensivePendingRepeatedCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 3,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Raider", "sector-0", "sector-1"),
+      ],
+    };
+    expect(adaptiveStyle(defensivePendingRepeatedCorridor)).toBe("UNSET");
+    expect(adaptiveObservationFeedback(defensivePendingRepeatedCorridor)).toContain("repeated observed corridor: Frostgate → Whiteplain");
+    expect(adaptiveObservationFeedback(defensivePendingRepeatedCorridor)).toContain("commitment pending");
+    const defensiveRepeatedCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Raider", "sector-0", "sector-1"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(defensiveRepeatedCorridor)).not.toContain("pattern broken");
+    const defensiveBrokenAfterDifferentCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Raider", "sector-0", "sector-1"),
+        observation(3, "Recon" as "Sentinel" | "Raider", "sector-1", "sector-2"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(defensiveBrokenAfterDifferentCorridor)).toContain("pattern broken");
+    const broken = { ...base, turn: 4, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Sentinel", "sector-2", "sector-3")] };
+    expect(adaptiveObservationFeedback(broken)).toContain("pattern broken");
+    expect(adaptiveObservationFeedback(broken)).toContain("Cairnwatch");
+  });
+
+  it("uses the consecutive suffix for feedback and keeps mixed observations truthful", () => {
+    const base = createNewCampaign(42024);
+    const observation = (turn: number, className: "Sentinel" | "Raider", from: SectorId, to: SectorId) => ({
+      turn,
+      observations: [{ kind: "move" as const, class: className, from, to }],
+    });
+    const aggressiveSuffix = { ...base, turn: 4, adaptiveHistory: [observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Raider", "sector-2", "sector-3")] };
+    expect(adaptiveObservationFeedback(aggressiveSuffix)).toContain("repeated observed class: Raider");
+    expect(adaptiveObservationFeedback(aggressiveSuffix)).not.toContain("broken");
+    const broken = { ...base, turn: 4, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Sentinel", "sector-2", "sector-3")] };
+    expect(adaptiveObservationFeedback(broken)).toContain("pattern broken");
+    const mixed = { ...base, turn: 3, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Sentinel", "sector-2", "sector-3")] };
+    expect(adaptiveObservationFeedback(mixed)).toContain("mixed observations");
+    expect(adaptiveObservationFeedback(mixed)).not.toContain("vary");
+  });
+
+  it("keeps two observations uncommitted while three consecutive observations commit", () => {
+    const base = createNewCampaign(7);
+    const observation = (turn: number) => ({ turn, observations: [{ kind: "move" as const, class: "Raider" as const, from: "sector-0" as const, to: "sector-1" as const }] });
+    expect(adaptiveStyle({ ...base, turn: 3, adaptiveHistory: [observation(1), observation(2)] })).toBe("UNSET");
+    expect(adaptiveStyle({ ...base, turn: 4, adaptiveHistory: [observation(1), observation(2), observation(3)] })).toBe("DEFENSIVE");
+  });
+  it("orders defensive corridor and class commitment by their qualifying suffixes", () => {
+    const base = createNewCampaign(2244426087);
+    const observation = (turn: number, className: "Sentinel" | "Raider", from: SectorId, to: SectorId) => ({
+      turn,
+      observations: [{ kind: "move" as const, class: className, from, to }],
+    });
+    const defensiveCorridor = {
+      ...base, turn: 5,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Sentinel", "sector-0", "sector-1"),
+        observation(3, "Raider", "sector-0", "sector-1"), observation(4, "Raider", "sector-0", "sector-1"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(defensiveCorridor)).toContain("repeated observed corridor");
+    const defensiveClass = {
+      ...base, turn: 5,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"),
+        observation(3, "Raider", "sector-2", "sector-3"), observation(4, "Raider", "sector-2", "sector-3"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(defensiveClass)).toContain("repeated observed class");
+    const pendingClass = {
+      ...base, turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"),
+        observation(3, "Raider", "sector-2", "sector-3"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(pendingClass)).toContain("repeated observed class: Raider");
+    expect(adaptiveObservationFeedback(pendingClass)).toContain("commitment pending");
+  });
+
   const distanceBetweenForTest = (
     state: GameState,
     start: string,
@@ -199,8 +336,8 @@ describe("campaign simulation", () => {
     };
     const repeat = playObservedAttacks("sector-4");
     expect(adaptiveStyle(repeat)).toBe("DEFENSIVE");
-    expect(adaptiveStyleCue(repeat)).toContain("Defensive planner");
-    expect(adaptiveStyleCue(repeat)).toContain("response uncertain");
+    expect(adaptiveObservationFeedback(repeat)).toContain("Defensive planner");
+    expect(adaptiveObservationFeedback(repeat)).not.toContain("response uncertain");
     const feint = playObservedAttacks("sector-2");
     // Class continuity is independent of the observed corridor: this remains
     // a defensive class pattern even though the route changed after turn 1.
@@ -220,7 +357,7 @@ describe("campaign simulation", () => {
       })),
     };
     expect(adaptiveStyle(switchedPattern)).toBe("UNSET");
-    expect(adaptiveStyleCue(switchedPattern)).toContain("response uncertain");
+    expect(adaptiveObservationFeedback(switchedPattern)).not.toContain("response uncertain");
     const repeatIntents = decideEnemyIntents(repeat);
     const feintIntents = decideEnemyIntents(feint);
     const repeatPhase = resolveEnemyTurn(repeat);
@@ -291,8 +428,8 @@ describe("campaign simulation", () => {
       })),
     };
     expect(adaptiveStyle(state)).toBe("DEFENSIVE");
-    expect(adaptiveStyleCue(state)).toContain("Defensive planner");
-    expect(adaptiveStyleCue(state)).toContain("response uncertain");
+    expect(adaptiveObservationFeedback(state)).toContain("Defensive planner");
+    expect(adaptiveObservationFeedback(state)).not.toContain("response uncertain");
   });
 
   it("resets class and corridor confidence independently when either pattern switches", () => {
