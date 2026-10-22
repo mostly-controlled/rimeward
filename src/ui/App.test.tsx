@@ -22,6 +22,122 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("shows legal MOVE context without generic squad or consequence prose", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await renderApp(campaign);
+    expect(document.querySelector('[aria-label="Selected squad decision aid"]')).toBeNull();
+    expect(document.querySelector(".target-scope")?.textContent).toBe("This move only; other orders and enemy response may change income.");
+
+    const attack = [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement;
+    await act(async () => attack.click());
+    expect(document.querySelectorAll(".target-context").length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("Contests this sector");
+    await act(async () => root.unmount());
+  });
+
+  it("shows public objective approach and conditional income for MOVE and FREE ADVANCE", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-1" as const } : { ...unit, strength: 0 }),
+      sectors: campaign.sectors.map((sector) => sector.id === "sector-1" ? { ...sector, owner: "player" as const } : sector),
+      enemySquads: campaign.enemySquads.map((enemy) => ({ ...enemy, strength: 0 })),
+    };
+    const root = await renderApp(state);
+    const moveTarget = [...document.querySelectorAll(".legal-targets .target-choice")].find((choice) => choice.textContent?.includes("Cairnwatch")) as HTMLElement;
+    expect(moveTarget?.textContent).toContain("Northstar required relay");
+    expect(moveTarget?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +1M +1E +0I");
+
+    const attack = [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement;
+    await act(async () => attack.click());
+    const freeAdvanceTarget = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("FREE ADVANCE") && choice.textContent.includes("Cairnwatch")) as HTMLElement;
+    expect(freeAdvanceTarget?.textContent).toContain("Northstar required relay");
+    expect(freeAdvanceTarget?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +1M +1E +0I");
+    await act(async () => root.unmount());
+  });
+
+  it("shows only still-required objectives, including co-located HQ and relay", async () => {
+    const campaign = createNewCampaign(42024);
+    const quietEnemies = campaign.enemySquads.map((enemy) => ({ ...enemy, strength: 0 }));
+    const glasswayState = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-4" as const } : { ...unit, strength: 0 }),
+      enemySquads: quietEnemies,
+    };
+    const glasswayRoot = await renderApp(glasswayState);
+    const glassway = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Glassway")) as HTMLElement;
+    expect(glassway?.textContent).toContain("Ashenfall enemy HQ + required relay");
+    expect(glassway?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +0M +0E +0I");
+    await act(async () => glasswayRoot.unmount());
+
+    const capturedRoot = await renderApp({
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-4" as const } : { ...unit, strength: 0 }),
+      sectors: campaign.sectors.map((sector) => sector.id === "sector-6" ? { ...sector, owner: "player" as const } : sector),
+      objectives: campaign.objectives.map((objective) => objective.sector === "sector-6" ? { ...objective, controlled: true } : objective),
+      enemySquads: quietEnemies,
+    });
+    const captured = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Glassway")) as HTMLElement;
+    expect(captured?.textContent).not.toContain("Ashenfall enemy HQ");
+    expect(captured?.textContent).not.toContain("required relay");
+    await act(async () => capturedRoot.unmount());
+  });
+
+  it("distinguishes already-owned, unconnected, and reconnection income outcomes", async () => {
+    const campaign = createNewCampaign(42024);
+    const livingAt = (sector: "sector-0" | "sector-1") => campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector } : { ...unit, strength: 0 });
+    const quietEnemies = campaign.enemySquads.map((enemy) => ({ ...enemy, strength: 0 }));
+
+    const alreadyOwned = await renderApp({
+      ...campaign,
+      squads: livingAt("sector-0"),
+      sectors: campaign.sectors.map((sector) => sector.id === "sector-1" ? { ...sector, owner: "player" as const } : sector),
+      enemySquads: quietEnemies,
+    });
+    const alreadyChoice = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Whiteplain")) as HTMLElement;
+    expect(alreadyChoice?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +0M +0E +0I · already owned");
+    expect(alreadyChoice?.textContent).not.toContain("Ward HQ");
+    await act(async () => alreadyOwned.unmount());
+
+    const disconnected = await renderApp({
+      ...campaign,
+      squads: livingAt("sector-1"),
+      enemySquads: quietEnemies,
+    });
+    const disconnectedChoice = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Cairnwatch")) as HTMLElement;
+    expect(disconnectedChoice?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +0M +0E +0I · unconnected");
+    await act(async () => disconnected.unmount());
+
+    const reconnection = await renderApp({
+      ...campaign,
+      squads: livingAt("sector-0"),
+      sectors: campaign.sectors.map((sector) => sector.id === "sector-2" ? { ...sector, owner: "player" as const } : sector),
+      enemySquads: quietEnemies,
+    });
+    const reconnectionChoice = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Whiteplain")) as HTMLElement;
+    expect(reconnectionChoice?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +1M +1E +0I · reconnects 1 owned sector");
+    await act(async () => reconnection.unmount());
+  });
+
+  it("discloses no enemy inference at Signals 0 while keeping the choice-list caveat concise", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      researchLevels: { ...campaign.researchLevels, Signals: 0 },
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-0" as const } : { ...unit, strength: 0 }),
+      enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, class: "Recon" as const, sector: "sector-0" as const, strength: 5 } : { ...enemy, strength: 0 }),
+      revealedEnemySquads: ["enemy-1"],
+    };
+    const root = await renderApp(state);
+    const legalTargets = document.querySelector(".legal-targets") as HTMLElement;
+    expect(legalTargets.textContent).toContain("Enemy response unknown without Signals.");
+    expect((legalTargets.textContent?.match(/Enemy response unknown without Signals\./g) ?? [])).toHaveLength(1);
+    expect(legalTargets.textContent).not.toContain("Recon");
+    expect(legalTargets.textContent).not.toContain("enemy-1");
+    expect(document.querySelector(".scouted-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
   it("filters scouted nearby warnings by Signals, reveal, strength, and destination adjacency", async () => {
     const campaign = createNewCampaign(42024);
     const base = {
