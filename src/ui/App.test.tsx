@@ -22,6 +22,35 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("filters scouted nearby warnings by Signals, reveal, strength, and destination adjacency", async () => {
+    const campaign = createNewCampaign(42024);
+    const base = { ...campaign, squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-0" as const } : { ...unit, strength: 0 }), enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, sector: "sector-0" as const, strength: 5 } : index === 1 ? { ...enemy, sector: "sector-2" as const, strength: 5 } : { ...enemy, strength: 0 }) };
+    const root = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 0 }, revealedEnemySquads: ["enemy-1", "enemy-2"] });
+    await act(async () => (document.querySelector(".order-buttons button") as HTMLButtonElement).click());
+    const firstTarget = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
+    await act(async () => firstTarget.click());
+    expect(document.body.textContent).not.toContain("Scouted nearby:");
+    await act(async () => root.unmount());
+    const visible = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 1 }, revealedEnemySquads: ["enemy-1", "enemy-2"] });
+    expect(document.body.textContent).toContain("Scouted nearby:");
+    expect(document.body.textContent).toContain("at Frostgate");
+    expect(document.body.textContent).not.toContain("at Northstar");
+    await act(async () => visible.unmount());
+  });
+
+  it("uses the queued MOVE target after selection changes and clears warnings on turn change", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = { ...campaign, researchLevels: { ...campaign.researchLevels, Signals: 1 }, revealedEnemySquads: ["enemy-1"], enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, sector: "sector-0" as const, strength: 5 } : { ...enemy, strength: 0 }) };
+    const root = await renderApp(state);
+    await act(async () => (document.querySelector(".squad-card") as HTMLButtonElement).click());
+    await act(async () => (document.querySelector(".order-buttons button") as HTMLButtonElement).click());
+    const target = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
+    await act(async () => target.click());
+    expect([...document.querySelectorAll(".queued-order")].some((entry) => entry.textContent?.includes("Scouted nearby: Recon at Frostgate"))).toBe(true);
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    expect(document.body.textContent).not.toContain("Scouted nearby:");
+    await act(async () => root.unmount());
+  });
   it("preserves the seeded Raider move/attack reports with faction-correct enemy labels", async () => {
     const root = await renderApp(createNewCampaign(58386330));
     expect(document.querySelector(".action-feedback")).toBeNull();
