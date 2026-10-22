@@ -68,6 +68,42 @@ describe("App interactions", () => {
     await act(async () => root.unmount());
   });
 
+
+  it("replaces an earlier squad attack without changing the later squad order", async () => {
+    const root = await renderApp(createNewCampaign(42024));
+    const squad = (index: number) => document.querySelectorAll(".squad-card")[index] as HTMLButtonElement;
+    const action = (label: string) => [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === label) as HTMLButtonElement;
+    const target = (label: string) => [...document.querySelectorAll(".legal-targets button:not(.free-advance)")].find((button) => button.textContent === label) as HTMLButtonElement;
+
+    await act(async () => squad(0).click());
+    await act(async () => action("ATTACK").click());
+    await act(async () => target("ATTACK → Whiteplain").click());
+    await act(async () => squad(1).click());
+    await act(async () => action("ATTACK").click());
+    await act(async () => target("ATTACK → Whiteplain").click());
+
+    const queuedAttack = [...document.querySelectorAll(".queued-order")].find((entry) => entry.textContent?.includes("SENTINEL squad-1"))?.querySelector('[aria-label="Replace queued attack with free advance to Whiteplain"]') as HTMLButtonElement;
+    expect(queuedAttack).toBeTruthy();
+    await act(async () => queuedAttack.click());
+
+    expect([...document.querySelectorAll(".plan-entry")].map((entry) => entry.getAttribute("aria-label"))).toEqual([
+      "Queued order squad-2 attack Whiteplain",
+      "Queued order squad-1 move Whiteplain",
+    ]);
+    expect([...document.querySelectorAll(".planned-order")].map((order) => ({
+      orderId: order.getAttribute("data-order-id"),
+      target: order.getAttribute("data-target"),
+    }))).toEqual([
+      { orderId: "squad-2", target: "sector-1" },
+      { orderId: "squad-1", target: "sector-1" },
+    ]);
+    expect(document.querySelector('[aria-label="queued resource budget"]')?.textContent).toContain("QUEUED 2M + 3E");
+    expect(document.querySelector('.planned-marker-1')?.getAttribute("aria-label")).toContain("PLAN · MOVE · SENTINEL M1 to Whiteplain");
+    expect(document.querySelector('.planned-marker-1')?.querySelector("text")?.textContent).toBe("M1");
+    expect(document.querySelector('.planned-order[data-order-id="squad-1"] .planned-attack')).toBeNull();
+    expect(document.querySelector('.planned-order[data-order-id="squad-2"] .planned-attack')).toBeTruthy();
+    await act(async () => root.unmount());
+  });
   it("does not offer free advance for occupied or illegal move targets and retains other orders", async () => {
     const campaign = createNewCampaign(42024);
     const state = {

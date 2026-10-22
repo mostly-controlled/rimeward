@@ -273,6 +273,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   );
   const canFreeAdvanceTo = (target?: SectorId) =>
     Boolean(target && legalMoveTargets.some((sector) => sector.id === target));
+  const canFreeAdvanceFor = (squadId: string, target?: SectorId) => {
+    const unit = game.squads.find((candidate) => candidate.id === squadId);
+    if (!unit || !target) return false;
+    const reachableTargets = game.sectors.find((sector) => sector.id === unit.sector)?.links ?? [];
+    return reachableTargets.includes(target) && game.sectors.find((sector) => sector.id === target)?.owner !== "enemy" && !game.enemySquads.some((enemy) => enemy.sector === target);
+  };
   const orderFor = (id: string) => orders.find((o) => o.squadId === id);
   const routeOrders = orders.filter(
     (order): order is Order & { target: SectorId } =>
@@ -339,12 +345,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   const requiredRelayLabels = campaignObjectives
     .filter((objective) => objective.key !== "enemy-hq" && objective.status === "REQUIRED")
     .map((objective) => objective.label);
-  const setOrder = (type: OrderType, target?: SectorId) => {
-    if (!selectedId || game.terminal !== "active") return;
+  const setOrder = (type: OrderType, target?: SectorId, squadId = selectedId) => {
+    if (!squadId || game.terminal !== "active") return;
     setError("");
     setOrders((previous) => [
-      ...previous.filter((o) => o.squadId !== selectedId),
-      { squadId: selectedId, type, target },
+      ...previous.filter((o) => o.squadId !== squadId),
+      { squadId, type, target },
     ]);
   };
   const cancelOrder = (squadId: string) => {
@@ -1151,7 +1157,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 {(selectedAction === "move" || selectedAction === "attack") && (
                   <div className="legal-targets" aria-label={`Legal ${selectedAction} targets`}>
                     <h3>LEGAL {selectedAction.toUpperCase()} TARGETS</h3>
-                    {legalTargets.length ? legalTargets.map((target) => <span className="target-choice" key={target.id}><button disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button>{canFreeAdvanceTo(target.id) && <button className="free-advance" aria-label={`Replace attack with free advance to ${target.name}`} disabled={game.terminal !== "active"} onClick={() => setOrder("move", target.id)}>FREE ADVANCE · 0M + 0E</button>}</span>) : <p className="muted">No legal targets in reach.</p>}
+                    {legalTargets.length ? legalTargets.map((target) => <span className="target-choice" key={target.id}><button disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button>{selectedAction === "attack" && canFreeAdvanceTo(target.id) && <button className="free-advance" aria-label={`Replace attack with free advance to ${target.name}`} disabled={game.terminal !== "active"} onClick={() => setOrder("move", target.id)}>FREE ADVANCE · 0M + 0E</button>}</span>) : <p className="muted">No legal targets in reach.</p>}
                     {selectedAction === "attack" && legalMoveTargets.length > 0 && <p className="muted">FREE ADVANCE replaces only this squad's ATTACK with MOVE. It relocates without dislodging defenders; the enemy phase still follows. ATTACK remains available for its normal combat resolution, including against an empty or neutral sector.</p>}
                   </div>
                 )}
@@ -1269,7 +1275,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                             return (
                               <li className="queued-order" key={order.squadId}>
                                 {label}{" "}
-                                {order.type === "attack" && canFreeAdvanceTo(order.target) && <button className="free-advance" aria-label={`Replace queued attack with free advance to ${sectorName(order.target)}`} onClick={() => setOrder("move", order.target)}>FREE ADVANCE · 0M + 0E</button>}{" "}
+                                {order.type === "attack" && canFreeAdvanceFor(order.squadId, order.target) && <button className="free-advance" aria-label={`Replace queued attack with free advance to ${sectorName(order.target)}`} onClick={() => setOrder("move", order.target, order.squadId)}>FREE ADVANCE · 0M + 0E</button>}{" "}
                                 <button
                                   aria-label={`Cancel ${label}`}
                                   onClick={() => cancelOrder(order.squadId)}
