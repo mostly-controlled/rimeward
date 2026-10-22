@@ -22,11 +22,12 @@ npm run build
 Vite is configured with a relative asset base (`./`), so the generated `dist/` directory
 can be served from a GitHub Pages project subpath without rewriting asset URLs. This
 repository currently has no Pages workflow or enabled Pages deployment, so no public URL
-is claimed yet. Enabling Pages with the GitHub Actions source requires repository workflow
-permission; the deployment workflow is intentionally deferred until that repository-level
-setting is authorized.
+is claimed yet. The reviewed Pages deployment workflow remains local and pending; enabling
+the GitHub Actions source requires repository workflow permission.
 
-This remains a local browser run only; no hosted URL or post-AI campaign acceptance is claimed here.
+Technical acceptance is recorded locally: the accepted `origin/main` base is
+`89c42aed`, and its campaign behavior is covered by 203 passing tests across 3 test files.
+Public publication and hosted acceptance remain pending until the deployment is enabled.
 
 ## Short delivery guide
 
