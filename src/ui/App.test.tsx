@@ -22,6 +22,24 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
+  it("shows selected squad state, exact action costs, and visible target tradeoffs", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await renderApp(campaign);
+    const aid = document.querySelector('[aria-label="Selected squad decision aid"]')?.textContent ?? "";
+    expect(aid).toContain("STR 10 · FTG 0");
+    expect(aid).toContain("MOVE 0 metal + 0 energy");
+    expect(aid).toContain("ATTACK 2 metal + 3 energy");
+    expect(document.querySelectorAll(".target-consequence").length).toBeGreaterThan(0);
+    expect(document.querySelector(".target-consequence")?.textContent).toContain("Claims this unheld sector");
+
+    const attack = [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement;
+    await act(async () => attack.click());
+    const attackConsequence = [...document.querySelectorAll(".target-consequence")].find((entry) => entry.textContent?.includes("Contests this sector"));
+    expect(attackConsequence).toBeTruthy();
+    expect(attackConsequence?.textContent).not.toMatch(/enemy|defender|hostile/i);
+    await act(async () => root.unmount());
+  });
+
   it("filters scouted nearby warnings by Signals, reveal, strength, and destination adjacency", async () => {
     const campaign = createNewCampaign(42024);
     const base = {

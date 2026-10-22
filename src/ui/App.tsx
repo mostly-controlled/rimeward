@@ -1133,6 +1133,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   {game.sectors.find((s) => s.id === squad.sector)?.name} ·
                   choose an action
                 </p>
+                <div className="decision-aid" aria-label="Selected squad decision aid">
+                  <strong>{squad.class.toUpperCase()} {squad.id.slice(-1)}</strong>
+                  <span>STR {squad.strength} · FTG {squad.fatigue}</span>
+                  <span>MOVE <b>0 metal + 0 energy</b> · ATTACK <b>2 metal + 3 energy</b></span>
+                </div>
                 <div className="order-buttons">
                   {(["hold", "recover", "move", "attack"] as OrderType[]).map(
                     (type) => (
@@ -1168,7 +1173,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 {(selectedAction === "move" || selectedAction === "attack") && (
                   <div className="legal-targets" aria-label={`Legal ${selectedAction} targets`}>
                     <h3>LEGAL {selectedAction.toUpperCase()} TARGETS</h3>
-                    {legalTargets.length ? legalTargets.map((target) => <span className="target-choice" key={target.id}><button disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button>{selectedAction === "move" && scoutedWarning(target.id)}{selectedAction === "attack" && canFreeAdvanceTo(target.id) && <>{scoutedWarning(target.id)}<button className="free-advance" aria-label={`Replace attack with free advance to ${target.name}`} disabled={game.terminal !== "active"} onClick={() => setOrder("move", target.id)}>FREE ADVANCE · 0M + 0E</button></>}</span>) : <p className="muted">No legal targets in reach.</p>}
+                    {legalTargets.length ? legalTargets.map((target) => <span className="target-choice" key={target.id}><button disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button><span className="target-consequence">{selectedAction === "move" ? "Claims this unheld sector; the enemy phase may reverse the gain." : "Contests this sector; combat outcome and losses resolve after orders."}</span>{(selectedAction === "move" || selectedAction === "attack") && scoutedWarning(target.id)}{selectedAction === "attack" && canFreeAdvanceTo(target.id) && <><button className="free-advance" aria-label={`Replace attack with free advance to ${target.name}`} disabled={game.terminal !== "active"} onClick={() => setOrder("move", target.id)}>FREE ADVANCE · 0M + 0E</button><span className="target-consequence">Trade ATTACK for free relocation and no combat this turn.</span></>}</span>) : <p className="muted">No legal targets in reach.</p>}
                     {selectedAction === "attack" && legalMoveTargets.length > 0 && <p className="muted">FREE ADVANCE replaces only this squad's ATTACK with MOVE. It relocates without dislodging defenders; the enemy phase still follows. ATTACK remains available for its normal combat resolution, including against an empty or neutral sector.</p>}
                   </div>
                 )}
