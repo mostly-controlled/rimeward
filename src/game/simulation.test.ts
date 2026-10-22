@@ -48,6 +48,18 @@ describe("campaign simulation", () => {
     expect(adaptiveStyle(defensiveMixedCorridor)).toBe("DEFENSIVE");
     expect(adaptiveObservationFeedback(defensiveMixedCorridor)).toContain("repeated observed corridor: Frostgate → Whiteplain");
     expect(adaptiveObservationFeedback(defensiveMixedCorridor)).not.toContain("repeated observed class");
+    const defensiveClassOverCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Sentinel", "sector-1", "sector-2"),
+        observation(3, "Sentinel", "sector-1", "sector-2"),
+      ],
+    };
+    expect(adaptiveStyle(defensiveClassOverCorridor)).toBe("DEFENSIVE");
+    expect(adaptiveObservationFeedback(defensiveClassOverCorridor)).toContain("repeated observed class: Sentinel");
+    expect(adaptiveObservationFeedback(defensiveClassOverCorridor)).not.toContain("repeated observed corridor");
     const broken = { ...base, turn: 4, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Sentinel", "sector-2", "sector-3")] };
     expect(adaptiveObservationFeedback(broken)).toContain("pattern broken");
     expect(adaptiveObservationFeedback(broken)).toContain("Cairnwatch");

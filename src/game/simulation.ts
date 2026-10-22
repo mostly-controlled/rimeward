@@ -242,6 +242,15 @@ const recentAdaptiveBuckets = (state: GameState): AdaptiveHistoryBucket[] =>
     .sort((a, b) => a.turn - b.turn);
 const committedObservation = (bucket: AdaptiveHistoryBucket): AdaptiveObservation =>
   bucket.observations.at(-1)!;
+const observationSuffixCount = <T>(observations: T[], matches: (observation: T, previous: T) => boolean): number => {
+  if (!observations.length) return 0;
+  let count = 1;
+  for (let index = observations.length - 1; index > 0; index -= 1) {
+    if (!matches(observations[index], observations[index - 1])) break;
+    count += 1;
+  }
+  return count;
+};
 
 const adaptiveObservationName = (state: GameState, id: SectorId): string =>
   state.sectors.find((sector) => sector.id === id)?.name ?? id;
@@ -256,18 +265,18 @@ export const adaptiveObservationFeedback = (state: GameState): string => {
     return `${styleName} · gathering observations · ${style === "UNSET" ? "commitment pending" : "early commitment"}`;
   const committed = observed.map(committedObservation);
   const latest = committed.at(-1)!;
+  const classSuffix = observationSuffixCount(committed, (observation, previous) => observation.class === previous.class);
+  const corridorSuffix = observationSuffixCount(committed, (observation, previous) => observationCorridor(observation) === observationCorridor(previous));
   const previous = committed.slice(0, -1);
-  const previousLatest = previous.at(-1)!;
-  const sameClass = previousLatest.class === latest.class;
-  const latestCorridor = observationCorridor(latest);
-  const sameCorridor = observationCorridor(previousLatest) === latestCorridor;
-  const priorClassRepeat = previous.length >= 2 && previous.at(-2)!.class === previousLatest.class;
-  const priorCorridorRepeat = previous.length >= 2 && observationCorridor(previous.at(-2)!) === observationCorridor(previousLatest);
+  const priorClassSuffix = observationSuffixCount(previous, (observation, prior) => observation.class === prior.class);
+  const priorCorridorSuffix = observationSuffixCount(previous, (observation, prior) => observationCorridor(observation) === observationCorridor(prior));
+  const personality = pressureHash(state, "adaptive-style", 0) % 2 === 0;
+  const threshold = personality ? 2 : 3;
   const route = `${adaptiveObservationName(state, latest.from)} → ${adaptiveObservationName(state, observationDestination(latest))}`;
   const stage = style === "UNSET" ? "commitment pending" : "committed";
-  if (sameCorridor) return `${styleName} · repeated observed corridor: ${route} · ${stage}`;
-  if (sameClass) return `${styleName} · repeated observed class: ${latest.class} · ${stage}`;
-  if (priorClassRepeat || priorCorridorRepeat) return `${styleName} · pattern broken at ${route} · ${stage}`;
+  if (classSuffix >= threshold) return `${styleName} · repeated observed class: ${latest.class} · ${stage}`;
+  if (corridorSuffix >= threshold) return `${styleName} · repeated observed corridor: ${route} · ${stage}`;
+  if (priorClassSuffix >= 2 || priorCorridorSuffix >= 2) return `${styleName} · pattern broken at ${route} · ${stage}`;
   return `${styleName} · mixed observations at ${route} · ${stage}`;
 };
 
