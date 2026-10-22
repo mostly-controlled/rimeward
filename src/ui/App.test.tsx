@@ -30,7 +30,8 @@ describe("App interactions", () => {
     expect(aid).toContain("MOVE 0 metal + 0 energy");
     expect(aid).toContain("ATTACK 2 metal + 3 energy");
     expect(document.querySelectorAll(".target-consequence").length).toBeGreaterThan(0);
-    expect(document.querySelector(".target-consequence")?.textContent).toContain("Claims this unheld sector");
+    const moveConsequence = [...document.querySelectorAll(".target-choice .target-consequence")].find((entry) => entry.textContent?.includes("Claims this unheld sector"));
+    expect(moveConsequence?.textContent).toContain("Claims this unheld sector");
 
     const attack = [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement;
     await act(async () => attack.click());
