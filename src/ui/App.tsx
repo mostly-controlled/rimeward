@@ -97,36 +97,38 @@ const squadLabel = (squad: { class: string; id: string }) =>
 const objectiveContext = (state: GameState, target: SectorId): string | null => {
   const destination = state.sectors.find((sector) => sector.id === target);
   if (!destination) return null;
+  const objectiveNames = new Map<string, string[]>();
+  const addObjective = (id: SectorId, label: string) => {
+    const name = label.split(" ")[0];
+    const labels = objectiveNames.get(name) ?? [];
+    const role = label.slice(name.length + 1);
+    if (!labels.includes(role)) labels.push(role);
+    objectiveNames.set(name, labels);
+  };
   const relay = state.objectives.find((objective) => objective.sector === target);
-  if (relay) {
-    return `OBJECTIVE: ${relay.controlled ? "secured" : "secure"} relay at ${destination.name}`;
+  if (target === state.hq.enemy && destination.owner !== "player") addObjective(state.hq.enemy, `${destination.name} enemy HQ`);
+  if (relay && !relay.controlled) addObjective(relay.sector, `${destination.name} required relay`);
+  for (const objective of state.objectives) {
+    if (!objective.controlled && destination.links.includes(objective.sector)) {
+      const name = state.sectors.find((sector) => sector.id === objective.sector)?.name ?? objective.sector;
+      addObjective(objective.sector, `${name} required relay`);
+    }
   }
-  if (target === state.hq.enemy) return `OBJECTIVE: capture enemy HQ at ${destination.name}`;
-  if (target === state.hq.player) return `HQ: defend Ward HQ at ${destination.name}`;
-
-  const adjacentRelay = state.objectives.find(
-    (objective) => !objective.controlled && destination.links.includes(objective.sector),
-  );
-  if (adjacentRelay) {
-    const relayName = state.sectors.find((sector) => sector.id === adjacentRelay.sector)?.name ?? adjacentRelay.sector;
-    return `APPROACH: secure relay at ${relayName}`;
+  const enemyHq = state.sectors.find((sector) => sector.id === state.hq.enemy);
+  if (state.hq.enemy !== target && destination.links.includes(state.hq.enemy) && enemyHq?.owner !== "player") {
+    const name = enemyHq?.name ?? state.hq.enemy;
+    addObjective(state.hq.enemy, `${name} enemy HQ`);
   }
-  if (state.hq.enemy !== target && destination.links.includes(state.hq.enemy)) {
-    const hqName = state.sectors.find((sector) => sector.id === state.hq.enemy)?.name ?? state.hq.enemy;
-    return `APPROACH: enemy HQ at ${hqName}`;
-  }
-  if (state.hq.player !== target && destination.links.includes(state.hq.player)) {
-    const hqName = state.sectors.find((sector) => sector.id === state.hq.player)?.name ?? state.hq.player;
-    return `APPROACH: defend Ward HQ at ${hqName}`;
-  }
-  return null;
+  return objectiveNames.size
+    ? `OBJECTIVE: ${[...objectiveNames].map(([name, labels]) => `${name} ${[...labels].sort((a, b) => Number(!a.includes("enemy HQ")) - Number(!b.includes("enemy HQ"))).join(" + ")}`).join(" · ")}`
+    : null;
 };
 const incomeContext = (state: GameState, target: SectorId): string => {
   const currentIncome = calculateIncome(state);
   const currentConnected = new Set(connectedOwnedSectors(state).map((sector) => sector.id));
   const destination = state.sectors.find((sector) => sector.id === target);
   if (!destination || destination.owner === "player") {
-    return "INCOME if held after enemy response: +0M +0E +0I · already owned; no new capture gain";
+    return "INCOME CHANGE PER TURN if held after enemy response: +0M +0E +0I · already owned";
   }
   const projected = {
     ...state,
@@ -142,14 +144,16 @@ const incomeContext = (state: GameState, target: SectorId): string => {
     intelligence: projectedIncome.intelligence - currentIncome.intelligence,
   };
   if (!projectedConnected.has(target)) {
-    return "INCOME if held after enemy response: +0M +0E +0I · unconnected";
+    return "INCOME CHANGE PER TURN if held after enemy response: +0M +0E +0I · unconnected";
   }
   const reconnected = [...projectedConnected].filter((id) => id !== target && !currentConnected.has(id));
   const reconnection = reconnected.length
     ? ` · reconnects ${reconnected.length} owned ${reconnected.length === 1 ? "sector" : "sectors"}`
     : "";
-  return `INCOME if held after enemy response: ${delta.metal >= 0 ? "+" : ""}${delta.metal}M ${delta.energy >= 0 ? "+" : ""}${delta.energy}E ${delta.intelligence >= 0 ? "+" : ""}${delta.intelligence}I${reconnection}`;
+  return `INCOME CHANGE PER TURN if held after enemy response: ${delta.metal >= 0 ? "+" : ""}${delta.metal}M ${delta.energy >= 0 ? "+" : ""}${delta.energy}E ${delta.intelligence >= 0 ? "+" : ""}${delta.intelligence}I${reconnection}`;
 };
+const contextualLines = (state: GameState, target: SectorId): string[] =>
+  [objectiveContext(state, target), incomeContext(state, target)].filter((line): line is string => Boolean(line));
 const pos: Record<string, [number, number]> = {
   "sector-0": [95, 170],
   "sector-1": [180, 95],
@@ -1189,11 +1193,6 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   {game.sectors.find((s) => s.id === squad.sector)?.name} ·
                   choose an action
                 </p>
-                <div className="decision-aid" aria-label="Selected squad decision aid">
-                  <strong>{squad.class.toUpperCase()} {squad.id.slice(-1)}</strong>
-                  <span>STR {squad.strength} · FTG {squad.fatigue}</span>
-                  <span>MOVE <b>0 metal + 0 energy</b> · ATTACK <b>2 metal + 3 energy</b></span>
-                </div>
                 <div className="order-buttons">
                   {(["hold", "recover", "move", "attack"] as OrderType[]).map(
                     (type) => (
@@ -1229,22 +1228,17 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 {(selectedAction === "move" || selectedAction === "attack") && (
                   <div className="legal-targets" aria-label={`Legal ${selectedAction} targets`}>
                     <h3>LEGAL {selectedAction.toUpperCase()} TARGETS</h3>
+                    <p className="target-scope">This move only; other orders and enemy response may change income.</p>
                     {legalTargets.length ? legalTargets.map((target) => <span className="target-choice" key={target.id}>
                       <button disabled={game.terminal !== "active"} onClick={() => setOrder(selectedAction, target.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOrder(selectedAction, target.id); } }}>{selectedAction.toUpperCase()} → {target.name}</button>
-                      {selectedAction === "move" ? <>
-                        <span className="target-consequence">Claims this unheld sector; the enemy phase may reverse the gain.</span>
-                        {objectiveContext(game, target.id) && <span className="target-consequence">{objectiveContext(game, target.id)}</span>}
-                        <span className="target-consequence">{incomeContext(game, target.id)}</span>
-                      </> : <span className="target-consequence">Contests this sector; combat outcome and losses resolve after orders.</span>}
+                      {selectedAction === "move" && contextualLines(game, target.id).map((line) => <span className="target-context" key={line}>{line}</span>)}
                       {(selectedAction === "move" || selectedAction === "attack") && scoutedWarning(target.id)}
                       {selectedAction === "attack" && canFreeAdvanceTo(target.id) && <>
                         <button className="free-advance" aria-label={`Replace attack with free advance to ${target.name}`} disabled={game.terminal !== "active"} onClick={() => setOrder("move", target.id)}>FREE ADVANCE · 0M + 0E</button>
-                        <span className="target-consequence">Trade ATTACK for free relocation and no combat this turn.</span>
-                        {objectiveContext(game, target.id) && <span className="target-consequence">{objectiveContext(game, target.id)}</span>}
-                        <span className="target-consequence">{incomeContext(game, target.id)}</span>
+                        {contextualLines(game, target.id).map((line) => <span className="target-context" key={line}>{line}</span>)}
                       </>}
                     </span>) : <p className="muted">No legal targets in reach.</p>}
-                    {game.researchLevels.Signals === 0 && legalTargets.length > 0 && <p className="target-consequence">Enemy response unknown without Signals.</p>}
+                    {game.researchLevels.Signals === 0 && legalTargets.length > 0 && <p className="target-context">Enemy response unknown without Signals.</p>}
                     {selectedAction === "attack" && legalMoveTargets.length > 0 && <p className="muted">FREE ADVANCE replaces only this squad's ATTACK with MOVE. It relocates without dislodging defenders; the enemy phase still follows. ATTACK remains available for its normal combat resolution, including against an empty or neutral sector.</p>}
                   </div>
                 )}
@@ -1365,8 +1359,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                                 {order.type === "move" && scoutedWarning(order.target)}{" "}
                                 {order.type === "attack" && canFreeAdvanceFor(order.squadId, order.target) && <>
                                   <button className="free-advance" aria-label={`Replace queued attack with free advance to ${sectorName(order.target)}`} onClick={() => setOrder("move", order.target, order.squadId)}>FREE ADVANCE · 0M + 0E</button>
-                                  {objectiveContext(game, order.target!) && <span className="target-consequence">{objectiveContext(game, order.target!)}</span>}
-                                  <span className="target-consequence">{incomeContext(game, order.target!)}</span>
+                                  {contextualLines(game, order.target!).map((line) => <span className="target-context" key={line}>{line}</span>)}
                                 </>}{" "}
                                 <button
                                   aria-label={`Cancel ${label}`}

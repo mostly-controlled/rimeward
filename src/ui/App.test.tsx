@@ -22,22 +22,16 @@ const storage = globalThis as typeof globalThis & {
 };
 
 describe("App interactions", () => {
-  it("shows selected squad state, exact action costs, and visible target tradeoffs", async () => {
+  it("shows legal MOVE context without generic squad or consequence prose", async () => {
     const campaign = createNewCampaign(42024);
     const root = await renderApp(campaign);
-    const aid = document.querySelector('[aria-label="Selected squad decision aid"]')?.textContent ?? "";
-    expect(aid).toContain("STR 10 · FTG 0");
-    expect(aid).toContain("MOVE 0 metal + 0 energy");
-    expect(aid).toContain("ATTACK 2 metal + 3 energy");
-    expect(document.querySelectorAll(".target-consequence").length).toBeGreaterThan(0);
-    const moveConsequence = [...document.querySelectorAll(".target-choice .target-consequence")].find((entry) => entry.textContent?.includes("Claims this unheld sector"));
-    expect(moveConsequence?.textContent).toContain("Claims this unheld sector");
+    expect(document.querySelector('[aria-label="Selected squad decision aid"]')).toBeNull();
+    expect(document.querySelector(".target-scope")?.textContent).toBe("This move only; other orders and enemy response may change income.");
 
     const attack = [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement;
     await act(async () => attack.click());
-    const attackConsequence = [...document.querySelectorAll(".target-consequence")].find((entry) => entry.textContent?.includes("Contests this sector"));
-    expect(attackConsequence).toBeTruthy();
-    expect(attackConsequence?.textContent).not.toMatch(/enemy|defender|hostile/i);
+    expect(document.querySelectorAll(".target-context").length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain("Contests this sector");
     await act(async () => root.unmount());
   });
 
@@ -51,15 +45,42 @@ describe("App interactions", () => {
     };
     const root = await renderApp(state);
     const moveTarget = [...document.querySelectorAll(".legal-targets .target-choice")].find((choice) => choice.textContent?.includes("Cairnwatch")) as HTMLElement;
-    expect(moveTarget?.textContent).toContain("APPROACH: secure relay at Northstar");
-    expect(moveTarget?.textContent).toContain("INCOME if held after enemy response: +1M +1E +0I");
+    expect(moveTarget?.textContent).toContain("Northstar required relay");
+    expect(moveTarget?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +1M +1E +0I");
 
     const attack = [...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "ATTACK") as HTMLButtonElement;
     await act(async () => attack.click());
     const freeAdvanceTarget = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("FREE ADVANCE") && choice.textContent.includes("Cairnwatch")) as HTMLElement;
-    expect(freeAdvanceTarget?.textContent).toContain("APPROACH: secure relay at Northstar");
-    expect(freeAdvanceTarget?.textContent).toContain("INCOME if held after enemy response: +1M +1E +0I");
+    expect(freeAdvanceTarget?.textContent).toContain("Northstar required relay");
+    expect(freeAdvanceTarget?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +1M +1E +0I");
     await act(async () => root.unmount());
+  });
+
+  it("shows only still-required objectives, including co-located HQ and relay", async () => {
+    const campaign = createNewCampaign(42024);
+    const quietEnemies = campaign.enemySquads.map((enemy) => ({ ...enemy, strength: 0 }));
+    const glasswayState = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-4" as const } : { ...unit, strength: 0 }),
+      enemySquads: quietEnemies,
+    };
+    const glasswayRoot = await renderApp(glasswayState);
+    const glassway = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Glassway")) as HTMLElement;
+    expect(glassway?.textContent).toContain("Ashenfall enemy HQ + required relay");
+    expect(glassway?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +0M +0E +0I");
+    await act(async () => glasswayRoot.unmount());
+
+    const capturedRoot = await renderApp({
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-4" as const } : { ...unit, strength: 0 }),
+      sectors: campaign.sectors.map((sector) => sector.id === "sector-6" ? { ...sector, owner: "player" as const } : sector),
+      objectives: campaign.objectives.map((objective) => objective.sector === "sector-6" ? { ...objective, controlled: true } : objective),
+      enemySquads: quietEnemies,
+    });
+    const captured = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Glassway")) as HTMLElement;
+    expect(captured?.textContent).not.toContain("Ashenfall enemy HQ");
+    expect(captured?.textContent).not.toContain("required relay");
+    await act(async () => capturedRoot.unmount());
   });
 
   it("distinguishes already-owned, unconnected, and reconnection income outcomes", async () => {
@@ -74,7 +95,8 @@ describe("App interactions", () => {
       enemySquads: quietEnemies,
     });
     const alreadyChoice = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Whiteplain")) as HTMLElement;
-    expect(alreadyChoice?.textContent).toContain("already owned; no new capture gain");
+    expect(alreadyChoice?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +0M +0E +0I · already owned");
+    expect(alreadyChoice?.textContent).not.toContain("Ward HQ");
     await act(async () => alreadyOwned.unmount());
 
     const disconnected = await renderApp({
@@ -83,7 +105,7 @@ describe("App interactions", () => {
       enemySquads: quietEnemies,
     });
     const disconnectedChoice = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Cairnwatch")) as HTMLElement;
-    expect(disconnectedChoice?.textContent).toContain("INCOME if held after enemy response: +0M +0E +0I · unconnected");
+    expect(disconnectedChoice?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +0M +0E +0I · unconnected");
     await act(async () => disconnected.unmount());
 
     const reconnection = await renderApp({
@@ -93,7 +115,7 @@ describe("App interactions", () => {
       enemySquads: quietEnemies,
     });
     const reconnectionChoice = [...document.querySelectorAll(".target-choice")].find((choice) => choice.textContent?.includes("Whiteplain")) as HTMLElement;
-    expect(reconnectionChoice?.textContent).toContain("INCOME if held after enemy response: +1M +1E +0I · reconnects 1 owned sector");
+    expect(reconnectionChoice?.textContent).toContain("INCOME CHANGE PER TURN if held after enemy response: +1M +1E +0I · reconnects 1 owned sector");
     await act(async () => reconnection.unmount());
   });
 
