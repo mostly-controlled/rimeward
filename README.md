@@ -17,7 +17,25 @@ npm test -- --run
 npm run build
 ```
 
-This remains a local browser run only; no hosted URL or post-AI campaign acceptance is claimed here.
+## Static hosting readiness
+
+Vite is configured with a relative asset base (`./`), so the generated `dist/` directory
+can be served from a GitHub Pages project subpath without rewriting asset URLs. Pages is
+optional and is not required for the existing Vercel path.
+
+The live public URL is <https://rimeward-preview.vercel.app>. It serves the source accepted
+at `89c42aed`; the exact deployment receipt is `dpl_Ef8S4es1f92MfPK2xUtLs8mSFwRb READY`.
+A cookie-free public HTTP request returned `200`.
+
+Hosted acceptance: a personally played hosted seed `42024` reached victory at T6. A
+midrun refresh and terminal refresh both matched Continue/replay, and no console errors
+were observed. The trace for `4132161419` is **victory T6**: T1-T3 are the causal route,
+followed by the T4 switch. This is a victory-at-T6 trace, not a seed string with T6.
+
+M2 limits remain: this is a narrow hosted smoke/acceptance record, not broad browser,
+device, accessibility, performance, or long-run reliability coverage. The evidence
+supports closing #45 only; #46 and #7 remain open. The reviewed Pages workflow remains
+optional and is not required for the existing Vercel deployment.
 
 ## Short delivery guide
 
