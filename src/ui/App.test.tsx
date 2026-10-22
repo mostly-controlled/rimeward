@@ -569,6 +569,11 @@ describe("App interactions", () => {
     expect(
       document.querySelector('[aria-label="Turn guide"]')?.textContent,
     ).toContain("SELECT SQUAD");
+    const help = document.querySelector(".turn-help") as HTMLDetailsElement;
+    expect(help.open).toBe(false);
+    expect(help.querySelector("summary")?.textContent).toBe("How to plan a turn");
+    await act(async () => (help.querySelector("summary") as HTMLElement).click());
+    expect(help.open).toBe(true);
     const target = document.querySelector(
       '[role="button"][aria-label*="Whiteplain"]',
     ) as SVGGElement;
