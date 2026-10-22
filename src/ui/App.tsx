@@ -768,7 +768,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                   : "The campaign has ended."}
             </p>
             {game.terminal === "active" ? (
-              <ol>
+              <>
+              <p className="turn-cue">Choose a squad, choose a target, then execute the turn.</p>
+              <p className="turn-state"><strong>SELECTED SQUAD</strong> — {squad.class.toUpperCase()} {squad.id.slice(-1)} at {sectorName(squad.sector)} (STR {squad.strength}, FTG {squad.fatigue}). <strong>{orders.length ? `QUEUED (${orders.length}) — NOT EXECUTED` : "NOT QUEUED"}</strong> — {orders.length ? `${selectedOrder ? `${selectedOrder.type.toUpperCase()} is queued. ` : ""}${unassignedSquads.length} unassigned.` : "Choose a squad and an action to plan the turn."}</p>
+              <details className="turn-help">
+                <summary>How to plan a turn</summary>
+                <ol>
                 <li>
                   <strong>SELECT SQUAD</strong> — {squad.class.toUpperCase()} {squad.id.slice(-1)} at {sectorName(squad.sector)} (STR {squad.strength}, FTG {squad.fatigue}).
                 </li>
@@ -791,15 +796,13 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                 <li>
                   <strong>{orders.length ? `QUEUED (${orders.length}) — NOT EXECUTED` : "NOT QUEUED"}</strong> — {orders.length ? `${selectedOrder ? `${selectedOrder.type.toUpperCase()} is queued for the selected squad. ` : ""}${unassignedSquads.length} unassigned${unassignedSquads.length === 1 ? " squad" : " squads"}; ${unassignedSquads.length ? "choose another or HOLD UNASSIGNED to avoid fatigue. " : ""}Player orders resolve first, then the enemy phase. EXECUTE TURN resolves assigned orders without requiring all squads.` : "Queue orders for your squads."}
                 </li>
-              </ol>
+                </ol>
+                <p className="muted">Selecting MOVE/ATTACK does not queue; choose highlighted target.</p>
+                <p className="muted">STR = strength. FTG = fatigue. HOLD is free and lowers FTG by 1; unassigned squads gain 1 fatigue. Supplied RECOVER costs the shown metal + 2 energy, restores strength, and lowers fatigue; it is unavailable when unsupplied.</p>
+              </details>
+              </>
             ) : (
               <p className="muted">Terminal state: {game.terminal.toUpperCase()}. The campaign is over; use RESTART or NEW SEED above to replay or begin a new campaign. No further planning is available.</p>
-            )}
-            {game.terminal === "active" && (
-              <p className="muted">Selecting MOVE/ATTACK does not queue; choose highlighted target.</p>
-            )}
-            {game.terminal === "active" && (
-              <p className="muted">STR = strength. FTG = fatigue. HOLD is free and lowers FTG by 1; unassigned squads gain 1 fatigue. Supplied RECOVER costs the shown metal + 2 energy, restores strength, and lowers fatigue; it is unavailable when unsupplied.</p>
             )}
           </section>
           <section className="resource-strip">
