@@ -80,7 +80,7 @@ describe("App interactions", () => {
     const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
     expect(cue).toContain("ENEMY STYLE CUE");
     expect(cue).toMatch(/Aggressive raider|Defensive planner/);
-    expect(cue).toContain("no pattern yet");
+    expect(cue).toContain("gathering observations");
     expect(cue).not.toMatch(/UNSET|enemy pattern|enemy order/i);
     await act(async () => root.unmount());
   });
@@ -95,8 +95,11 @@ describe("App interactions", () => {
     const root = await renderApp(state);
     const cue = document.querySelector('[aria-label="Enemy style cue"]')?.textContent ?? "";
     expect(cue).toMatch(/Aggressive raider|Defensive planner/);
-    expect(cue).toContain("pressure noticed");
+    expect(cue).toContain("gathering observations");
     expect(cue).not.toContain("UNSET");
+    expect(cue).not.toContain("Adaptive commander");
+    expect(cue).not.toContain("response uncertain");
+    expect((cue.match(/Aggressive raider|Defensive planner/g) ?? [])).toHaveLength(1);
     await act(async () => root.unmount());
   });
 

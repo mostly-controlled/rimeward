@@ -3,7 +3,6 @@ import {
   advanceDay,
   advanceResearch,
   adaptiveStyle,
-  adaptiveStyleCue,
   adaptiveObservationFeedback,
   calculateIncome,
   connectedOwnedSectors,
@@ -37,6 +36,18 @@ describe("campaign simulation", () => {
     const repeatedCorridor = { ...base, turn: 3, adaptiveHistory: [observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-0", "sector-1")] };
     expect(adaptiveObservationFeedback(repeatedCorridor)).toContain("Whiteplain");
     expect(adaptiveObservationFeedback(repeatedCorridor)).toContain("repeated observed corridor");
+    const defensiveMixedCorridor = {
+      ...createNewCampaign(2244426087),
+      turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"),
+        observation(2, "Raider", "sector-0", "sector-1"),
+        observation(3, "Recon" as "Sentinel" | "Raider", "sector-0", "sector-1"),
+      ],
+    };
+    expect(adaptiveStyle(defensiveMixedCorridor)).toBe("DEFENSIVE");
+    expect(adaptiveObservationFeedback(defensiveMixedCorridor)).toContain("repeated observed corridor: Frostgate → Whiteplain");
+    expect(adaptiveObservationFeedback(defensiveMixedCorridor)).not.toContain("repeated observed class");
     const broken = { ...base, turn: 4, adaptiveHistory: [observation(1, "Raider", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"), observation(3, "Sentinel", "sector-2", "sector-3")] };
     expect(adaptiveObservationFeedback(broken)).toContain("pattern broken");
     expect(adaptiveObservationFeedback(broken)).toContain("Cairnwatch");
@@ -239,8 +250,8 @@ describe("campaign simulation", () => {
     };
     const repeat = playObservedAttacks("sector-4");
     expect(adaptiveStyle(repeat)).toBe("DEFENSIVE");
-    expect(adaptiveStyleCue(repeat)).toContain("Defensive planner");
-    expect(adaptiveStyleCue(repeat)).toContain("response uncertain");
+    expect(adaptiveObservationFeedback(repeat)).toContain("Defensive planner");
+    expect(adaptiveObservationFeedback(repeat)).not.toContain("response uncertain");
     const feint = playObservedAttacks("sector-2");
     // Class continuity is independent of the observed corridor: this remains
     // a defensive class pattern even though the route changed after turn 1.
@@ -260,7 +271,7 @@ describe("campaign simulation", () => {
       })),
     };
     expect(adaptiveStyle(switchedPattern)).toBe("UNSET");
-    expect(adaptiveStyleCue(switchedPattern)).toContain("response uncertain");
+    expect(adaptiveObservationFeedback(switchedPattern)).not.toContain("response uncertain");
     const repeatIntents = decideEnemyIntents(repeat);
     const feintIntents = decideEnemyIntents(feint);
     const repeatPhase = resolveEnemyTurn(repeat);
@@ -331,8 +342,8 @@ describe("campaign simulation", () => {
       })),
     };
     expect(adaptiveStyle(state)).toBe("DEFENSIVE");
-    expect(adaptiveStyleCue(state)).toContain("Defensive planner");
-    expect(adaptiveStyleCue(state)).toContain("response uncertain");
+    expect(adaptiveObservationFeedback(state)).toContain("Defensive planner");
+    expect(adaptiveObservationFeedback(state)).not.toContain("response uncertain");
   });
 
   it("resets class and corridor confidence independently when either pattern switches", () => {
