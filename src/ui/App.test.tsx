@@ -27,17 +27,27 @@ describe("App interactions", () => {
     const base = {
       ...campaign,
       squads: campaign.squads.map((unit, index) => index === 0 ? { ...unit, sector: "sector-0" as const } : { ...unit, strength: 0 }),
-      enemySquads: campaign.enemySquads.map((enemy, index) => index === 0
+      enemySquads: [...campaign.enemySquads.map((enemy, index) => index === 0
         ? { ...enemy, class: "Recon" as const, sector: "sector-0" as const, strength: 5 }
         : index === 1
           ? { ...enemy, class: "Raider" as const, sector: "sector-0" as const, strength: 5 }
           : index === 2
             ? { ...enemy, class: "Sentinel" as const, sector: "sector-0" as const, strength: 0 }
-            : index === 3
-              ? { ...enemy, class: "Artillery" as const, sector: "sector-3" as const, strength: 5 }
-              : { ...enemy, strength: 0 }),
+            : { ...enemy, strength: 0 }), {
+        ...campaign.enemySquads[0],
+        id: "enemy-4",
+        class: "Artillery" as const,
+        sector: "sector-3" as const,
+        strength: 5,
+      }],
     };
-    const visible = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 1 }, revealedEnemySquads: ["enemy-1", "enemy-3"] });
+    expect(base.enemySquads).toHaveLength(4);
+    const hidden = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 0 }, revealedEnemySquads: ["enemy-1", "enemy-4"] });
+    const hiddenTarget = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
+    await act(async () => hiddenTarget.click());
+    expect(document.querySelector(".scouted-warning")).toBeNull();
+    await act(async () => hidden.unmount());
+    const visible = await renderApp({ ...base, researchLevels: { ...base.researchLevels, Signals: 1 }, revealedEnemySquads: ["enemy-1", "enemy-4"] });
     const target = [...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent?.includes("Lastlight")) as HTMLButtonElement;
     await act(async () => target.click());
     const warningText = [...document.querySelectorAll(".scouted-warning")].map((warning) => warning.textContent).join(" ");
