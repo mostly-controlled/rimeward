@@ -17,6 +17,15 @@ npm test -- --run
 npm run build
 ```
 
+## Static hosting readiness
+
+Vite is configured with a relative asset base (`./`), so the generated `dist/` directory
+can be served from a GitHub Pages project subpath without rewriting asset URLs. This
+repository currently has no Pages workflow or enabled Pages deployment, so no public URL
+is claimed yet. Enabling Pages with the GitHub Actions source requires repository workflow
+permission; the deployment workflow is intentionally deferred until that repository-level
+setting is authorized.
+
 This remains a local browser run only; no hosted URL or post-AI campaign acceptance is claimed here.
 
 ## Short delivery guide
