@@ -20,14 +20,22 @@ npm run build
 ## Static hosting readiness
 
 Vite is configured with a relative asset base (`./`), so the generated `dist/` directory
-can be served from a GitHub Pages project subpath without rewriting asset URLs. This
-repository currently has no Pages workflow or enabled Pages deployment, so no public URL
-is claimed yet. The reviewed Pages deployment workflow remains local and pending; enabling
-the GitHub Actions source requires repository workflow permission.
+can be served from a GitHub Pages project subpath without rewriting asset URLs. Pages is
+optional and is not required for the existing Vercel path.
 
-Technical acceptance is recorded locally: the accepted `origin/main` base is
-`89c42aed`, and its campaign behavior is covered by 203 passing tests across 3 test files.
-Public publication and hosted acceptance remain pending until the deployment is enabled.
+The live public URL is <https://rimeward-preview.vercel.app>. It serves the source accepted
+at `89c42aed`; the exact deployment receipt is `dpl_Ef8S4es1f92MfPK2xUtLs8mSFwRb READY`.
+A cookie-free public HTTP request returned `200`.
+
+Hosted acceptance: a personally played hosted seed `42024` reached victory at T6. A
+midrun refresh and terminal refresh both matched Continue/replay, and no console errors
+were observed. The trace for `4132161419` is **victory T6**: T1-T3 are the causal route,
+followed by the T4 switch. This is a victory-at-T6 trace, not a seed string with T6.
+
+M2 limits remain: this is a narrow hosted smoke/acceptance record, not broad browser,
+device, accessibility, performance, or long-run reliability coverage. The evidence
+supports closing #45 only; #46 and #7 remain open. The reviewed Pages workflow remains
+optional and is not required for the existing Vercel deployment.
 
 ## Short delivery guide
 
