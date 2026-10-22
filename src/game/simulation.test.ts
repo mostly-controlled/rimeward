@@ -128,6 +128,39 @@ describe("campaign simulation", () => {
     expect(adaptiveStyle({ ...base, turn: 3, adaptiveHistory: [observation(1), observation(2)] })).toBe("UNSET");
     expect(adaptiveStyle({ ...base, turn: 4, adaptiveHistory: [observation(1), observation(2), observation(3)] })).toBe("DEFENSIVE");
   });
+  it("orders defensive corridor and class commitment by their qualifying suffixes", () => {
+    const base = createNewCampaign(2244426087);
+    const observation = (turn: number, className: "Sentinel" | "Raider", from: SectorId, to: SectorId) => ({
+      turn,
+      observations: [{ kind: "move" as const, class: className, from, to }],
+    });
+    const defensiveCorridor = {
+      ...base, turn: 5,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Sentinel", "sector-0", "sector-1"),
+        observation(3, "Raider", "sector-0", "sector-1"), observation(4, "Raider", "sector-0", "sector-1"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(defensiveCorridor)).toContain("repeated observed corridor");
+    const defensiveClass = {
+      ...base, turn: 5,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"),
+        observation(3, "Raider", "sector-2", "sector-3"), observation(4, "Raider", "sector-2", "sector-3"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(defensiveClass)).toContain("repeated observed class");
+    const pendingClass = {
+      ...base, turn: 4,
+      adaptiveHistory: [
+        observation(1, "Sentinel", "sector-0", "sector-1"), observation(2, "Raider", "sector-1", "sector-2"),
+        observation(3, "Raider", "sector-2", "sector-3"),
+      ],
+    };
+    expect(adaptiveObservationFeedback(pendingClass)).toContain("repeated observed class: Raider");
+    expect(adaptiveObservationFeedback(pendingClass)).toContain("commitment pending");
+  });
+
   const distanceBetweenForTest = (
     state: GameState,
     start: string,

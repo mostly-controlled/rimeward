@@ -270,11 +270,14 @@ export const adaptiveObservationFeedback = (state: GameState): string => {
   const previous = committed.slice(0, -1);
   const priorClassSuffix = observationSuffixCount(previous, (observation, prior) => observation.class === prior.class);
   const priorCorridorSuffix = observationSuffixCount(previous, (observation, prior) => observationCorridor(observation) === observationCorridor(prior));
+  const personalityCommitmentThreshold = style === "AGGRESSIVE" ? 2 : 3;
   const route = `${adaptiveObservationName(state, latest.from)} → ${adaptiveObservationName(state, observationDestination(latest))}`;
   const stage = style === "UNSET" ? "commitment pending" : "committed";
+  if (classSuffix >= personalityCommitmentThreshold) return `${styleName} · repeated observed class: ${latest.class} · ${stage}`;
+  if (corridorSuffix >= personalityCommitmentThreshold) return `${styleName} · repeated observed corridor: ${route} · ${stage}`;
   if (classSuffix >= 2) return `${styleName} · repeated observed class: ${latest.class} · ${stage}`;
   if (corridorSuffix >= 2) return `${styleName} · repeated observed corridor: ${route} · ${stage}`;
-  if (priorClassSuffix >= 2 || priorCorridorSuffix >= 2) return `${styleName} · pattern broken at ${route} · ${stage}`;
+  if (classSuffix < 2 && corridorSuffix < 2 && (priorClassSuffix >= 2 || priorCorridorSuffix >= 2)) return `${styleName} · pattern broken at ${route} · ${stage}`;
   return `${styleName} · mixed observations at ${route} · ${stage}`;
 };
 
