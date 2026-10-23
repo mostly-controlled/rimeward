@@ -392,6 +392,18 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
   };
   const enemyHq = game.sectors.find((sector) => sector.id === game.hq.enemy);
   const playerHq = game.sectors.find((sector) => sector.id === game.hq.player);
+  const livingHqSquads = game.squads.filter(
+    (squad) => squad.strength > 0 && squad.sector === game.hq.player,
+  );
+  const hqGarrisonWarning = livingHqSquads.length > 0
+    && livingHqSquads.every((squad) => orders.some(
+      (order) => order.squadId === squad.id && order.type === "move" && order.target !== game.hq.player,
+    ))
+    && !orders.some(
+      (order) => order.type === "move"
+        && order.target === game.hq.player
+        && game.squads.some((squad) => squad.id === order.squadId && squad.strength > 0),
+    );
   const wardStrengthBySector = useMemo(() => {
     const counts = new Map<SectorId, { squads: number; strength: number }>();
     for (const unit of game.squads) {
@@ -1401,6 +1413,11 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     </>
                   )}
                 </p>
+                {hqGarrisonWarning && (
+                  <p className="hq-garrison-warning" role="status">
+                    {playerHq?.name ?? game.hq.player}: this plan leaves it undefended; HQ loss ends the campaign. Retain a defender.
+                  </p>
+                )}
                 <button
                   className="execute"
                   disabled={

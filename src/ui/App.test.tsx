@@ -2043,6 +2043,65 @@ describe("Editable turn plan", () => {
     return root;
   };
 
+  const queueMoves = async (count: number, destination = "Whiteplain") => {
+    for (let index = 0; index < count; index += 1) {
+      await select(index);
+      await click(action("MOVE"));
+      await target(destination);
+    }
+  };
+
+  it("warns when every living HQ garrison squad is queued to MOVE away", async () => {
+    const root = await mount(createNewCampaign(42024));
+    await queueMoves(5);
+    expect(document.querySelector(".hq-garrison-warning")?.textContent).toContain("Frostgate: this plan leaves it undefended");
+    expect(document.querySelector(".hq-garrison-warning")?.textContent).toContain("HQ loss ends the campaign");
+    expect(document.querySelector(".hq-garrison-warning")?.textContent).toContain("Retain a defender");
+    await act(async () => root.unmount());
+  });
+
+  it("suppresses the warning when a garrison defender is retained", async () => {
+    const root = await mount(createNewCampaign(42024));
+    await queueMoves(4);
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  it("suppresses the warning when a departure is cancelled or replaced", async () => {
+    const root = await mount(createNewCampaign(42024));
+    await queueMoves(5);
+    expect(document.querySelector(".hq-garrison-warning")).toBeTruthy();
+    await cancel("squad-4");
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await select(3);
+    await click(action("RECOVER"));
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  it("suppresses the warning when a living squad is queued to MOVE into HQ", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = { ...campaign, squads: campaign.squads.map((squad, index) => index === 3 ? { ...squad, sector: "sector-1" as const } : squad) };
+    const root = await mount(state);
+    await queueMoves(3);
+    await select(3);
+    await click(action("MOVE"));
+    await target("Frostgate");
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  it("does not infer the warning from hidden enemies", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await mount({ ...campaign, enemySquads: campaign.enemySquads.map((enemy) => ({ ...enemy, sector: "sector-0" as const, strength: 10 })) });
+    await queueMoves(3);
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await select(3);
+    await click(action("ATTACK"));
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
   it("lists distinct squad identities and named MOVE/ATTACK targets; cancelling preserves the other order", async () => {
     const root = await mount();
     expect(queue().textContent).toContain("No orders queued");
