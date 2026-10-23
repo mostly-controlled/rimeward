@@ -988,6 +988,36 @@ describe("App interactions", () => {
     await act(async () => root.unmount());
   });
 
+  it("does not add HQ CONTROL to actual victory or turn-limit debriefs", async () => {
+    const executeAllHold = async () => {
+      for (let index = 0; index < 5; index += 1) {
+        await act(async () => (document.querySelectorAll(".squad-card")[index] as HTMLButtonElement).click());
+        await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+      }
+      await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    };
+
+    const campaign = createNewCampaign(42024);
+    const victoryRoot = await renderApp({
+      ...campaign,
+      objectives: campaign.objectives.map((objective) => ({ ...objective, controlled: true })),
+      sectors: campaign.sectors.map((sector) => campaign.objectives.some((objective) => objective.sector === sector.id) || sector.id === campaign.hq.enemy ? { ...sector, owner: "player" as const } : sector),
+      enemySquads: campaign.enemySquads.map((unit) => ({ ...unit, strength: 0 })),
+    });
+    await executeAllHold();
+    expect(document.body.textContent).toContain("VICTORY");
+    expect(document.body.textContent).toContain("All three relays secured and enemy HQ captured.");
+    expect(document.querySelector(".debrief-summary")?.textContent ?? "").not.toContain("HQ CONTROL:");
+    await act(async () => victoryRoot.unmount());
+
+    const turnLimitRoot = await renderApp({ ...createNewCampaign(42024), turn: 18 });
+    await executeAllHold();
+    expect(document.body.textContent).toContain("DEFEAT");
+    expect(document.body.textContent).toContain("Turn 18 reached without victory.");
+    expect(document.querySelector(".debrief-summary")?.textContent ?? "").not.toContain("HQ CONTROL:");
+    await act(async () => turnLimitRoot.unmount());
+  });
+
   it("selects a tactical target and executes the turn", async () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
