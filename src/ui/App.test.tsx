@@ -2084,6 +2084,10 @@ describe("Editable turn plan", () => {
     const state = { ...campaign, squads: campaign.squads.map((squad, index) => index === 3 ? { ...squad, sector: "sector-1" as const } : squad) };
     const root = await mount(state);
     await queueMoves(3);
+    await select(4);
+    await click(action("MOVE"));
+    await target("Whiteplain");
+    expect(document.querySelector(".hq-garrison-warning")).toBeTruthy();
     await select(3);
     await click(action("MOVE"));
     await target("Frostgate");
@@ -2091,13 +2095,40 @@ describe("Editable turn plan", () => {
     await act(async () => root.unmount());
   });
 
-  it("does not infer the warning from hidden enemies", async () => {
+  it("does not infer the warning from hidden enemies or Signals0", async () => {
     const campaign = createNewCampaign(42024);
-    const root = await mount({ ...campaign, enemySquads: campaign.enemySquads.map((enemy) => ({ ...enemy, sector: "sector-0" as const, strength: 10 })) });
+    const state = {
+      ...campaign,
+      squads: campaign.squads.map((squad, index) => index === 3 ? { ...squad, sector: "sector-1" as const } : squad),
+      enemySquads: campaign.enemySquads.map((enemy) => ({ ...enemy, sector: "sector-0" as const, strength: 10 })),
+    };
+    const root = await mount(state);
     await queueMoves(3);
-    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
-    await select(3);
+    await select(4);
+    await click(action("MOVE"));
+    await target("Whiteplain");
+    expect(document.querySelector(".hq-garrison-warning")).toBeTruthy();
+    await act(async () => root.unmount());
+  });
+
+  it("does not treat a legal ATTACK by the last HQ garrison as a definite departure", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await mount({
+      ...campaign,
+      enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, sector: "sector-1" as const, strength: 10 } : enemy),
+    });
+    await queueMoves(4);
+    await select(4);
     await click(action("ATTACK"));
+    await target("Whiteplain");
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("ATTACK");
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    expect(execute().disabled).toBe(false);
+    await act(async () => root.unmount());
+  });
+
+  it("does not warn when the HQ garrison is empty", async () => {
+    const root = await mount({ ...createNewCampaign(42024), squads: createNewCampaign(42024).squads.map((squad) => ({ ...squad, strength: 0 })) });
     expect(document.querySelector(".hq-garrison-warning")).toBeNull();
     await act(async () => root.unmount());
   });
