@@ -483,6 +483,15 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         const afterStrength = after?.strength ?? 0;
         return afterStrength < unit.strength ? `${squadLabel(unit)}: STR ${unit.strength} → ${afterStrength}${afterStrength <= 0 ? " (DEAD)" : ""}` : null;
       }).filter(Boolean) as string[];
+      const playerHq = before.sectors.find((sector) => sector.id === before.hq.player);
+      const playerHqAfterEnemy = playerHq && enemy.nextState.sectors.find((sector) => sector.id === playerHq.id);
+      const playerHqLost = enemy.nextState.terminal === "defeat"
+        && enemy.nextState.terminalReason === "Player HQ lost."
+        && playerHqAfterEnemy?.owner === "enemy";
+      const hqDefendersBeforeEnemy = combat.nextState.squads.filter((unit) => unit.strength > 0 && unit.sector === before.hq.player);
+      const hqControlLine = playerHqLost && playerHq
+        ? `HQ CONTROL: ${playerHq.name} lost to the enemy during enemy response; campaign defeat${hqDefendersBeforeEnemy.length === 0 ? ` — it was undefended before enemy response; retain or return a defender on retry` : ""}`
+        : null;
       const survivingSquads = enemy.nextState.squads.filter((unit) => unit.strength > 0);
       const nextChoices = enemy.nextState.terminal !== "active"
         ? "campaign complete — no further orders are available"
@@ -505,6 +514,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         ...(relayLines.length ? [`RELAY CONTROL: ${relayLines.join("; ")}`] : []),
         ...(unassignedFatigue.length ? [`UNASSIGNED FATIGUE: ${unassignedFatigue.join("; ")}`] : []),
         ...(squadLosses.length ? [`SQUAD LOSSES: ${squadLosses.join("; ")}`] : []),
+        ...(hqControlLine ? [hqControlLine] : []),
         delta,
         incomeLine,
         `PLAYER RESULT: ${playerBattleLines.length ? playerBattleLines.join("; ") : "no player assault observed"}`,
@@ -877,7 +887,7 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
             </div>
             <div aria-live="polite" aria-atomic="true">
 
-              {latestDebrief ? (() => { const lines = displayRailMessage(latestDebrief.message, game.researchLevels.Signals).split("\n"); const priority = ["PLAYER RESULT:", "ENEMY RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:"]; const next = lines.find((line) => line.startsWith("NEXT:")); const summary = [...priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 4), next].filter(Boolean) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
+                      {latestDebrief ? (() => { const lines = displayRailMessage(latestDebrief.message, game.researchLevels.Signals).split("\n"); const priority = ["HQ CONTROL:", "PLAYER RESULT:", "ENEMY RESULT:", "RELAY CONTROL:", "SQUAD LOSSES:", "HQ-CONNECTED INCOME/SUPPLY:", "WHAT CHANGED:", "WHY:"]; const next = lines.find((line) => line.startsWith("NEXT:")); const summary = [...priority.map((prefix) => lines.find((line) => line.startsWith(prefix))).filter(Boolean).slice(0, 4), next].filter(Boolean) as string[]; const details = lines.filter((line) => !summary.includes(line)); const row = (line: string, index: number) => { const key = line.split(":", 1)[0].toLowerCase().replaceAll(" ", "-"); return <p className={`debrief-row debrief-${key}`} key={`${key}-${index}`}>{line}</p>; }; return <><div className="debrief-summary">{summary.map(row)}</div>{details.length ? <details><summary>SHOW FULL TURN DETAILS</summary>{details.map(row)}</details> : null}</>; })() : <p className="muted">Execute a turn to see the observed state changes, outcomes, and next choices.</p>}
             </div>
           </section>
           {actionFeedback && <p className="action-feedback" role="status" aria-live="polite">{actionFeedback}</p>}

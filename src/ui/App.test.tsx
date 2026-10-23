@@ -901,6 +901,7 @@ describe("App interactions", () => {
     expect(document.body.textContent).toContain("Outcome and losses are uncertain.");
     expect(document.body.textContent).not.toContain("EXPECTED ASSAULT LOSSES");
     expect(document.body.textContent).not.toMatch(/Ward −\d+ · hostile −\d+/);
+    expect(document.body.textContent).not.toContain("HQ CONTROL:");
     await act(async () => root.unmount());
   });
 
@@ -930,6 +931,36 @@ describe("App interactions", () => {
     expect(document.body.textContent).toContain("BATTLE REPORT");
     expect(document.body.textContent).toContain("RESOLVED");
     await act(async () => root.unmount());
+  });
+
+  it("names an actual lost HQ and gives only the factual undefended retry cue", async () => {
+    const issueOrders = async (targetName: string, holdLast = false) => {
+      for (let index = 0; index < 5; index += 1) {
+        await act(async () => (document.querySelectorAll(".squad-card")[index] as HTMLButtonElement).click());
+        if (holdLast && index === 4) {
+          await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+          continue;
+        }
+        await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "MOVE") as HTMLButtonElement).click());
+        await act(async () => ([...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent === `MOVE → ${targetName}`) as HTMLButtonElement).click());
+      }
+      await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    };
+
+    const defeatRoot = await renderApp(createNewCampaign(123456789));
+    await issueOrders("Whiteplain");
+    await issueOrders("Glassway");
+    const defeatDebrief = document.querySelector(".debrief-summary")?.textContent ?? "";
+    expect(defeatDebrief).toContain("HQ CONTROL: Frostgate lost to the enemy during enemy response; campaign defeat");
+    expect(defeatDebrief).toContain("it was undefended before enemy response; retain or return a defender on retry");
+    await act(async () => defeatRoot.unmount());
+
+    const retryRoot = await renderApp(createNewCampaign(123456789));
+    await issueOrders("Whiteplain", true);
+    await issueOrders("Glassway", true);
+    expect(document.querySelector(".debrief-summary")?.textContent).not.toContain("HQ CONTROL:");
+    expect(document.querySelector(".terminal")?.textContent ?? "").not.toContain("Player HQ lost");
+    await act(async () => retryRoot.unmount());
   });
 
   it("selects a tactical target and executes the turn", async () => {
