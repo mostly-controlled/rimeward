@@ -1285,7 +1285,7 @@ describe("App interactions", () => {
     const disclosure = details.querySelector("summary") as HTMLElement;
     disclosure.focus();
     expect(document.activeElement).toBe(disclosure);
-    details.open = true;
+    await act(async () => disclosure.click());
     expect(details.open).toBe(true);
     expect(report?.parentElement?.className).toBe("side-panel");
     expect(report?.nextElementSibling?.classList.contains("squad-panel")).toBe(
