@@ -4398,7 +4398,7 @@ describe("campaign simulation", () => {
     expect(snapshot.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 9 });
     expect(snapshot.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 7 });
     expect(snapshot.enemySquads.find((squad) => squad.id === "enemy-1")).toMatchObject({ sector: "sector-6", strength: 4 });
-    expect(snapshot.enemySquads.find((squad) => squad.id === "enemy-2")).toMatchObject({ sector: "sector-4", strength: 9 });
+    expect(snapshot.enemySquads.find((squad) => squad.id === "enemy-2")).toMatchObject({ sector: "sector-8", strength: 9 });
     expect(adaptiveStyle(snapshot)).toBe("DEFENSIVE");
     const tuple = (intents: ReturnType<typeof decideEnemyIntents>) =>
       intents.map((intent) => ({ squadId: intent.squadId, kind: intent.kind, from: intent.from, to: intent.to, target: intent.target }))
@@ -4407,16 +4407,16 @@ describe("campaign simulation", () => {
     const empty = tuple(decideEnemyIntents({ ...snapshot, adaptiveHistory: [] }));
     expect(actual).toEqual([
       { squadId: "enemy-1", kind: "attack", from: "sector-6", to: "sector-6", target: "sector-7" },
-      { squadId: "enemy-2", kind: "attack", from: "sector-4", to: "sector-4", target: "sector-5" },
+      { squadId: "enemy-2", kind: "attack", from: "sector-8", to: "sector-8", target: "sector-7" },
     ]);
     expect(empty).toEqual([
-      { squadId: "enemy-1", kind: "attack", from: "sector-6", to: "sector-6", target: "sector-5" },
-      { squadId: "enemy-2", kind: "attack", from: "sector-4", to: "sector-4", target: "sector-5" },
+      { squadId: "enemy-1", kind: "hold", from: "sector-6", to: "sector-6", target: undefined },
+      { squadId: "enemy-2", kind: "attack", from: "sector-8", to: "sector-8", target: "sector-7" },
     ]);
     expect(actual).not.toEqual(empty);
     const resolved = resolveEnemyTurn(snapshot);
-    expect(resolved.events.filter((event) => event.type === "attack").map((event) => event.target)).toEqual(expect.arrayContaining(["sector-7", "sector-5"]));
-    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 8 });
-    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 6 });
+    expect(resolved.events.filter((event) => event.type === "attack").map((event) => event.target)).toEqual(expect.arrayContaining(["sector-7"]));
+    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 9 });
+    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 1 });
   });
 });

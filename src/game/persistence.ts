@@ -4,7 +4,7 @@ declare const localStorage: { getItem(key: string): string | null; setItem(key: 
 export const SAVE_KEY = "rimeward:campaign";
 export const SAVE_VERSION = 2;
 export const JOURNAL_VERSION = 1;
-export const REPLAY_RULES_VERSION = 2;
+export const REPLAY_RULES_VERSION = 3;
 const MAX_TURNS = 18;
 const MAX_RESEARCH_PURCHASES = 6;
 const MAX_ORDER_BATCH = 5;

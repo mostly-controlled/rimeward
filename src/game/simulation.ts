@@ -537,7 +537,7 @@ const nextLegalStep = (
       if (!linked || linked.owner === "enemy") continue;
       if (
         state.enemySquads.some((other) => other.id !== enemyId && other.sector === link) ||
-        state.squads.some((squad) => squad.sector === link)
+        (current.path.length === 0 && state.squads.some((squad) => squad.sector === link))
       )
         continue;
       if (link === destination) return current.path[0] ?? link;

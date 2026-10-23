@@ -2626,7 +2626,7 @@ describe("Editable turn plan", () => {
     await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent?.startsWith("RESET SAME SEED")) as HTMLButtonElement).click());
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
     expect(saved.version).toBe(SAVE_VERSION);
-    expect(saved.rulesVersion).toBe(2);
+    expect(saved.rulesVersion).toBe(3);
     expect(saved.journalVersion).toBe(1);
     expect(saved.journal).toEqual([]);
     expect(saved.game.seed).toBe(99);
