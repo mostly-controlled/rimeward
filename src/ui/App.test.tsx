@@ -1279,7 +1279,12 @@ describe("App interactions", () => {
     expect(details?.textContent).toMatch(/Captured|Not captured/);
     const disclosure = details.querySelector("summary") as HTMLElement;
     expect(disclosure.tagName).toBe("SUMMARY");
-    await act(async () => disclosure.click());
+    disclosure.focus();
+    expect(document.activeElement).toBe(disclosure);
+    await act(async () => {
+      disclosure.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      disclosure.click();
+    });
     expect(details.open).toBe(true);
     expect(report?.parentElement?.className).toBe("side-panel");
     expect(report?.nextElementSibling?.classList.contains("squad-panel")).toBe(
