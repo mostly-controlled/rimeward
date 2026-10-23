@@ -1136,19 +1136,24 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     const attackerFaction = report.phase === "enemy" ? "HOSTILE" : report.phase === "player" ? "WARD" : "UNKNOWN";
                     const defenderFaction = report.phase === "enemy" ? "WARD" : report.phase === "player" ? "HOSTILE" : "UNKNOWN";
                     const phaseLabel = report.phase === "enemy" ? "ENEMY PHASE" : report.phase === "player" ? "PLAYER PHASE" : "PHASE UNKNOWN";
+                    const sectorName = game.sectors.find((s) => s.id === report.target)?.name ?? report.target;
+                    const outcome = report.phase === "enemy" ? enemyBattleOutcomeLabel(report) : battleOutcomeLabel(report);
                     return <article key={`${report.target}-${report.winner}-${index}`}>
-                      <h3>{game.sectors.find((s) => s.id === report.target)?.name} · {phaseLabel}</h3>
-                      <p><strong>ENGAGEMENT OUTCOME:</strong> {report.phase === "enemy" ? enemyBattleOutcomeLabel(report) : battleOutcomeLabel(report)}</p>
-                      <p><strong>OCCUPATION:</strong> {occupationLabel(report)}</p>
-                      <p>{attackerFaction} ATTACKERS{" "}
+                      <details className="battle-report-details">
+                        <summary className="battle-report-summary">
+                          <span>{sectorName} · {phaseLabel}</span>
+                          <span>OUTCOME: {outcome} · OCCUPATION: {occupationLabel(report).replace(/^occupation:\s*/, "")}</span>
+                          <span>CASUALTIES: Ward −{report.playerCasualties}; hostile −{report.enemyCasualties}</span>
+                        </summary>
+                        <p>{attackerFaction} ATTACKERS{" "}
                         {report.attackers
                           .map(
                             (unit) =>
                               `${unit.class} ${unit.units}/${unit.strength}`,
                           )
                           .join(", ")}
-                      </p>
-                      <p>
+                        </p>
+                        <p>
                         {defenderFaction} DEFENDERS{" "}
                         {report.defenders
                           .map(
@@ -1156,25 +1161,26 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                               `${unit.class} ${unit.units}/${unit.strength}`,
                           )
                           .join(", ") || "NONE"}
-                      </p>
-                      <p>
+                        </p>
+                        <p>
                         Terrain {report.terrain} ×{report.terrainMultiplier} ·
                         fatigue −{report.fatiguePenalty} · variance{" "}
                         {report.variance}
-                      </p>
-                      <p>
+                        </p>
+                        <p>
                         <strong>CASUALTIES:</strong> Ward −{report.playerCasualties}; hostile −{report.enemyCasualties} · {report.classAdvantages
                           .concat(report.defenderCounters)
                           .join(" · ") || "No class counter"}{" "}
                         · {report.casualties.length} casualty entries
-                      </p>
-                      <p><strong>SURVIVORS:</strong> {attackerFaction} {report.attackers.reduce((sum, unit) => sum + unit.units, 0)}; {defenderFaction} {report.defenders.reduce((sum, unit) => sum + unit.units, 0)}</p>
-                      <p>
+                        </p>
+                        <p><strong>SURVIVORS:</strong> {attackerFaction} {report.attackers.reduce((sum, unit) => sum + unit.units, 0)}; {defenderFaction} {report.defenders.reduce((sum, unit) => sum + unit.units, 0)}</p>
+                        <p>
                         {report.retreat.length
                           ? `Retreat: ${report.retreat.map((item) => item.to).join(", ")}`
                           : "No retreat"}{" "}
                         · {report.captured ? "Captured" : "Not captured"}
-                      </p>
+                        </p>
+                      </details>
                     </article>;
                   })}
                 </section>
