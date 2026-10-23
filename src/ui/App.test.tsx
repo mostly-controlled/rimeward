@@ -2043,6 +2043,96 @@ describe("Editable turn plan", () => {
     return root;
   };
 
+  const queueMoves = async (count: number, destination = "Whiteplain") => {
+    for (let index = 0; index < count; index += 1) {
+      await select(index);
+      await click(action("MOVE"));
+      await target(destination);
+    }
+  };
+
+  it("warns when every living HQ garrison squad is queued to MOVE away", async () => {
+    const root = await mount(createNewCampaign(42024));
+    await queueMoves(5);
+    expect(document.querySelector(".hq-garrison-warning")?.textContent).toContain("Frostgate: this plan leaves it undefended");
+    expect(document.querySelector(".hq-garrison-warning")?.textContent).toContain("HQ loss ends the campaign");
+    expect(document.querySelector(".hq-garrison-warning")?.textContent).toContain("Retain a defender");
+    await act(async () => root.unmount());
+  });
+
+  it("suppresses the warning when a garrison defender is retained", async () => {
+    const root = await mount(createNewCampaign(42024));
+    await queueMoves(4);
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  it("suppresses the warning when a departure is cancelled or replaced", async () => {
+    const root = await mount(createNewCampaign(42024));
+    await queueMoves(5);
+    expect(document.querySelector(".hq-garrison-warning")).toBeTruthy();
+    await cancel("squad-4");
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await select(3);
+    await click(action("RECOVER"));
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  it("suppresses the warning when a living squad is queued to MOVE into HQ", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = { ...campaign, squads: campaign.squads.map((squad, index) => index === 3 ? { ...squad, sector: "sector-1" as const } : squad) };
+    const root = await mount(state);
+    await queueMoves(3);
+    await select(4);
+    await click(action("MOVE"));
+    await target("Whiteplain");
+    expect(document.querySelector(".hq-garrison-warning")).toBeTruthy();
+    await select(3);
+    await click(action("MOVE"));
+    await target("Frostgate");
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
+  it("does not infer the warning from hidden enemies or Signals0", async () => {
+    const campaign = createNewCampaign(42024);
+    const state = {
+      ...campaign,
+      squads: campaign.squads.map((squad, index) => index === 3 ? { ...squad, sector: "sector-1" as const } : squad),
+      enemySquads: campaign.enemySquads.map((enemy) => ({ ...enemy, sector: "sector-0" as const, strength: 10 })),
+    };
+    const root = await mount(state);
+    await queueMoves(3);
+    await select(4);
+    await click(action("MOVE"));
+    await target("Whiteplain");
+    expect(document.querySelector(".hq-garrison-warning")).toBeTruthy();
+    await act(async () => root.unmount());
+  });
+
+  it("does not treat a legal ATTACK by the last HQ garrison as a definite departure", async () => {
+    const campaign = createNewCampaign(42024);
+    const root = await mount({
+      ...campaign,
+      enemySquads: campaign.enemySquads.map((enemy, index) => index === 0 ? { ...enemy, sector: "sector-1" as const, strength: 10 } : enemy),
+    });
+    await queueMoves(4);
+    await select(4);
+    await click(action("ATTACK"));
+    await target("Whiteplain");
+    expect(document.querySelector(".queued-orders")?.textContent).toContain("ATTACK");
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    expect(execute().disabled).toBe(false);
+    await act(async () => root.unmount());
+  });
+
+  it("does not warn when the HQ garrison is empty", async () => {
+    const root = await mount({ ...createNewCampaign(42024), squads: createNewCampaign(42024).squads.map((squad) => ({ ...squad, strength: 0 })) });
+    expect(document.querySelector(".hq-garrison-warning")).toBeNull();
+    await act(async () => root.unmount());
+  });
+
   it("lists distinct squad identities and named MOVE/ATTACK targets; cancelling preserves the other order", async () => {
     const root = await mount();
     expect(queue().textContent).toContain("No orders queued");
