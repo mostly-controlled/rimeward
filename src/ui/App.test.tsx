@@ -1261,15 +1261,26 @@ describe("App interactions", () => {
     );
     const report = document.querySelector(".reports");
     expect(report?.textContent).toContain("BATTLE REPORT");
-    expect(report?.textContent).toContain("Ashenfall");
-    expect(report?.textContent).toMatch(/ATTACKER/);
-    expect(report?.textContent).toMatch(/DEFENDER/);
-    expect(report?.textContent).toMatch(
+    const summary = report?.querySelector(".battle-report-summary");
+    expect(summary?.textContent).toContain("Ashenfall");
+    expect(summary?.textContent).toMatch(/PLAYER PHASE/);
+    expect(summary?.textContent).toMatch(/OUTCOME/);
+    expect(summary?.textContent).toMatch(/OCCUPATION/);
+    expect(summary?.textContent).toMatch(/CASUALTIES: Ward −\d+; hostile −\d+/);
+    const details = report?.querySelector("details") as HTMLDetailsElement;
+    expect(details?.open).toBe(false);
+    expect(details?.textContent).toMatch(/ATTACKER/);
+    expect(details?.textContent).toMatch(/DEFENDER/);
+    expect(details?.textContent).toMatch(
       /Terrain .* ×.* · fatigue −.* · variance/,
     );
-    expect(report?.textContent).toContain("casualty entries");
-    expect(report?.textContent).toMatch(/retreat|Retreat/);
-    expect(report?.textContent).toMatch(/Captured|Not captured/);
+    expect(details?.textContent).toContain("casualty entries");
+    expect(details?.textContent).toMatch(/retreat|Retreat/);
+    expect(details?.textContent).toMatch(/Captured|Not captured/);
+    const disclosure = details.querySelector("summary") as HTMLElement;
+    expect(disclosure.tagName).toBe("SUMMARY");
+    await act(async () => disclosure.click());
+    expect(details.open).toBe(true);
     expect(report?.parentElement?.className).toBe("side-panel");
     expect(report?.nextElementSibling?.classList.contains("squad-panel")).toBe(
       true,
