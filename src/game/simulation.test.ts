@@ -473,6 +473,7 @@ describe("campaign simulation", () => {
     const base = createNewCampaign(3);
     const makeState = (occupant: SectorId) => ({
       ...base,
+      turn: 3,
       enemySquads: [{ ...base.enemySquads[0], class: "Artillery" as const, sector: "sector-5" as const, strength: 10 }],
       squads: base.squads.map((squad, index) =>
         index === 0 ? { ...squad, class: "Sentinel" as const, sector: "sector-0" as const } : index === 1 ? { ...squad, sector: occupant } : { ...squad, strength: 0 },
@@ -484,7 +485,11 @@ describe("campaign simulation", () => {
       strategicTarget: undefined,
     });
     const distant = decideEnemyIntents(makeState("sector-1"))[0];
+    const alternateDistant = decideEnemyIntents(makeState("sector-2"))[0];
+    const absent = decideEnemyIntents(makeState("sector-10"))[0];
     expect(distant).toMatchObject({ kind: "move", from: "sector-5", to: "sector-4" });
+    expect(alternateDistant).toMatchObject({ kind: "move", from: "sector-5", to: "sector-4" });
+    expect(absent).toMatchObject({ kind: "move", from: "sector-5", to: "sector-4" });
     const firstHopBlocked = decideEnemyIntents(makeState("sector-4"))[0];
     expect(firstHopBlocked).not.toMatchObject({ kind: "move", to: "sector-4" });
   });
@@ -4438,5 +4443,35 @@ describe("campaign simulation", () => {
     expect(resolved.events.filter((event) => event.type === "attack").map((event) => event.target)).toEqual(expect.arrayContaining(["sector-7", "sector-5"]));
     expect(resolved.nextState.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 8 });
     expect(resolved.nextState.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 6 });
+  });
+
+  it("reaches the accepted 4132161419 T1-T3 prefix before counter decisions", () => {
+    let state = createNewCampaign(4132161419);
+    const route: Order[][] = [
+      [
+        { squadId: "squad-1", type: "move", target: "sector-1" },
+        { squadId: "squad-2", type: "move", target: "sector-11" },
+        { squadId: "squad-3", type: "hold" }, { squadId: "squad-4", type: "hold" }, { squadId: "squad-5", type: "hold" },
+      ],
+      [
+        { squadId: "squad-1", type: "move", target: "sector-5" },
+        { squadId: "squad-2", type: "attack", target: "sector-10" },
+        { squadId: "squad-3", type: "hold" }, { squadId: "squad-4", type: "hold" }, { squadId: "squad-5", type: "hold" },
+      ],
+      [
+        { squadId: "squad-1", type: "hold" },
+        { squadId: "squad-2", type: "move", target: "sector-7" },
+        { squadId: "squad-3", type: "hold" }, { squadId: "squad-4", type: "hold" }, { squadId: "squad-5", type: "hold" },
+      ],
+    ];
+    for (const [index, orders] of route.entries()) {
+      const player = resolveTurn(state, orders);
+      expect(player.events).toHaveLength(5);
+      const combat = resolveCombat(player.nextState, player.events);
+      state = index < route.length - 1 ? resolveEnemyTurn(combat.nextState).nextState : combat.nextState;
+    }
+    expect(state.turn).toBe(4);
+    expect(state.adaptiveHistory.length).toBeGreaterThanOrEqual(2);
+    expect(state.squads.find((squad) => squad.id === "squad-1")?.sector).toBe("sector-5");
   });
 });
