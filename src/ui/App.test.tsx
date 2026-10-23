@@ -2591,8 +2591,12 @@ describe("Editable turn plan", () => {
   });
 
   it("continues an unsupported snapshot into ordinary journal-unavailable saving", async () => {
-    const game = { ...createNewCampaign(88), turn: 4 };
-    writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] });
+    const initial = createNewCampaign(88);
+    const player = resolveTurn(initial, [{ squadId: "squad-1", type: "hold" }]);
+    const combat = resolveCombat(player.nextState, player.events);
+    const enemy = resolveEnemyTurn(combat.nextState);
+    const game = enemy.nextState;
+    writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 2, journalVersion: 1, journal: [{ type: "orders", orders: [{ squadId: "squad-1", type: "hold" }] }] });
     const before = localStorage.getItem(SAVE_KEY);
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);
@@ -2602,7 +2606,7 @@ describe("Editable turn plan", () => {
     expect(readSave()?.game).toEqual(game);
     await act(async () => ([...document.querySelectorAll('.order-buttons button')].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
     await act(async () => (document.querySelector('.execute') as HTMLButtonElement).click());
-    expect(readSave()?.game.turn).toBe(5);
+    expect(readSave()?.game.turn).toBe(game.turn + 1);
     expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).journal).toBeUndefined();
     expect(document.body.textContent).toContain("saved");
     await act(async () => root.unmount());
@@ -2610,7 +2614,7 @@ describe("Editable turn plan", () => {
     document.body.innerHTML = '<div id="root"></div>';
     const reloaded = createRoot(document.getElementById("root")!);
     await act(async () => reloaded.render(<App />));
-    expect(document.body.textContent).toContain("SAVED CAMPAIGN AVAILABLE — SEED 88 · TURN 5");
+    expect(document.body.textContent).toContain(`SAVED CAMPAIGN AVAILABLE — SEED 88 · TURN ${game.turn + 1}`);
     await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent === "CONTINUE") as HTMLButtonElement).click());
     await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent === "VERIFY REPLAY") as HTMLButtonElement).click());
     expect(document.body.textContent).toContain("REPLAY UNAVAILABLE — this older campaign has no action journal.");
@@ -2626,7 +2630,7 @@ describe("Editable turn plan", () => {
     await act(async () => ([...document.querySelectorAll('button')].find((button) => button.textContent?.startsWith("RESET SAME SEED")) as HTMLButtonElement).click());
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!);
     expect(saved.version).toBe(SAVE_VERSION);
-    expect(saved.rulesVersion).toBe(2);
+    expect(saved.rulesVersion).toBe(3);
     expect(saved.journalVersion).toBe(1);
     expect(saved.journal).toEqual([]);
     expect(saved.game.seed).toBe(99);

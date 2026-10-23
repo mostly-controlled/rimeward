@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createNewCampaign } from "./simulation";
 import { JOURNAL_VERSION, REPLAY_RULES_VERSION, readSave, SAVE_KEY, SAVE_VERSION, validateSave, verifyReplay, writeSave } from "./persistence";
-const storage = globalThis as typeof globalThis & { localStorage: { clear(): void; setItem(key: string, value: string): void } };
+const storage = globalThis as typeof globalThis & { localStorage: { clear(): void; getItem(key: string): string | null; setItem(key: string, value: string): void } };
 
 describe("campaign persistence", () => {
   afterEach(() => storage.localStorage.clear());
@@ -79,6 +79,15 @@ describe("campaign persistence", () => {
     const payload = { version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] };
     expect(validateSave(payload)).toBe(true);
     expect(verifyReplay(payload).status).toBe("unsupported");
+  });
+  it("continues reading v2 snapshots while leaving them unchanged and unsupported for replay", () => {
+    const game = createNewCampaign(4132161419);
+    const payload = { version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 2, journalVersion: JOURNAL_VERSION, journal: [] };
+    const raw = JSON.stringify(payload);
+    storage.localStorage.setItem(SAVE_KEY, raw);
+    expect(readSave()).toEqual(payload);
+    expect(verifyReplay(payload)).toMatchObject({ status: "unsupported" });
+    expect(storage.localStorage.getItem(SAVE_KEY)).toBe(raw);
   });
   it("uses campaign journal limits and preserves historical squad ids", () => {
     const game = createNewCampaign(77);

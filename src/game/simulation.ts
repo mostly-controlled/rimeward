@@ -522,6 +522,7 @@ const nextLegalStep = (
   start: SectorId,
   destination: SectorId,
   enemyId: string,
+  allowOccupiedPlayerPath = false,
 ): SectorId | undefined => {
   if (start === destination) return undefined;
   const queue: Array<{ sector: SectorId; path: SectorId[] }> = [
@@ -535,10 +536,10 @@ const nextLegalStep = (
       if (seen.has(link)) continue;
       const linked = state.sectors.find((item) => item.id === link);
       if (!linked || linked.owner === "enemy") continue;
-      if (
-        state.enemySquads.some((other) => other.id !== enemyId && other.sector === link) ||
-        state.squads.some((squad) => squad.sector === link)
-      )
+      if (state.enemySquads.some((other) => other.id !== enemyId && other.sector === link))
+        continue;
+      if (state.squads.some((squad) => squad.sector === link) &&
+        (!allowOccupiedPlayerPath || current.path.length === 0))
         continue;
       if (link === destination) return current.path[0] ?? link;
       seen.add(link);
@@ -590,7 +591,7 @@ const legalCounterIntent = (
           to: enemy.sector,
           target: destination,
         };
-      const step = nextLegalStep(state, enemy.sector, destination, enemy.id);
+      const step = nextLegalStep(state, enemy.sector, destination, enemy.id, true);
       if (step)
         return {
           squadId: enemy.id,
