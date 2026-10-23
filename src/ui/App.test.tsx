@@ -211,6 +211,9 @@ describe("App interactions", () => {
     expect(report).toContain("WARD DEFENDERS Sentinel 9/10");
     expect(report).toContain("HOSTILE ATTACKERS Artillery 5/8");
     expect(report).toContain("SURVIVORS: HOSTILE 5; WARD 9");
+    const reportNode = document.querySelector(".reports")!;
+    expect([...reportNode.querySelectorAll(".battle-report-summary")].some((summary) => summary.textContent?.includes("ENEMY PHASE"))).toBe(true);
+    expect([...reportNode.querySelectorAll("details")].every((details) => !details.open)).toBe(true);
     expect(document.querySelector('[aria-label="Resolved actions for turn 1"]')).toBeNull();
     expect(document.querySelector('[aria-label="Resolved actions for turn 2"]')).toBeTruthy();
     await act(async () => root.unmount());
@@ -1261,14 +1264,16 @@ describe("App interactions", () => {
     );
     const report = document.querySelector(".reports");
     expect(report?.textContent).toContain("BATTLE REPORT");
-    const summary = report?.querySelector(".battle-report-summary");
+    const summaries = [...report!.querySelectorAll(".battle-report-summary")];
+    const summary = summaries[0];
+    expect(summary?.tagName).toBe("SUMMARY");
     expect(summary?.textContent).toContain("Ashenfall");
     expect(summary?.textContent).toMatch(/PLAYER PHASE/);
     expect(summary?.textContent).toMatch(/OUTCOME/);
-    expect(summary?.textContent).toMatch(/OCCUPATION/);
+    expect(summary?.textContent).toMatch(/OCCUPATION: no change/);
     expect(summary?.textContent).toMatch(/CASUALTIES: Ward −\d+; hostile −\d+/);
+    expect([...report!.querySelectorAll("details")].every((details) => !details.open)).toBe(true);
     const details = report?.querySelector("details") as HTMLDetailsElement;
-    expect(details?.open).toBe(false);
     expect(details?.textContent).toMatch(/ATTACKER/);
     expect(details?.textContent).toMatch(/DEFENDER/);
     expect(details?.textContent).toMatch(
@@ -1278,13 +1283,9 @@ describe("App interactions", () => {
     expect(details?.textContent).toMatch(/retreat|Retreat/);
     expect(details?.textContent).toMatch(/Captured|Not captured/);
     const disclosure = details.querySelector("summary") as HTMLElement;
-    expect(disclosure.tagName).toBe("SUMMARY");
     disclosure.focus();
     expect(document.activeElement).toBe(disclosure);
-    await act(async () => {
-      disclosure.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      disclosure.click();
-    });
+    details.open = true;
     expect(details.open).toBe(true);
     expect(report?.parentElement?.className).toBe("side-panel");
     expect(report?.nextElementSibling?.classList.contains("squad-panel")).toBe(

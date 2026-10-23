@@ -1139,13 +1139,12 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
                     const sectorName = game.sectors.find((s) => s.id === report.target)?.name ?? report.target;
                     const outcome = report.phase === "enemy" ? enemyBattleOutcomeLabel(report) : battleOutcomeLabel(report);
                     return <article key={`${report.target}-${report.winner}-${index}`}>
-                      <div className="battle-report-summary">
-                        <h3>{sectorName} · {phaseLabel}</h3>
-                        <p><strong>OUTCOME:</strong> {outcome}; <strong>OCCUPATION:</strong> {occupationLabel(report)}</p>
-                        <p><strong>CASUALTIES:</strong> Ward −{report.playerCasualties}; hostile −{report.enemyCasualties}</p>
-                      </div>
                       <details className="battle-report-details">
-                        <summary>Show battle details</summary>
+                        <summary className="battle-report-summary">
+                          <span>{sectorName} · {phaseLabel}</span>
+                          <span>OUTCOME: {outcome} · OCCUPATION: {occupationLabel(report).replace(/^occupation:\s*/, "")}</span>
+                          <span>CASUALTIES: Ward −{report.playerCasualties}; hostile −{report.enemyCasualties}</span>
+                        </summary>
                         <p>{attackerFaction} ATTACKERS{" "}
                         {report.attackers
                           .map(
