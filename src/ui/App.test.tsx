@@ -901,6 +901,7 @@ describe("App interactions", () => {
     expect(document.body.textContent).toContain("Outcome and losses are uncertain.");
     expect(document.body.textContent).not.toContain("EXPECTED ASSAULT LOSSES");
     expect(document.body.textContent).not.toMatch(/Ward −\d+ · hostile −\d+/);
+    expect(document.body.textContent).not.toContain("HQ CONTROL:");
     await act(async () => root.unmount());
   });
 
@@ -930,6 +931,91 @@ describe("App interactions", () => {
     expect(document.body.textContent).toContain("BATTLE REPORT");
     expect(document.body.textContent).toContain("RESOLVED");
     await act(async () => root.unmount());
+  });
+
+  it("names an actual lost HQ and gives only the factual undefended retry cue", async () => {
+    const issueOrders = async (targetName: string, holdLast = false) => {
+      for (let index = 0; index < 5; index += 1) {
+        await act(async () => (document.querySelectorAll(".squad-card")[index] as HTMLButtonElement).click());
+        if (holdLast && index === 4) {
+          await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+          continue;
+        }
+        await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "MOVE") as HTMLButtonElement).click());
+        await act(async () => ([...document.querySelectorAll(".legal-targets button")].find((button) => button.textContent === `MOVE → ${targetName}`) as HTMLButtonElement).click());
+      }
+      await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    };
+
+    const defeatRoot = await renderApp(createNewCampaign(123456789));
+    await issueOrders("Whiteplain");
+    await issueOrders("Glassway");
+    const defeatDebrief = document.querySelector(".debrief-summary")?.textContent ?? "";
+    expect(defeatDebrief).toContain("HQ CONTROL: Frostgate lost to the enemy during enemy response; campaign defeat");
+    expect(defeatDebrief).toContain("it was undefended before enemy response; retain or return a defender on retry");
+    await act(async () => defeatRoot.unmount());
+
+    const retryRoot = await renderApp(createNewCampaign(123456789));
+    await issueOrders("Whiteplain", true);
+    await issueOrders("Glassway", true);
+    expect(document.querySelector(".debrief-summary")?.textContent).not.toContain("HQ CONTROL:");
+    expect(document.querySelector(".terminal")?.textContent ?? "").not.toContain("Player HQ lost");
+    await act(async () => retryRoot.unmount());
+  });
+
+  it("reports a defended HQ loss generically through actual App execution", async () => {
+    const campaign = createNewCampaign(123456789);
+    const initialGame = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index < 4
+        ? { ...unit, sector: "sector-5" as const, strength: 10 }
+        : { ...unit, sector: "sector-0" as const, strength: 1 }),
+      enemySquads: campaign.enemySquads.map((unit, index) => index === 0
+        ? { ...unit, sector: "sector-11" as const, strength: 10 }
+        : { ...unit, strength: 0 }),
+    };
+    const root = await renderApp(initialGame);
+    for (let index = 0; index < 5; index += 1) {
+      await act(async () => (document.querySelectorAll(".squad-card")[index] as HTMLButtonElement).click());
+      await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    }
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    expect(document.querySelector(".terminal")?.textContent).toContain("Player HQ lost");
+    const summary = document.querySelector(".debrief-summary")?.textContent ?? "";
+    expect(summary).toContain("HQ CONTROL: Frostgate lost to the enemy during enemy response; campaign defeat");
+    expect(summary).not.toContain("undefended");
+    expect(summary).not.toContain("retain or return");
+    await act(async () => root.unmount());
+  });
+
+  it("does not add HQ CONTROL to actual victory or turn-limit debriefs", async () => {
+    const executeAllHold = async () => {
+      for (let index = 0; index < 5; index += 1) {
+        await act(async () => (document.querySelectorAll(".squad-card")[index] as HTMLButtonElement).click());
+        await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+      }
+      await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    };
+
+    const campaign = createNewCampaign(42024);
+    const victoryRoot = await renderApp({
+      ...campaign,
+      objectives: campaign.objectives.map((objective) => ({ ...objective, controlled: true })),
+      sectors: campaign.sectors.map((sector) => campaign.objectives.some((objective) => objective.sector === sector.id) || sector.id === campaign.hq.enemy ? { ...sector, owner: "player" as const } : sector),
+      enemySquads: campaign.enemySquads.map((unit) => ({ ...unit, strength: 0 })),
+    });
+    await executeAllHold();
+    expect(document.body.textContent).toContain("VICTORY");
+    expect(document.body.textContent).toContain("All three relays secured and enemy HQ captured.");
+    expect(document.querySelector(".debrief-summary")?.textContent ?? "").not.toContain("HQ CONTROL:");
+    await act(async () => victoryRoot.unmount());
+
+    const turnLimitRoot = await renderApp({ ...createNewCampaign(42024), turn: 18 });
+    await executeAllHold();
+    expect(document.body.textContent).toContain("DEFEAT");
+    expect(document.body.textContent).toContain("Turn 18 reached without victory.");
+    expect(document.querySelector(".debrief-summary")?.textContent ?? "").not.toContain("HQ CONTROL:");
+    await act(async () => turnLimitRoot.unmount());
   });
 
   it("selects a tactical target and executes the turn", async () => {
