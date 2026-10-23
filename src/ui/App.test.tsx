@@ -2592,7 +2592,7 @@ describe("Editable turn plan", () => {
 
   it("continues an unsupported snapshot into ordinary journal-unavailable saving", async () => {
     const game = { ...createNewCampaign(88), turn: 4 };
-    writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 99, journalVersion: 99, journal: [] });
+    writeSave({ version: SAVE_VERSION, game, events: [], reports: [], rulesVersion: 2, journalVersion: 1, journal: [{ type: "orders", orders: [{ squadId: "squad-1", type: "hold" }] }] });
     const before = localStorage.getItem(SAVE_KEY);
     document.body.innerHTML = '<div id="root"></div>';
     const root = createRoot(document.getElementById("root")!);

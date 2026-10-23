@@ -469,6 +469,26 @@ describe("campaign simulation", () => {
     expect(phase.events[0]).toMatchObject({ squadId: "enemy-1", type: "attack", target: "sector-0" });
   });
 
+  it("ignores distant player occupancy but never emits an occupied first hop for counters", () => {
+    const base = createNewCampaign(3);
+    const makeState = (occupant: SectorId) => ({
+      ...base,
+      enemySquads: [{ ...base.enemySquads[0], class: "Artillery" as const, sector: "sector-5" as const, strength: 10 }],
+      squads: base.squads.map((squad, index) =>
+        index === 0 ? { ...squad, class: "Sentinel" as const, sector: "sector-0" as const } : index === 1 ? { ...squad, sector: occupant } : { ...squad, strength: 0 },
+      ),
+      adaptiveHistory: [
+        { turn: 1, observations: [{ kind: "attack" as const, class: "Sentinel" as const, from: "sector-2" as const, target: "sector-0" as const }] },
+        { turn: 2, observations: [{ kind: "attack" as const, class: "Sentinel" as const, from: "sector-2" as const, target: "sector-0" as const }] },
+      ],
+      strategicTarget: undefined,
+    });
+    const distant = decideEnemyIntents(makeState("sector-1"))[0];
+    expect(distant).toMatchObject({ kind: "move", from: "sector-5", to: "sector-4" });
+    const firstHopBlocked = decideEnemyIntents(makeState("sector-4"))[0];
+    expect(firstHopBlocked).not.toMatchObject({ kind: "move", to: "sector-4" });
+  });
+
   it("reports only HQ-connected owned income with per-sector yields", () => {
     const game = createNewCampaign(42);
     const supplied = {
@@ -4398,7 +4418,7 @@ describe("campaign simulation", () => {
     expect(snapshot.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 9 });
     expect(snapshot.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 7 });
     expect(snapshot.enemySquads.find((squad) => squad.id === "enemy-1")).toMatchObject({ sector: "sector-6", strength: 4 });
-    expect(snapshot.enemySquads.find((squad) => squad.id === "enemy-2")).toMatchObject({ sector: "sector-8", strength: 9 });
+    expect(snapshot.enemySquads.find((squad) => squad.id === "enemy-2")).toMatchObject({ sector: "sector-4", strength: 9 });
     expect(adaptiveStyle(snapshot)).toBe("DEFENSIVE");
     const tuple = (intents: ReturnType<typeof decideEnemyIntents>) =>
       intents.map((intent) => ({ squadId: intent.squadId, kind: intent.kind, from: intent.from, to: intent.to, target: intent.target }))
@@ -4407,16 +4427,16 @@ describe("campaign simulation", () => {
     const empty = tuple(decideEnemyIntents({ ...snapshot, adaptiveHistory: [] }));
     expect(actual).toEqual([
       { squadId: "enemy-1", kind: "attack", from: "sector-6", to: "sector-6", target: "sector-7" },
-      { squadId: "enemy-2", kind: "attack", from: "sector-8", to: "sector-8", target: "sector-7" },
+      { squadId: "enemy-2", kind: "attack", from: "sector-4", to: "sector-4", target: "sector-5" },
     ]);
     expect(empty).toEqual([
-      { squadId: "enemy-1", kind: "hold", from: "sector-6", to: "sector-6", target: undefined },
-      { squadId: "enemy-2", kind: "attack", from: "sector-8", to: "sector-8", target: "sector-7" },
+      { squadId: "enemy-1", kind: "attack", from: "sector-6", to: "sector-6", target: "sector-5" },
+      { squadId: "enemy-2", kind: "attack", from: "sector-4", to: "sector-4", target: "sector-5" },
     ]);
     expect(actual).not.toEqual(empty);
     const resolved = resolveEnemyTurn(snapshot);
-    expect(resolved.events.filter((event) => event.type === "attack").map((event) => event.target)).toEqual(expect.arrayContaining(["sector-7"]));
-    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 9 });
-    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 1 });
+    expect(resolved.events.filter((event) => event.type === "attack").map((event) => event.target)).toEqual(expect.arrayContaining(["sector-7", "sector-5"]));
+    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-1")).toMatchObject({ sector: "sector-5", strength: 8 });
+    expect(resolved.nextState.squads.find((squad) => squad.id === "squad-2")).toMatchObject({ sector: "sector-7", strength: 6 });
   });
 });
