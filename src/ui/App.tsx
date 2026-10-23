@@ -37,14 +37,6 @@ export const displayRailMessage = (message: string, signals: number) =>
     ? message
     : message.replace(/\nENEMY PHASE OBSERVED:.*(?=\n|$)/, "\nENEMY PHASE OBSERVED: movement withheld — Signals 0");
 
-export const hqControlDebriefLine = (before: GameState, playerPhase: GameState, after: GameState) => {
-  const hq = before.sectors.find((sector) => sector.id === before.hq.player);
-  const hqAfterEnemy = hq && after.sectors.find((sector) => sector.id === hq.id);
-  if (after.terminal !== "defeat" || after.terminalReason !== "Player HQ lost." || hqAfterEnemy?.owner !== "enemy" || !hq) return null;
-  const defenders = playerPhase.squads.filter((unit) => unit.strength > 0 && unit.sector === before.hq.player);
-  return `HQ CONTROL: ${hq.name} lost to the enemy during enemy response; campaign defeat${defenders.length === 0 ? " — it was undefended before enemy response; retain or return a defender on retry" : ""}`;
-};
-
 const queuedCost = (orders: Order[], state: GameState) =>
   orders.reduce(
     (total, order) => ({
@@ -491,7 +483,15 @@ export function App({ initialGame }: { initialGame?: GameState } = {}) {
         const afterStrength = after?.strength ?? 0;
         return afterStrength < unit.strength ? `${squadLabel(unit)}: STR ${unit.strength} → ${afterStrength}${afterStrength <= 0 ? " (DEAD)" : ""}` : null;
       }).filter(Boolean) as string[];
-      const hqControlLine = hqControlDebriefLine(before, combat.nextState, enemy.nextState);
+      const playerHq = before.sectors.find((sector) => sector.id === before.hq.player);
+      const playerHqAfterEnemy = playerHq && enemy.nextState.sectors.find((sector) => sector.id === playerHq.id);
+      const playerHqLost = enemy.nextState.terminal === "defeat"
+        && enemy.nextState.terminalReason === "Player HQ lost."
+        && playerHqAfterEnemy?.owner === "enemy";
+      const hqDefendersBeforeEnemy = combat.nextState.squads.filter((unit) => unit.strength > 0 && unit.sector === before.hq.player);
+      const hqControlLine = playerHqLost && playerHq
+        ? `HQ CONTROL: ${playerHq.name} lost to the enemy during enemy response; campaign defeat${hqDefendersBeforeEnemy.length === 0 ? ` — it was undefended before enemy response; retain or return a defender on retry` : ""}`
+        : null;
       const survivingSquads = enemy.nextState.squads.filter((unit) => unit.strength > 0);
       const nextChoices = enemy.nextState.terminal !== "active"
         ? "campaign complete — no further orders are available"

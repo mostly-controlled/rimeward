@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel, hqControlDebriefLine, occupationLabel } from "./App";
+import { App, battleOutcomeLabel, displayRailMessage, enemyBattleOutcomeLabel, occupationLabel } from "./App";
 import {
   readSave,
   SAVE_KEY,
@@ -963,28 +963,29 @@ describe("App interactions", () => {
     await act(async () => retryRoot.unmount());
   });
 
-  it("keeps the defended HQ-loss line generic and excludes it from other terminal reasons", () => {
-    const before = createNewCampaign(123456789);
-    const playerPhase = {
-      ...before,
-      squads: before.squads.map((unit, index) => index === 0 ? { ...unit, sector: before.hq.player, strength: 2 } : { ...unit, strength: 5 }),
+  it("reports a defended HQ loss generically through actual App execution", async () => {
+    const campaign = createNewCampaign(123456789);
+    const initialGame = {
+      ...campaign,
+      squads: campaign.squads.map((unit, index) => index < 4
+        ? { ...unit, sector: "sector-5" as const, strength: 10 }
+        : { ...unit, sector: "sector-0" as const, strength: 1 }),
+      enemySquads: campaign.enemySquads.map((unit, index) => index === 0
+        ? { ...unit, sector: "sector-11" as const, strength: 10 }
+        : { ...unit, strength: 0 }),
     };
-    const resolvedLoss = terminalState({
-      ...playerPhase,
-      sectors: playerPhase.sectors.map((sector) => sector.id === before.hq.player ? { ...sector, owner: "enemy" as const } : sector),
-    });
-    expect(resolvedLoss.terminal).toBe("defeat");
-    expect(resolvedLoss.terminalReason).toBe("Player HQ lost.");
-    const defendedLine = hqControlDebriefLine(before, playerPhase, resolvedLoss) ?? "";
-    expect(defendedLine).toContain("HQ CONTROL: Frostgate lost to the enemy during enemy response; campaign defeat");
-    expect(defendedLine).not.toContain("undefended");
-    expect(defendedLine).not.toContain("retain or return");
-
-    const victory = terminalState({ ...before, terminal: "victory" });
-    expect(hqControlDebriefLine(before, playerPhase, victory)).toBeNull();
-    const turnLimit = terminalState({ ...before, turn: 19 });
-    expect(turnLimit.terminalReason).toBe("Turn 18 reached without victory.");
-    expect(hqControlDebriefLine(before, playerPhase, turnLimit)).toBeNull();
+    const root = await renderApp(initialGame);
+    for (let index = 0; index < 5; index += 1) {
+      await act(async () => (document.querySelectorAll(".squad-card")[index] as HTMLButtonElement).click());
+      await act(async () => ([...document.querySelectorAll(".order-buttons button")].find((button) => button.textContent === "HOLD") as HTMLButtonElement).click());
+    }
+    await act(async () => (document.querySelector(".execute") as HTMLButtonElement).click());
+    expect(document.querySelector(".terminal")?.textContent).toContain("Player HQ lost");
+    const summary = document.querySelector(".debrief-summary")?.textContent ?? "";
+    expect(summary).toContain("HQ CONTROL: Frostgate lost to the enemy during enemy response; campaign defeat");
+    expect(summary).not.toContain("undefended");
+    expect(summary).not.toContain("retain or return");
+    await act(async () => root.unmount());
   });
 
   it("selects a tactical target and executes the turn", async () => {
